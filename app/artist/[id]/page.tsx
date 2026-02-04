@@ -93,11 +93,6 @@ export default async function ArtistPage({
     }
   }
 
-  try {
-    if (!artist) {
-    artist = null;
-  }
-
   if (!artist) notFound();
 
   return (
@@ -170,6 +165,27 @@ export default async function ArtistPage({
               </table>
             </div>
           )}
+        </section>
+
+        <section className="mb-6 rounded border border-stone-200 bg-white p-4">
+          <h2 className="mb-2 text-sm font-medium text-stone-500">Enrichment</h2>
+          {enrichment && (enrichment.bio_summary || enrichment.role || enrichment.insight) ? (
+            <div className="mb-4 space-y-2 text-sm">
+              {enrichment.bio_summary && (
+                <p><span className="text-stone-500">Bio:</span> {enrichment.bio_summary}</p>
+              )}
+              {enrichment.role && (
+                <p><span className="text-stone-500">Role:</span> {enrichment.role}</p>
+              )}
+              {enrichment.insight && (
+                <p><span className="text-stone-500">Insight:</span> {enrichment.insight}</p>
+              )}
+              <p className="text-xs text-stone-400">Updated {enrichment.enriched_at}</p>
+            </div>
+          ) : (
+            <p className="mb-4 text-sm text-stone-500">No enrichment yet. Add below (optional).</p>
+          )}
+          <EnrichmentForm artistId={artistId} initial={enrichment} />
         </section>
 
         <section className="rounded border border-stone-200 bg-white p-4">

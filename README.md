@@ -132,3 +132,16 @@ Definition of Done Фази 1: всі таблиці створені, зв’я
 - Ліди переглядаються та фільтруються по сегменту.
 - Історія артиста видна на сторінці артиста.
 - Нотатки можна додавати та зберігати (read-only analytics + notes).
+
+---
+
+## Phase 6 — Enrichment (Hybrid, Optional) ✓
+
+- **Схема:** таблиця `artist_enrichment` (artist_id, bio_summary, role, insight, enriched_at) — міграція 009. Зберігання окремо від сегментації.
+- **Модуль:** `enrich/bio.ts` — `getEnrichment(artistId)`, `setEnrichment(artistId, data)`, заглушка `enrichArtistWithLLM()` (опційно при наявності OPENAI_API_KEY / ENRICHMENT_LLM_API_KEY).
+- **UI:** на сторінці артиста блок «Enrichment»: показ bio_summary, role, insight якщо є; форма для ручного додавання/редагування (Save enrichment). Якщо даних немає — система працює без них.
+
+### Definition of Done Фази 6
+
+- Enrichment зберігається окремо (не впливає на сегменти).
+- Немає залежності сегментації від enrichment; можна повністю вимкнути.

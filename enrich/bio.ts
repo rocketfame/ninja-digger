@@ -44,9 +44,9 @@ export async function setEnrichment(
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (artist_id)
      DO UPDATE SET
-       bio_summary = COALESCE(EXCLUDED.bio_summary, artist_enrichment.bio_summary),
-       role = COALESCE(EXCLUDED.role, artist_enrichment.role),
-       insight = COALESCE(EXCLUDED.insight, artist_enrichment.insight),
+       bio_summary = EXCLUDED.bio_summary,
+       role = EXCLUDED.role,
+       insight = EXCLUDED.insight,
        enriched_at = NOW()`,
     [
       artistId,
