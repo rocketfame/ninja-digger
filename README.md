@@ -102,3 +102,19 @@ Definition of Done Фази 1: всі таблиці створені, зв’я
 - Один логічний артист = один ID (нормалізація по `normalized_name`).
 - Сирі дані джерел зберігаються (`artist_sources`, `label_sources`, raw у `chart_entries`).
 - Нормалізовані view стабільні: `artist_chart_stats`, `artist_chart_history`.
+
+---
+
+## Phase 4 — Segmentation & Scoring (Multi-Signal SQL) ✓
+
+- **Сигнали:** `artist_signals` (view) — appearances (A), avg_position (P), first_seen, last_seen, recency_days (R), momentum (M), source_count (S). Momentum = середня позиція 8–14 днів тому мінус середня позиція за останні 7 днів (positive = покращення).
+- **Формула:** `artist_lead_score` (view): score = (A×2) + (100−P) + max(0, 30−R) + (M×3) + (S×5).
+- **Сегменти:** core (A≥10 і P≤30), regular (A≥5), fresh (first_seen за останні 14 днів), momentum (M>0), flyers (решта).
+- **Міграції:** `007_segmentation_signals.sql`, `008_segmentation_lead_score.sql`; функція `refresh_lead_scores()` для заповнення таблиці `lead_scores`.
+- **Cron:** після інгestion викликається `refreshLeadScores()` (segment/refresh.ts); у відповіді — `leadScoresRefreshed`.
+
+### Definition of Done Фази 4
+
+- Сегменти оновлюються автоматично (view завжди актуальні; таблиця — після cron).
+- Нові джерела не вимагають змін у логіці сегментації.
+- Оцінки детерміновані, пояснювані (SQL).

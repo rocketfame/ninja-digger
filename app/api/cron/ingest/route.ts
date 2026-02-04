@@ -6,6 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { runIngest, getAvailableSources } from "@/ingest/run";
+import { refreshLeadScores } from "@/segment/refresh";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -35,6 +36,12 @@ export async function GET(request: Request) {
 
   try {
     const result = await runIngest(sourceSlug, chartDate);
+    let leadScoresRefreshed = 0;
+    try {
+      leadScoresRefreshed = await refreshLeadScores();
+    } catch (e) {
+      console.warn("refresh_lead_scores failed (run migrations 007–008):", e);
+    }
     return NextResponse.json({
       ok: true,
       source: result.sourceName,
@@ -42,6 +49,7 @@ export async function GET(request: Request) {
       fetched: result.fetched,
       inserted: result.inserted,
       skipped: result.skipped,
+      leadScoresRefreshed,
     });
   } catch (err) {
     console.error("Cron ingest error:", err);
