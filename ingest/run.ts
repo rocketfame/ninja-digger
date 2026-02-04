@@ -4,6 +4,7 @@
  */
 
 import { query, pool } from "@/lib/db";
+import { normalizeName } from "@/normalize/names";
 import type { ChartEntryInput, IngestionSource, IngestResult } from "@/ingest/types";
 import { BeatportSource } from "@/ingest/sources/beatport";
 import { SongstatsSource } from "@/ingest/songstats";
@@ -27,19 +28,63 @@ async function getOrCreateSourceBySlug(slug: string, name: string): Promise<numb
   return (insert.rows[0] as { id: number }).id;
 }
 
-async function getOrCreateArtist(name: string): Promise<number> {
-  const rows = await query<{ id: number }>("SELECT id FROM artists WHERE name = $1 LIMIT 1", [name]);
-  if (rows.length > 0) return rows[0].id;
-  const insert = await pool.query("INSERT INTO artists (name) VALUES ($1) RETURNING id", [name]);
-  return (insert.rows[0] as { id: number }).id;
+async function getOrCreateArtist(rawName: string, sourceId: number): Promise<number> {
+  const name = rawName.trim();
+  if (!name) throw new Error("Artist name is empty");
+  const norm = normalizeName(name);
+  const rows = await query<{ id: number }>(
+    "SELECT id FROM artists WHERE normalized_name = $1 LIMIT 1",
+    [norm]
+  );
+  if (rows.length > 0) {
+    const artistId = rows[0].id;
+    await pool.query(
+      "INSERT INTO artist_sources (artist_id, source_id, raw_name) VALUES ($1, $2, $3) ON CONFLICT (source_id, raw_name) DO NOTHING",
+      [artistId, sourceId, name]
+    );
+    return artistId;
+  }
+  const insert = await pool.query(
+    "INSERT INTO artists (name, normalized_name) VALUES ($1, $2) RETURNING id",
+    [name, norm]
+  );
+  const artistId = (insert.rows[0] as { id: number }).id;
+  await pool.query(
+    "INSERT INTO artist_sources (artist_id, source_id, raw_name) VALUES ($1, $2, $3) ON CONFLICT (source_id, raw_name) DO NOTHING",
+    [artistId, sourceId, name]
+  );
+  return artistId;
 }
 
-async function getOrCreateLabel(name: string | null | undefined): Promise<number | null> {
-  if (!name || name.trim() === "") return null;
-  const rows = await query<{ id: number }>("SELECT id FROM labels WHERE name = $1 LIMIT 1", [name.trim()]);
-  if (rows.length > 0) return rows[0].id;
-  const insert = await pool.query("INSERT INTO labels (name) VALUES ($1) RETURNING id", [name.trim()]);
-  return (insert.rows[0] as { id: number }).id;
+async function getOrCreateLabel(
+  rawName: string | null | undefined,
+  sourceId: number
+): Promise<number | null> {
+  if (!rawName || rawName.trim() === "") return null;
+  const name = rawName.trim();
+  const norm = normalizeName(name);
+  const rows = await query<{ id: number }>(
+    "SELECT id FROM labels WHERE normalized_name = $1 LIMIT 1",
+    [norm]
+  );
+  if (rows.length > 0) {
+    const labelId = rows[0].id;
+    await pool.query(
+      "INSERT INTO label_sources (label_id, source_id, raw_name) VALUES ($1, $2, $3) ON CONFLICT (source_id, raw_name) DO NOTHING",
+      [labelId, sourceId, name]
+    );
+    return labelId;
+  }
+  const insert = await pool.query(
+    "INSERT INTO labels (name, normalized_name) VALUES ($1, $2) RETURNING id",
+    [name, norm]
+  );
+  const labelId = (insert.rows[0] as { id: number }).id;
+  await pool.query(
+    "INSERT INTO label_sources (label_id, source_id, raw_name) VALUES ($1, $2, $3) ON CONFLICT (source_id, raw_name) DO NOTHING",
+    [labelId, sourceId, name]
+  );
+  return labelId;
 }
 
 async function getOrCreateTrack(
@@ -78,8 +123,8 @@ async function insertChartEntries(
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     try {
-      const artistId = await getOrCreateArtist(entry.artistName);
-      const labelId = await getOrCreateLabel(entry.labelName);
+      const artistId = await getOrCreateArtist(entry.artistName, sourceId);
+      const labelId = await getOrCreateLabel(entry.labelName, sourceId);
       const trackId = await getOrCreateTrack(entry.trackTitle, artistId, labelId);
       const position = toPosition(entry, i);
 

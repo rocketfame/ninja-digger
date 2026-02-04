@@ -88,3 +88,17 @@ Definition of Done Фази 1: всі таблиці створені, зв’я
 - Щоденні снапшоти чартів зберігаються (chart mirror = основний трекінг).
 - Кілька джерел можуть співіснувати; Songstats підключається як ще один source без зміни ядра.
 - Немає залежності від зовнішнього API для MVP.
+
+---
+
+## Phase 3 — Normalization (Source-Agnostic) ✓
+
+- **Міграції:** `005_normalization_source_aware.sql` — `artists.normalized_name`, `labels.normalized_name`, таблиці `artist_sources`, `label_sources` (зв’язок нормалізованого ID з джерелом і raw-назвою). `006_views_normalized.sql` — view `artist_chart_stats`, `artist_chart_history`.
+- **Нормалізація назв:** `normalize/names.ts` — `normalizeName(str)` (trim, lowercase, collapse spaces). Використовується в ingest для зіставлення артистів/лейблів з різних джерел.
+- **Ingest:** `ingest/run.ts` — `getOrCreateArtist(name, sourceId)` і `getOrCreateLabel(name, sourceId)` шукають по `normalized_name`, створюють з `normalized_name`, записують у `artist_sources` / `label_sources`.
+
+### Definition of Done Фази 3
+
+- Один логічний артист = один ID (нормалізація по `normalized_name`).
+- Сирі дані джерел зберігаються (`artist_sources`, `label_sources`, raw у `chart_entries`).
+- Нормалізовані view стабільні: `artist_chart_stats`, `artist_chart_history`.
