@@ -184,13 +184,13 @@ export function parseChartEntries(
 
     const trackTitle =
       $el.find("[data-ec-dtr-detail='track'], .track-title, .title a, a[href*='/track/']").first().text().trim()
-      || $el.find("a").filter((_, a) => $(a).attr("href")?.includes("/track/")).first().text().trim();
+      || $el.find("a").filter((_, a) => ($(a).attr("href") ?? "").includes("/track/")).first().text().trim();
     const artistName =
       $el.find("[data-ec-dtr-detail='artist'], .artist a, a[href*='/artist/']").first().text().trim()
-      || $el.find("a").filter((_, a) => $(a).attr("href")?.includes("/artist/")).first().text().trim();
+      || $el.find("a").filter((_, a) => ($(a).attr("href") ?? "").includes("/artist/")).first().text().trim();
     const labelName =
       $el.find("[data-ec-dtr-detail='label'], .label a, a[href*='/label/']").first().text().trim()
-      || $el.find("a").filter((_, a) => $(a).attr("href")?.includes("/label/")).first().text().trim() || null;
+      || $el.find("a").filter((_, a) => ($(a).attr("href") ?? "").includes("/label/")).first().text().trim() || null;
 
     if (!trackTitle && !artistName) return;
     const key = `${pos}-${trackTitle}-${artistName}`;
