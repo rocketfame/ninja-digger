@@ -1,8 +1,16 @@
+import Link from "next/link";
+
 export default function Home() {
   return (
-    <main>
-      <h1>Ninja Digger</h1>
-      <p>Phase 0 — Foundation. No UI yet.</p>
+    <main className="min-h-screen bg-stone-50 px-4 py-8 text-stone-900">
+      <h1 className="mb-2 text-xl font-semibold">Ninja Digger</h1>
+      <p className="mb-4 text-stone-600">Beatport data research for manual outreach.</p>
+      <Link
+        href="/leads"
+        className="inline-block rounded bg-stone-800 px-3 py-2 text-sm text-white hover:bg-stone-700"
+      >
+        Leads
+      </Link>
     </main>
   );
 }

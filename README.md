@@ -118,3 +118,17 @@ Definition of Done Фази 1: всі таблиці створені, зв’я
 - Сегменти оновлюються автоматично (view завжди актуальні; таблиця — після cron).
 - Нові джерела не вимагають змін у логіці сегментації.
 - Оцінки детерміновані, пояснювані (SQL).
+
+---
+
+## Phase 5 — Minimal Research UI ✓
+
+- **Leads:** `/leads` — таблиця лідів з view `artist_lead_score`; фільтр по сегменту (all | core | regular | fresh | momentum | flyers); посилання на сторінку артиста.
+- **Artist:** `/artist/[id]` — деталі артиста (ім’я, segment, score, appearances, first/last seen), таблиця chart history (дата, source, позиція, тип, трек, лейбл), блок нотаток.
+- **Notes:** форма додавання нотатки (textarea + Save); server action `addNote` → INSERT у `artist_notes`, revalidate сторінки артиста.
+
+### Definition of Done Фази 5
+
+- Ліди переглядаються та фільтруються по сегменту.
+- Історія артиста видна на сторінці артиста.
+- Нотатки можна додавати та зберігати (read-only analytics + notes).

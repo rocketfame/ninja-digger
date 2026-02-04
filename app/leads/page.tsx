@@ -20,7 +20,8 @@ export default async function LeadsPage({
 }: {
   searchParams: Promise<{ segment?: string }>;
 }) {
-  const { segment: segmentFilter } = await searchParams();
+  const resolved = await searchParams;
+  const segmentFilter = resolved.segment;
   const segment =
     segmentFilter && SEGMENTS.includes(segmentFilter as (typeof SEGMENTS)[number])
       ? segmentFilter
