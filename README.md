@@ -4,6 +4,10 @@ Deterministic data-research tool for Beatport-related artists, DJs, and labels (
 
 **Stack:** Next.js (App Router), Vercel, Postgres, Songstats (Phase 2).
 
+### Deploy на Vercel
+
+У репозиторії є `vercel.json` з `"framework": "nextjs"` — Vercel використовує Next.js build, а не статичний output. Якщо в налаштуваннях проекту було вказано **Output Directory: public**, залиште його порожнім (або видаліть) — для Next.js output керує фреймворк.
+
 ---
 
 ## Phase 0 — Foundation ✓
@@ -40,6 +44,7 @@ No APIs, no data models, no UI beyond the placeholder home page.
 - **SQL schema:** `migrations/001_initial_schema.sql` — таблиці: `sources`, `artists`, `labels`, `tracks`, `chart_entries`, `lead_scores`, `artist_notes`, зв’язки та індекси.
 - **Міграції:** `npm run db:migrate` — виконує всі `migrations/*.sql` по черзі (потрібен `DATABASE_URL` у `.env`).
 - **Seed:** `migrations/002_seed.sql` — 1 джерело (Songstats test), 2 артисти, 1 лейбл, 2 треки.
+- **Жанри артиста:** `migrations/003_artist_genres.sql` — у таблиці `artists` поле `genres` (TEXT[]): один або кілька жанрів.
 
 ### Запуск міграцій
 
@@ -54,8 +59,8 @@ npm run db:migrate
 Після міграцій у БД можна виконати:
 
 ```sql
-SELECT a.id, a.name FROM artists a;
-SELECT t.title, a.name AS artist, l.name AS label
+SELECT a.id, a.name, a.genres FROM artists a;
+SELECT t.title, a.name AS artist, a.genres, l.name AS label
   FROM tracks t
   JOIN artists a ON t.artist_id = a.id
   LEFT JOIN labels l ON t.label_id = l.id;
