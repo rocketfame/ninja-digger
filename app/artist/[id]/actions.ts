@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { setEnrichment } from "@/enrich/bio";
+import { setOutreach, OUTREACH_STATUSES } from "@/lib/outreach";
 import { pool } from "@/lib/db";
 
 export type NoteFormState = { error: string | null };
@@ -48,6 +49,37 @@ export async function setEnrichmentAction(
   } catch (e) {
     return {
       error: e instanceof Error ? e.message : "Failed to save enrichment",
+    };
+  }
+}
+
+export type OutreachFormState = { error: string | null };
+
+export async function setOutreachAction(
+  _prev: OutreachFormState | null,
+  formData: FormData
+): Promise<OutreachFormState> {
+  const artistId = parseInt(String(formData.get("artistId") ?? ""), 10);
+  if (Number.isNaN(artistId)) return { error: "Invalid artist" };
+
+  const status = String(formData.get("status") ?? "not_started");
+  const validStatus = OUTREACH_STATUSES.includes(status as (typeof OUTREACH_STATUSES)[number])
+    ? status
+    : "not_started";
+
+  try {
+    await setOutreach(artistId, {
+      status: validStatus,
+      contact_email: (formData.get("contact_email") as string)?.trim() || null,
+      contact_other: (formData.get("contact_other") as string)?.trim() || null,
+      readiness: formData.get("readiness") === "1",
+    });
+    revalidatePath(`/artist/${artistId}`);
+    revalidatePath("/leads");
+    return { error: null };
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Failed to save outreach",
     };
   }
 }

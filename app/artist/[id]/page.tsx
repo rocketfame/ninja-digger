@@ -2,8 +2,10 @@ import Link from "next/link";
 import { query } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { getEnrichment } from "@/enrich/bio";
+import { getOutreach } from "@/lib/outreach";
 import { AddNoteForm } from "./AddNoteForm";
 import { EnrichmentForm } from "./EnrichmentForm";
+import { OutreachForm } from "./OutreachForm";
 
 type ArtistInfo = {
   artist_id: number;
@@ -85,11 +87,17 @@ export default async function ArtistPage({
   }
 
   let enrichment: Awaited<ReturnType<typeof getEnrichment>> = null;
+  let outreach: Awaited<ReturnType<typeof getOutreach>> = null;
   if (artist) {
     try {
       enrichment = await getEnrichment(artistId);
     } catch {
       enrichment = null;
+    }
+    try {
+      outreach = await getOutreach(artistId);
+    } catch {
+      outreach = null;
     }
   }
 
@@ -186,6 +194,12 @@ export default async function ArtistPage({
             <p className="mb-4 text-sm text-stone-500">No enrichment yet. Add below (optional).</p>
           )}
           <EnrichmentForm artistId={artistId} initial={enrichment} />
+        </section>
+
+        <section className="mb-6 rounded border border-stone-200 bg-white p-4">
+          <h2 className="mb-2 text-sm font-medium text-stone-500">Outreach</h2>
+          <p className="mb-3 text-xs text-stone-500">Manual tracking only. No messages sent automatically.</p>
+          <OutreachForm artistId={artistId} initial={outreach} />
         </section>
 
         <section className="rounded border border-stone-200 bg-white p-4">

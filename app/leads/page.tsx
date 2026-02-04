@@ -11,6 +11,8 @@ type LeadRow = {
   appearances: number;
   first_seen: string;
   last_seen: string;
+  outreach_status: string | null;
+  readiness: boolean | null;
 };
 
 export const dynamic = "force-dynamic";
@@ -33,17 +35,23 @@ export default async function LeadsPage({
   try {
     if (segment) {
       leads = await query<LeadRow>(
-        `SELECT artist_id, artist_name, segment, score::text, appearances, first_seen::text, last_seen::text
-         FROM artist_lead_score
-         WHERE segment = $1
-         ORDER BY score DESC NULLS LAST`,
+        `SELECT als.artist_id, als.artist_name, als.segment, als.score::text, als.appearances,
+                als.first_seen::text AS first_seen, als.last_seen::text AS last_seen,
+                lo.status AS outreach_status, lo.readiness
+         FROM artist_lead_score als
+         LEFT JOIN lead_outreach lo ON lo.artist_id = als.artist_id
+         WHERE als.segment = $1
+         ORDER BY als.score DESC NULLS LAST`,
         [segment]
       );
     } else {
       leads = await query<LeadRow>(
-        `SELECT artist_id, artist_name, segment, score::text, appearances, first_seen::text, last_seen::text
-         FROM artist_lead_score
-         ORDER BY score DESC NULLS LAST`
+        `SELECT als.artist_id, als.artist_name, als.segment, als.score::text, als.appearances,
+                als.first_seen::text AS first_seen, als.last_seen::text AS last_seen,
+                lo.status AS outreach_status, lo.readiness
+         FROM artist_lead_score als
+         LEFT JOIN lead_outreach lo ON lo.artist_id = als.artist_id
+         ORDER BY als.score DESC NULLS LAST`
       );
     }
   } catch (e) {
@@ -66,9 +74,10 @@ export default async function LeadsPage({
       <main className="mx-auto max-w-5xl px-4 py-6">
         <h1 className="mb-4 text-xl font-semibold">Leads</h1>
 
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <span className="text-sm text-stone-500">Segment:</span>
-          <Link
+        <div className="mb-4 flex flex-wrap items-center gap-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-stone-500">Segment:</span>
+            <Link
             href="/leads"
             className={`rounded px-2 py-1 text-sm ${!segment ? "bg-stone-800 text-white" : "bg-stone-200 text-stone-700 hover:bg-stone-300"}`}
           >
@@ -83,6 +92,15 @@ export default async function LeadsPage({
               {s}
             </Link>
           ))}
+          </div>
+          {!error && leads.length > 0 && (
+            <a
+              href={`/api/leads/export${segment ? `?segment=${segment}` : ""}`}
+              className="rounded bg-stone-700 px-3 py-1.5 text-sm text-white hover:bg-stone-600"
+            >
+              Export CSV
+            </a>
+          )}
         </div>
 
         {error && (
@@ -106,6 +124,8 @@ export default async function LeadsPage({
                   <th className="px-3 py-2 font-medium">Appearances</th>
                   <th className="px-3 py-2 font-medium">First seen</th>
                   <th className="px-3 py-2 font-medium">Last seen</th>
+                  <th className="px-3 py-2 font-medium">Status</th>
+                  <th className="px-3 py-2 font-medium">Ready</th>
                 </tr>
               </thead>
               <tbody>
@@ -127,6 +147,8 @@ export default async function LeadsPage({
                     <td className="px-3 py-2">{row.appearances}</td>
                     <td className="px-3 py-2">{row.first_seen}</td>
                     <td className="px-3 py-2">{row.last_seen}</td>
+                    <td className="px-3 py-2">{row.outreach_status ?? "—"}</td>
+                    <td className="px-3 py-2">{row.readiness ? "✓" : "—"}</td>
                   </tr>
                 ))}
               </tbody>

@@ -145,3 +145,17 @@ Definition of Done Фази 1: всі таблиці створені, зв’я
 
 - Enrichment зберігається окремо (не впливає на сегменти).
 - Немає залежності сегментації від enrichment; можна повністю вимкнути.
+
+---
+
+## Phase 7 — Outreach Support (Manual-First) ✓
+
+- **БД:** таблиця `lead_outreach` (artist_id, status, contact_email, contact_other, readiness, updated_at) — міграція 010. Статуси: not_started | contacted | replied | declined | converted.
+- **Логіка:** `lib/outreach.ts` — getOutreach(artistId), setOutreach(artistId, data).
+- **Сторінка артиста:** блок «Outreach» — форма (Status, Contact email, Contact other, Ready for outreach), server action setOutreachAction. Тільки ручне відстеження, жодних автоматичних листів/повідомлень.
+- **Сторінка лідів:** колонки Status та Ready; кнопка **Export CSV** — посилання на `GET /api/leads/export?segment=...`, відповідь `text/csv` з усіма полями лідів та outreach.
+
+### Definition of Done Фази 7
+
+- Ліди можна позначати (статус, контакти, readiness) та експортувати в CSV.
+- Підтримано ручний outreach workflow; нічого не відправляється автоматично.
