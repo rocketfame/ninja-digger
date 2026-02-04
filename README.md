@@ -2,7 +2,9 @@
 
 Deterministic data-research tool for Beatport-related artists, DJs, and labels (manual outreach support).
 
-**Stack:** Next.js (App Router), Vercel, Postgres, Songstats (Phase 2).
+**Stack:** Next.js (App Router), Vercel, Postgres. Chart mirrors first; Songstats optional later.
+
+**Plan:** [PROJECT_PLAN.md](./PROJECT_PLAN.md) — Phase 0–7, hybrid ingestion (chart mirrors primary; enterprise APIs pluggable).
 
 ### Deploy на Vercel
 
@@ -67,3 +69,22 @@ SELECT t.title, a.name AS artist, a.genres, l.name AS label
 ```
 
 Definition of Done Фази 1: всі таблиці створені, зв’язки задані, seed завантажений, схема стабільна. Інгestion, UI, enrichment, LLM — поки не використовуються.
+
+---
+
+## Phase 2 — Data Ingestion (Hybrid: Chart Mirrors First) ✓
+
+- **Інтерфейс:** `ingest/types.ts` — `ChartEntryInput`, `IngestionSource`. Будь-яке нове джерело реалізує `IngestionSource`; ніхто не пише в БД напряму.
+- **Chart mirror (primary):** `ingest/sources/beatport.ts` — `BeatportSource.fetchEntries(date)`. Зараз stub; парсинг додати пізніше.
+- **Опційний адаптер:** `ingest/songstats.ts` — `SongstatsSource` (вхід для майбутнього Songstats API).
+- **Єдиний запуск:** `ingest/run.ts` — `runIngest(sourceSlug, date)`, `SOURCES = { beatport, songstats }`. Міграція 004: `chart_type`, `genre`, `artist_name_raw`, `track_title_raw`.
+- **Cron:** `GET /api/cron/ingest` — за замовчуванням `source=beatport`; опційно `?source=songstats` або `?date=YYYY-MM-DD`. Захист: `Authorization: Bearer <CRON_SECRET>`.
+- **Cron (Vercel):** у `vercel.json` — щоденно о 06:00 UTC.
+
+
+
+### Definition of Done Фази 2 (гібрид)
+
+- Щоденні снапшоти чартів зберігаються (chart mirror = основний трекінг).
+- Кілька джерел можуть співіснувати; Songstats підключається як ще один source без зміни ядра.
+- Немає залежності від зовнішнього API для MVP.
