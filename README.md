@@ -6,6 +6,68 @@ Deterministic data-research tool for Beatport-related artists, DJs, and labels (
 
 **Plan:** [PROJECT_PLAN.md](./PROJECT_PLAN.md) — Phase 0–7, hybrid ingestion (chart mirrors primary; enterprise APIs pluggable).
 
+---
+
+## Як запустити в роботу (швидкий старт)
+
+Щоб зникло попередження «DATABASE_URL is not set» і з’явилися ліди на сторінці **Leads**, зробіть по порядку:
+
+### 1. База даних
+
+- Отримайте Postgres (наприклад [Neon](https://neon.tech), [Supabase](https://supabase.com) або Vercel Postgres).
+- Скопіюйте рядок підключення (Connection string) — він виглядає як  
+  `postgresql://user:password@host:5432/database?sslmode=require`.
+
+### 2. Локально
+
+```bash
+cp .env.example .env
+```
+
+Відкрийте `.env` і вставте свій рядок підключення:
+
+```env
+DATABASE_URL=postgresql://...ваш_рядок...
+```
+
+### 3. Міграції (таблиці в БД)
+
+```bash
+npm run db:migrate
+```
+
+Після цього попередження про DATABASE_URL має зникнути, сторінка Leads відкриватиметься (спочатку порожня).
+
+### 4. Звідки беруться ліди
+
+Ліди на сторінці **Leads** — це артисти з чартів Beatport (view `artist_lead_score`). Дані потрапляють у БД через **інгestion** (заповнення `chart_entries`).
+
+- **За замовчуванням** джерело — chart mirror **Beatport** (`ingest/sources/beatport.ts`). Зараз це **stub**: парсер ще не реалізований, тому даних з нього немає.
+- **Якщо є доступ до Songstats:** у `.env` додайте `SONGSTATS_API_KEY=...`. Потім викликайте інгestion для джерела `songstats` (один раз або по розкладу).
+
+**Запустити інгestion вручну (одним запитом):**
+
+```bash
+# Сьогоднішня дата, джерело songstats (потрібен SONGSTATS_API_KEY)
+curl "http://localhost:3000/api/cron/ingest?source=songstats"
+```
+
+Або відкрийте в браузері (коли додаток запущений через `npm run dev`):
+
+```
+http://localhost:3000/api/cron/ingest?source=songstats
+```
+
+Після успішного інгestion оновляються lead_scores. Оновіть сторінку **Leads** — з’являться рядки (якщо API повернув дані).
+
+**Якщо Songstats немає:** потрібно додати реальний парсинг у `ingest/sources/beatport.ts` (наприклад, отримання публічної сторінки чарту Beatport і заповнення масиву записів). Поки beatport — stub, ліди з чартів з’являться лише після підключення Songstats або реалізації mirror.
+
+### 5. Щоденний автоматичний збір (опційно)
+
+На Vercel у `vercel.json` налаштовано cron: щодня о 06:00 UTC викликається `/api/cron/ingest` (за замовчуванням джерело `beatport`). Якщо підключите Songstats і будете викликати інгestion з `?source=songstats` (наприклад, окремим cron-завданням), ліди будуть оновлюватись автоматично.
+
+---
+
 ### Deploy на Vercel
 
 У репозиторії є `vercel.json` з `"framework": "nextjs"` — Vercel використовує Next.js build, а не статичний output. Якщо в налаштуваннях проекту було вказано **Output Directory: public**, залиште його порожнім (або видаліть) — для Next.js output керує фреймворк.

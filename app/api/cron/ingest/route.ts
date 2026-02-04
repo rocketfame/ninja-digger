@@ -21,6 +21,10 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const dateParam = searchParams.get("date");
   const sourceSlug = searchParams.get("source") ?? "beatport";
+  const chartFamilyParam = searchParams.get("chart_family");
+  const chartFamily = chartFamilyParam
+    ? chartFamilyParam.split(",").map((s) => s.trim()).filter(Boolean)
+    : undefined;
   const chartDate =
     dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
       ? dateParam
@@ -34,14 +38,21 @@ export async function GET(request: Request) {
     );
   }
 
+  console.log("[cron/ingest] start", { source: sourceSlug, chartDate, chartFamily });
   try {
-    const result = await runIngest(sourceSlug, chartDate);
+    const result = await runIngest(sourceSlug, chartDate, { chartFamily });
     let leadScoresRefreshed = 0;
     try {
       leadScoresRefreshed = await refreshLeadScores();
     } catch (e) {
       console.warn("refresh_lead_scores failed (run migrations 007–008):", e);
     }
+    console.log("[cron/ingest] end", {
+      fetched: result.fetched,
+      inserted: result.inserted,
+      skipped: result.skipped,
+      leadScoresRefreshed,
+    });
     return NextResponse.json({
       ok: true,
       source: result.sourceName,
