@@ -8,6 +8,7 @@ import { runBeatportDiscovery } from "@/ingest/discovery/runDiscovery";
 import { runIngest } from "@/ingest/run";
 import { refreshArtistMetrics } from "@/segment/normalize";
 import { refreshLeadScoresV2 } from "@/segment/score";
+import { runBptoptrackerDailyUpdate } from "@/lib/bptoptrackerDaily";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 min — discovery може тривати
@@ -26,6 +27,7 @@ export async function GET(request: Request) {
     ok: boolean;
     discovery?: { genresFetched: number; upserted: number; errors: string[] };
     ingest?: { fetched: number; inserted: number; skipped: number };
+    bptoptracker?: { genres: string[]; inserted: number; skipped: number; errors: string[] };
     metricsUpdated?: number;
     scoresUpdated?: number;
     error?: string;
@@ -50,6 +52,16 @@ export async function GET(request: Request) {
       inserted: ingestResult.inserted,
       skipped: ingestResult.skipped,
     };
+
+    const bpt = await runBptoptrackerDailyUpdate();
+    if (bpt.genres.length > 0) {
+      result.bptoptracker = {
+        genres: bpt.genres,
+        inserted: bpt.inserted,
+        skipped: bpt.skipped,
+        errors: bpt.errors,
+      };
+    }
 
     const metricsUpdated = await refreshArtistMetrics();
     const scoresUpdated = await refreshLeadScoresV2();

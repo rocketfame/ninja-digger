@@ -133,7 +133,6 @@ export function DiscoveryControl() {
           <OracleModal
             open={oracleOpen}
             onClose={() => setOracleOpen(false)}
-            onAddToLeads={() => router.refresh()}
             onSaveSegment={() => router.refresh()}
           />
           {statusBadge[statusLabel as keyof typeof statusBadge]}

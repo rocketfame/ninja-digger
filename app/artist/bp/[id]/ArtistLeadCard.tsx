@@ -1,6 +1,9 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+
+const PROFILE_STATUSES = ["New", "Contacted", "In Progress", "Won", "Lost"] as const;
 
 type Artist = {
   artist_beatport_id: string;
@@ -14,28 +17,97 @@ type Artist = {
   signals: Record<string, unknown> | null;
 };
 
+type Profile = { status: string; notes: string | null };
+
+function whyThisLeadTeaser(segment: string | null, signals: Record<string, unknown> | null): string {
+  if (segment === "NEW_ENTRY") return "First seen in charts in the last 14 days.";
+  if (segment === "FAST_GROWING") return "Rising positions in the last 7 days.";
+  if (segment === "CONSISTENT") return "30+ days in charts — consistent presence.";
+  if (segment === "DECLINING") return "Recent dip in chart positions.";
+  if (segment === "TOP_PERFORMER") return "Top positions in charts.";
+  if (signals && typeof signals.best_position === "number" && signals.best_position <= 10) {
+    return `Best position: #${signals.best_position}.`;
+  }
+  return "Chart activity detected.";
+}
+
+type LinkRow = { type: string; url: string };
+type ContactRow = { type: string; value: string };
+
 export function ArtistLeadCard({
   artist,
   beatportUrl,
+  initialProfile,
+  links = [],
+  contacts = [],
 }: {
   artist: Artist;
   beatportUrl: string;
+  initialProfile?: Profile | null;
+  links?: LinkRow[];
+  contacts?: ContactRow[];
 }) {
+  const router = useRouter();
   const [copied, setCopied] = useState(false);
+  const [status, setStatus] = useState(initialProfile?.status ?? "New");
+  const [notes, setNotes] = useState(initialProfile?.notes ?? "");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [enrichLoading, setEnrichLoading] = useState(false);
+
+  useEffect(() => {
+    setStatus(initialProfile?.status ?? "New");
+    setNotes(initialProfile?.notes ?? "");
+  }, [initialProfile?.status, initialProfile?.notes]);
 
   const displayName = artist.artist_name ?? artist.artist_beatport_id;
   const genres = artist.genres ?? [];
   const segment = artist.segment ?? null;
 
+  const teaser = whyThisLeadTeaser(artist.segment ?? null, artist.signals ?? null);
   const outreachNote = [
     `Hi,`,
     ``,
-    `I came across your music on Beatport and wanted to reach out.`,
+    `I came across your music on Beatport${artist.segment ? ` (${artist.segment})` : ""} and wanted to reach out.`,
     ``,
     `Would you be open to a short chat about potential collaboration or licensing?`,
     ``,
     `Best,`,
   ].join("\n");
+
+  const saveProfile = useCallback(async (updates: { status?: string; notes?: string }) => {
+    setProfileSaving(true);
+    try {
+      const res = await fetch(`/api/internal/lead-profile/${artist.artist_beatport_id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      if (res.ok) router.refresh();
+    } finally {
+      setProfileSaving(false);
+    }
+  }, [artist.artist_beatport_id, router]);
+
+  const saveNotes = useCallback(() => {
+    saveProfile({ notes });
+  }, [notes, saveProfile]);
+
+  const markContacted = useCallback(() => {
+    setStatus("Contacted");
+    saveProfile({ status: "Contacted" });
+  }, [saveProfile]);
+
+  const runEnrichment = useCallback(async () => {
+    setEnrichLoading(true);
+    try {
+      const res = await fetch(`/api/internal/enrich/artist?artistId=${encodeURIComponent(artist.artist_beatport_id)}`, {
+        method: "POST",
+      });
+      if (res.ok) router.refresh();
+    } finally {
+      setEnrichLoading(false);
+    }
+  }, [artist.artist_beatport_id, router]);
 
   const copyOutreach = useCallback(async () => {
     try {
@@ -95,6 +167,7 @@ export function ArtistLeadCard({
             <span className="text-sm font-medium text-stone-700">Score: {artist.score}</span>
           )}
         </div>
+        <p className="mt-2 text-sm text-stone-500">Why this lead? {teaser}</p>
       </div>
 
       {/* Discovery: source, first seen, charts count */}
@@ -138,20 +211,93 @@ export function ArtistLeadCard({
               Beatport
             </a>
           </li>
+          {links.map((l) => (
+            <li key={l.type}>
+              <a
+                href={l.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-stone-700 underline hover:text-stone-900"
+              >
+                {l.type === "instagram" ? "Instagram" : l.type === "soundcloud" ? "SoundCloud" : l.type === "linktree" ? "Linktree" : l.type}
+              </a>
+            </li>
+          ))}
         </ul>
-        <p className="mt-1 text-xs text-stone-400">SoundCloud, Spotify, Instagram (enrichment v1)</p>
+        {links.length === 0 && (
+          <p className="mt-1 text-xs text-stone-400">Run Enrichment to find Instagram, SoundCloud, Linktree.</p>
+        )}
       </section>
 
-      {/* Contacts — placeholder until enrichment */}
+      {/* Contacts */}
       <section className="px-4 py-3 border-b border-stone-100">
         <h2 className="text-xs font-medium uppercase tracking-wide text-stone-400 mb-2">
           Contacts
         </h2>
-        <p className="text-sm text-stone-500">— Email, booking (after enrichment)</p>
+        {contacts.length > 0 ? (
+          <ul className="space-y-1 text-sm">
+            {contacts.map((c, i) => (
+              <li key={i}>
+                {c.type === "email" ? (
+                  <a href={`mailto:${c.value}`} className="text-stone-700 underline hover:text-stone-900">{c.value}</a>
+                ) : (
+                  <span>{c.value}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-stone-500">— Run Enrichment to find public emails from Linktree/bio.</p>
+        )}
+      </section>
+
+      {/* Notes & Status */}
+      <section className="px-4 py-3 border-b border-stone-100">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-stone-400 mb-2">
+          Notes &amp; Status
+        </h2>
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="text-sm text-stone-600">Status</label>
+            <select
+              value={status}
+              onChange={(e) => {
+                const v = e.target.value;
+                setStatus(v);
+                saveProfile({ status: v });
+              }}
+              disabled={profileSaving}
+              className="rounded border border-stone-300 px-2 py-1.5 text-sm"
+            >
+              {PROFILE_STATUSES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-stone-600 mb-1">Internal notes</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              onBlur={saveNotes}
+              placeholder="Notes…"
+              rows={3}
+              className="w-full rounded border border-stone-300 px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
       </section>
 
       {/* Actions */}
-      <section className="px-4 py-3 flex flex-wrap gap-2">
+      <section className="px-4 py-3 flex flex-wrap gap-2 items-center">
+        <button
+          type="button"
+          onClick={runEnrichment}
+          disabled={enrichLoading}
+          className="rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50"
+        >
+          {enrichLoading ? "Running…" : "Run Enrichment"}
+        </button>
         <button
           type="button"
           onClick={copyOutreach}
@@ -164,9 +310,15 @@ export function ArtistLeadCard({
           onClick={exportContact}
           className="rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
         >
-          Export contact
+          Export
         </button>
-        <span className="text-xs text-stone-400 self-center">Mark as contacted (coming soon)</span>
+        <button
+          type="button"
+          onClick={markContacted}
+          className="rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+        >
+          Mark contacted
+        </button>
       </section>
 
       {artist.signals && Object.keys(artist.signals).length > 0 && (

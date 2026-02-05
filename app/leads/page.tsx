@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { query } from "@/lib/db";
 import { DiscoveryControl } from "./DiscoveryControl";
+import { BptoptrackerBackfill } from "./BptoptrackerBackfill";
 
 const SEGMENTS_V2 = ["NEW_ENTRY", "CONSISTENT", "FAST_GROWING", "DECLINING", "TOP_PERFORMER"] as const;
 
@@ -77,6 +78,7 @@ export default async function LeadsPage({
         <h1 className="mb-4 text-xl font-semibold">Leads</h1>
 
         <DiscoveryControl />
+        <BptoptrackerBackfill />
 
         <div className="mb-4 flex flex-wrap items-center gap-4">
           <div className="flex flex-wrap items-center gap-2">

@@ -30,6 +30,9 @@ export default async function ArtistBeatportPage({
   if (!id) notFound();
 
   let artist: ArtistV2 | null = null;
+  let profile: { status: string; notes: string | null } | null = null;
+  let links: { type: string; url: string }[] = [];
+  let contacts: { type: string; value: string }[] = [];
   try {
     const rows = await query<ArtistV2>(
       `SELECT am.artist_beatport_id, am.artist_name,
@@ -43,6 +46,21 @@ export default async function ArtistBeatportPage({
       [id]
     );
     artist = rows[0] ?? null;
+    if (artist) {
+      const profRows = await query<{ status: string; notes: string | null }>(
+        `SELECT status, notes FROM lead_profiles WHERE artist_beatport_id = $1`,
+        [id]
+      );
+      profile = profRows[0] ?? null;
+      links = await query<{ type: string; url: string }>(
+        `SELECT type, url FROM artist_links WHERE artist_beatport_id = $1 ORDER BY type`,
+        [id]
+      );
+      contacts = await query<{ type: string; value: string }>(
+        `SELECT type, value FROM artist_contacts WHERE artist_beatport_id = $1`,
+        [id]
+      );
+    }
   } catch {
     artist = null;
   }
@@ -68,6 +86,9 @@ export default async function ArtistBeatportPage({
         <ArtistLeadCard
           artist={artist}
           beatportUrl={beatportUrl}
+          initialProfile={profile}
+          links={links}
+          contacts={contacts}
         />
       </main>
     </div>
