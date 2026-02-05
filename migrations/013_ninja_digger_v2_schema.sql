@@ -62,8 +62,8 @@ CREATE TABLE charts_catalog (
   notes TEXT
 );
 
-CREATE INDEX idx_charts_catalog_platform_active ON charts_catalog(platform, is_active);
-CREATE INDEX idx_charts_catalog_genre ON charts_catalog(genre_slug);
+CREATE INDEX idx_charts_catalog_v2_platform_active ON charts_catalog(platform, is_active);
+CREATE INDEX idx_charts_catalog_v2_genre ON charts_catalog(genre_slug);
 
 COMMENT ON TABLE charts_catalog IS 'v2: Beatport chart catalog; discovery fills this';
 
@@ -84,8 +84,8 @@ CREATE TABLE chart_entries (
   UNIQUE (chart_id, snapshot_date, position)
 );
 
-CREATE INDEX idx_chart_entries_artist_date ON chart_entries(artist_beatport_id, snapshot_date);
-CREATE INDEX idx_chart_entries_chart_date ON chart_entries(chart_id, snapshot_date);
+CREATE INDEX idx_chart_entries_v2_artist_date ON chart_entries(artist_beatport_id, snapshot_date);
+CREATE INDEX idx_chart_entries_v2_chart_date ON chart_entries(chart_id, snapshot_date);
 
 COMMENT ON TABLE chart_entries IS 'v2: raw chart snapshots; idempotent per (chart_id, snapshot_date, position)';
 
@@ -119,7 +119,7 @@ CREATE TABLE lead_scores (
   )
 );
 
-CREATE INDEX idx_lead_scores_segment ON lead_scores(segment);
+CREATE INDEX idx_lead_scores_v2_segment ON lead_scores(segment);
 
 COMMENT ON TABLE lead_scores IS 'v2: lead score and segment; filled by /api/cron/score';
 
