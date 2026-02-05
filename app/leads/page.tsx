@@ -138,7 +138,7 @@ export default async function LeadsPage({
                         href={`/artist/bp/${row.artist_beatport_id}`}
                         className="font-medium text-stone-900 underline hover:no-underline"
                       >
-                        {row.artist_name ?? row.artist_beatport_id || "—"}
+                        {(row.artist_name ?? row.artist_beatport_id) || "—"}
                       </Link>
                     </td>
                     <td className="px-3 py-2">{row.segment}</td>
