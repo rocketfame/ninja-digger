@@ -38,6 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_tracks_artist_id ON tracks(artist_id);
 CREATE INDEX IF NOT EXISTS idx_tracks_label_id  ON tracks(label_id);
 
 -- 5. chart_entries — записи в чартах (одне джерело, одна дата, позиція, трек)
+-- Skip if chart_entries already exists as v2 (013 applied).
 CREATE TABLE IF NOT EXISTS chart_entries (
   id         SERIAL PRIMARY KEY,
   source_id  INT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
@@ -48,10 +49,16 @@ CREATE TABLE IF NOT EXISTS chart_entries (
   UNIQUE (source_id, chart_date, position)
 );
 
-CREATE INDEX IF NOT EXISTS idx_chart_entries_source_date ON chart_entries(source_id, chart_date);
-CREATE INDEX IF NOT EXISTS idx_chart_entries_track_id    ON chart_entries(track_id);
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'chart_entries' AND column_name = 'source_id') THEN
+    CREATE INDEX IF NOT EXISTS idx_chart_entries_source_date ON chart_entries(source_id, chart_date);
+    CREATE INDEX IF NOT EXISTS idx_chart_entries_track_id ON chart_entries(track_id);
+  END IF;
+END $$;
 
 -- 6. lead_scores — оцінка/сегмент артиста (Фаза 4 заповнюватиме)
+-- Skip if lead_scores already exists as v2 (013 applied).
 CREATE TABLE IF NOT EXISTS lead_scores (
   id          SERIAL PRIMARY KEY,
   artist_id   INT NOT NULL UNIQUE REFERENCES artists(id) ON DELETE CASCADE,
@@ -60,8 +67,13 @@ CREATE TABLE IF NOT EXISTS lead_scores (
   computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_lead_scores_artist_id ON lead_scores(artist_id);
-CREATE INDEX IF NOT EXISTS idx_lead_scores_segment  ON lead_scores(segment);
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'lead_scores' AND column_name = 'artist_id') THEN
+    CREATE INDEX IF NOT EXISTS idx_lead_scores_artist_id ON lead_scores(artist_id);
+    CREATE INDEX IF NOT EXISTS idx_lead_scores_segment ON lead_scores(segment);
+  END IF;
+END $$;
 
 -- 7. artist_notes — ручні нотатки по артисту
 CREATE TABLE IF NOT EXISTS artist_notes (
