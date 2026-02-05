@@ -1,6 +1,7 @@
 -- Ninja Digger — v2 Schema (Technical Spec v2)
 -- Beatport-only, append-only history, artist_beatport_id as key.
 -- Run after 012. Drops legacy views/functions that depend on old chart_entries/lead_scores.
+-- Index names use _v2_ suffix to avoid conflict with legacy table indexes after RENAME.
 
 -- 1. Drop legacy views and function (depend on chart_entries by track_id, lead_scores by artist_id)
 DROP VIEW IF EXISTS artist_lead_score;
