@@ -16,7 +16,7 @@ async function updateRun(
   updates: {
     status?: string;
     stage?: string;
-    progress?: string;
+    progress?: string | null;
     finished_at?: Date | null;
     charts_count?: number | null;
     artists_count?: number | null;
