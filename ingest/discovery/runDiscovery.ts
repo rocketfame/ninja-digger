@@ -12,7 +12,8 @@ import {
 } from "./beatportDiscovery";
 
 const BEATPORT_ORIGIN = "https://www.beatport.com";
-const GENRE_INDEX_URL = process.env.BEATPORT_GENRE_INDEX_URL ?? BEATPORT_ORIGIN;
+// Charts page lists genres; homepage often has no /genre/ links in HTML.
+const GENRE_INDEX_URL = process.env.BEATPORT_GENRE_INDEX_URL ?? `${BEATPORT_ORIGIN}/charts`;
 const PLATFORM = "beatport";
 
 export type DiscoveryResult = {
