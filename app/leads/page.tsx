@@ -71,6 +71,10 @@ export default async function LeadsPage({
           </Link>
           <span className="text-stone-400">|</span>
           <span className="font-medium">Leads</span>
+          <span className="text-stone-400">|</span>
+          <Link href="/bptoptracker" className="text-stone-600 hover:text-stone-900">
+            Артисти з BP Top Tracker
+          </Link>
         </nav>
       </header>
 

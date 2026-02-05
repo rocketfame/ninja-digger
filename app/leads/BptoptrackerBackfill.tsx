@@ -94,6 +94,58 @@ export function BptoptrackerBackfill() {
           {message.text}
         </p>
       )}
+
+      <div className="mt-4 pt-4 border-t border-stone-200">
+        <p className="mb-2 text-xs text-stone-600">
+          Після backfill натисни «Синхронізувати ретро з лідами» — артисти, які збігаються за іменем з уже відомими (Beatport) або мають ручну привʼязку, потраплять у таблицю лідів нижче.
+        </p>
+        <BptoptrackerSyncButton onDone={() => router.refresh()} />
+      </div>
     </section>
+  );
+}
+
+function BptoptrackerSyncButton({ onDone }: { onDone: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const runSync = useCallback(async () => {
+    setLoading(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/internal/bptoptracker/sync", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setMsg({
+          ok: true,
+          text: `Додано ${data.chartEntriesInserted} записів, ${data.artistsMatched} артистів → оновлено ${data.metricsUpdated} метрик, ${data.scoresUpdated} лідів. ${data.errors?.length ? "Помилки: " + data.errors.slice(0, 3).join("; ") : ""}`,
+        });
+        onDone();
+      } else {
+        setMsg({ ok: false, text: data.error ?? "Failed" });
+      }
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Request failed" });
+    } finally {
+      setLoading(false);
+    }
+  }, [onDone]);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={runSync}
+        disabled={loading}
+        className="rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
+      >
+        {loading ? "Синхронізація…" : "Синхронізувати ретро з лідами"}
+      </button>
+      {msg && (
+        <p className={`mt-2 text-sm ${msg.ok ? "text-emerald-700" : "text-red-600"}`}>
+          {msg.text}
+        </p>
+      )}
+    </>
   );
 }
