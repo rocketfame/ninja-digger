@@ -1,20 +1,16 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 
-const SEGMENTS = ["core", "regular", "fresh", "momentum", "flyers"] as const;
+const SEGMENTS_V2 = ["NEW_ENTRY", "CONSISTENT", "FAST_GROWING", "DECLINING", "TOP_PERFORMER"] as const;
 
-type ExportRow = {
-  artist_id: number;
-  artist_name: string;
+type ExportRowV2 = {
+  artist_beatport_id: string;
+  artist_name: string | null;
   segment: string;
   score: string;
-  appearances: number;
-  first_seen: string;
-  last_seen: string;
-  status: string | null;
-  contact_email: string | null;
-  contact_other: string | null;
-  readiness: boolean | null;
+  total_chart_entries: number;
+  first_seen: string | null;
+  last_seen: string | null;
 };
 
 function escapeCsvCell(s: string | null | undefined): string {
@@ -32,68 +28,58 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const segmentParam = searchParams.get("segment");
   const segment =
-    segmentParam && SEGMENTS.includes(segmentParam as (typeof SEGMENTS)[number])
+    segmentParam && SEGMENTS_V2.includes(segmentParam as (typeof SEGMENTS_V2)[number])
       ? segmentParam
       : null;
 
-  let rows: ExportRow[] = [];
+  let rows: ExportRowV2[] = [];
   try {
     if (segment) {
-      rows = await query<ExportRow>(
-        `SELECT als.artist_id, als.artist_name, als.segment, als.score::text AS score,
-                als.appearances, als.first_seen::text AS first_seen, als.last_seen::text AS last_seen,
-                lo.status, lo.contact_email, lo.contact_other, lo.readiness
-         FROM artist_lead_score als
-         LEFT JOIN lead_outreach lo ON lo.artist_id = als.artist_id
-         WHERE als.segment = $1
-         ORDER BY als.score DESC NULLS LAST`,
+      rows = await query<ExportRowV2>(
+        `SELECT ls.artist_beatport_id, am.artist_name, ls.segment, ls.score::text AS score,
+                am.total_chart_entries, am.first_seen::text AS first_seen, am.last_seen::text AS last_seen
+         FROM lead_scores ls
+         LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
+         WHERE ls.segment = $1
+         ORDER BY ls.score DESC NULLS LAST`,
         [segment]
       );
     } else {
-      rows = await query<ExportRow>(
-        `SELECT als.artist_id, als.artist_name, als.segment, als.score::text AS score,
-                als.appearances, als.first_seen::text AS first_seen, als.last_seen::text AS last_seen,
-                lo.status, lo.contact_email, lo.contact_other, lo.readiness
-         FROM artist_lead_score als
-         LEFT JOIN lead_outreach lo ON lo.artist_id = als.artist_id
-         ORDER BY als.score DESC NULLS LAST`
+      rows = await query<ExportRowV2>(
+        `SELECT ls.artist_beatport_id, am.artist_name, ls.segment, ls.score::text AS score,
+                am.total_chart_entries, am.first_seen::text AS first_seen, am.last_seen::text AS last_seen
+         FROM lead_scores ls
+         LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
+         ORDER BY ls.score DESC NULLS LAST`
       );
     }
   } catch {
     return NextResponse.json(
-      { error: "Export failed. Run migrations 007–010." },
+      { error: "Export failed. Run migration 013." },
       { status: 500 }
     );
   }
 
   const headers = [
-    "artist_id",
+    "artist_beatport_id",
     "artist_name",
     "segment",
     "score",
     "appearances",
     "first_seen",
     "last_seen",
-    "outreach_status",
-    "contact_email",
-    "contact_other",
-    "readiness",
   ];
   const lines = [
     headers.join(","),
     ...rows.map((r) =>
       [
-        r.artist_id,
+        escapeCsvCell(r.artist_beatport_id),
         escapeCsvCell(r.artist_name),
         escapeCsvCell(r.segment),
         r.score,
-        r.appearances,
+        r.total_chart_entries,
         escapeCsvCell(r.first_seen),
         escapeCsvCell(r.last_seen),
-        escapeCsvCell(r.status),
-        escapeCsvCell(r.contact_email),
-        escapeCsvCell(r.contact_other),
-        r.readiness ? "1" : "0",
       ].join(",")
     ),
   ];

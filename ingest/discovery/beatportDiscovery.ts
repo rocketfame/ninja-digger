@@ -156,17 +156,27 @@ export type ChartMeta = {
   genre_slug: string | null;
 };
 
-/** Chart entry for ingestion (matches ChartEntryInput shape). */
+/** Chart entry for ingestion (v2: includes artist_slug, artist_beatport_id). */
 export type ParsedChartEntry = {
   position: number;
   trackTitle: string;
   artistName: string;
+  artistSlug: string;
+  artistBeatportId: string;
   labelName: string | null;
+  releaseTitle: string | null;
 };
 
+/** Extract artist slug and Beatport id from href like /artist/dj-name/12345 */
+function parseArtistHref(href: string): { slug: string; id: string } {
+  const match = href.match(/\/artist\/([^/]+)\/(\d+)/i) || href.match(/\/artist\/([^/]+)/i);
+  if (match) return { slug: match[1] ?? "", id: match[2] ?? "" };
+  return { slug: "", id: "" };
+}
+
 /**
- * Parse chart page HTML into entries (position, track, artist, label).
- * MVP: look for common patterns (data-position, track title link, artist link, label).
+ * Parse chart page HTML into entries (position, track, artist with slug/id, label, release).
+ * v2: returns artist_slug, artist_beatport_id, release_title when present.
  */
 export function parseChartEntries(
   html: string,
@@ -185,12 +195,20 @@ export function parseChartEntries(
     const trackTitle =
       $el.find("[data-ec-dtr-detail='track'], .track-title, .title a, a[href*='/track/']").first().text().trim()
       || $el.find("a").filter((_, a) => ($(a).attr("href") ?? "").includes("/track/")).first().text().trim();
-    const artistName =
-      $el.find("[data-ec-dtr-detail='artist'], .artist a, a[href*='/artist/']").first().text().trim()
+
+    const $artistLink = $el.find("a[href*='/artist/']").first();
+    const artistHref = $artistLink.attr("href") ?? "";
+    const artistName = $artistLink.text().trim()
+      || $el.find("[data-ec-dtr-detail='artist'], .artist a").first().text().trim()
       || $el.find("a").filter((_, a) => ($(a).attr("href") ?? "").includes("/artist/")).first().text().trim();
+    const { slug: artistSlug, id: artistBeatportId } = parseArtistHref(artistHref);
+
     const labelName =
       $el.find("[data-ec-dtr-detail='label'], .label a, a[href*='/label/']").first().text().trim()
       || $el.find("a").filter((_, a) => ($(a).attr("href") ?? "").includes("/label/")).first().text().trim() || null;
+
+    const releaseTitle =
+      $el.find("[data-ec-dtr-detail='release'], a[href*='/release/']").first().text().trim() || null;
 
     if (!trackTitle && !artistName) return;
     const key = `${pos}-${trackTitle}-${artistName}`;
@@ -201,7 +219,10 @@ export function parseChartEntries(
       position: Number.isFinite(pos) ? pos : entries.length + 1,
       trackTitle: trackTitle || "Unknown",
       artistName: artistName || "Unknown",
+      artistSlug: artistSlug || (artistName ? artistName.toLowerCase().replace(/\s+/g, "-") : ""),
+      artistBeatportId: artistBeatportId || "",
       labelName: labelName || null,
+      releaseTitle: releaseTitle || null,
     });
   });
 
@@ -210,14 +231,21 @@ export function parseChartEntries(
       const $a = $(el);
       const trackTitle = $a.text().trim();
       const $row = $a.closest("tr, li, [data-position]");
-      const artistName = $row.find("a[href*='/artist/']").first().text().trim() || "Unknown";
+      const $artistLink = $row.find("a[href*='/artist/']").first();
+      const artistHref = $artistLink.attr("href") ?? "";
+      const artistName = $artistLink.text().trim() || "Unknown";
+      const { slug: artistSlug, id: artistBeatportId } = parseArtistHref(artistHref);
       const labelName = $row.find("a[href*='/label/']").first().text().trim() || null;
+      const releaseTitle = $row.find("a[href*='/release/']").first().text().trim() || null;
       if (trackTitle) {
         entries.push({
           position: i + 1,
           trackTitle,
           artistName,
-          labelName,
+          artistSlug: artistSlug || artistName.toLowerCase().replace(/\s+/g, "-"),
+          artistBeatportId: artistBeatportId || "",
+          labelName: labelName || null,
+          releaseTitle: releaseTitle || null,
         });
       }
     });

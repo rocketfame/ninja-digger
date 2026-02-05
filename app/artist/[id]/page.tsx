@@ -53,7 +53,7 @@ export default async function ArtistPage({
       `SELECT a.id AS artist_id, a.name AS artist_name, ls.segment, ls.score::text AS score,
               acs.appearances, acs.first_seen::text AS first_seen, acs.last_seen::text AS last_seen
        FROM artists a
-       LEFT JOIN lead_scores ls ON ls.artist_id = a.id
+       LEFT JOIN lead_scores_legacy ls ON ls.artist_id = a.id
        LEFT JOIN artist_chart_stats acs ON acs.artist_id = a.id
        WHERE a.id = $1`,
       [artistId]
@@ -64,7 +64,7 @@ export default async function ArtistPage({
       chartHistory = await query<ChartRow>(
         `SELECT s.slug AS source_slug, ce.chart_date::text AS chart_date, ce.position,
                 ce.chart_type, ce.genre, t.title AS track_title, l.name AS label_name
-         FROM chart_entries ce
+         FROM chart_entries_legacy ce
          JOIN tracks t ON t.id = ce.track_id
          JOIN artists a ON a.id = t.artist_id
          LEFT JOIN labels l ON l.id = t.label_id

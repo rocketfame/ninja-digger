@@ -1,6 +1,6 @@
 /**
- * Run Beatport chart discovery: fetch genres → chart links → upsert charts_catalog.
- * Mark charts not seen this run as is_active=false (by last_seen_at threshold).
+ * Run Beatport chart discovery: fetch genres → chart links → upsert charts_catalog (v2).
+ * Mark charts not seen this run as is_active=false.
  */
 
 import { pool } from "@/lib/db";
@@ -13,7 +13,7 @@ import {
 
 const BEATPORT_ORIGIN = "https://www.beatport.com";
 const GENRE_INDEX_URL = process.env.BEATPORT_GENRE_INDEX_URL ?? BEATPORT_ORIGIN;
-const SOURCE = "beatport";
+const PLATFORM = "beatport";
 
 export type DiscoveryResult = {
   genresFetched: number;
@@ -43,6 +43,8 @@ export async function runBeatportDiscovery(): Promise<DiscoveryResult> {
       result.errors.push("No genres parsed from index; check BEATPORT_GENRE_INDEX_URL or page structure.");
     }
 
+    const today = new Date().toISOString().slice(0, 10);
+
     for (const genre of genres) {
       try {
         const genreHtml = await fetchHtml(genre.genre_url);
@@ -50,26 +52,26 @@ export async function runBeatportDiscovery(): Promise<DiscoveryResult> {
 
         for (const link of chartLinks) {
           seenUrlsThisRun.add(link.url);
-          const chartFamily = classifyChartFamily(link.url, link.title);
+          const chartType = classifyChartFamily(link.url, link.title);
 
           const upsertRes = await pool.query(
             `INSERT INTO charts_catalog (
-              source, url, chart_scope, chart_family, genre_slug, genre_name, title, is_active, last_seen_at, parse_version
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, true, now(), 'v1')
+              platform, chart_type, genre_slug, genre_name, url, is_active, discovered_at, last_checked_at, notes
+            ) VALUES ($1, $2, $3, $4, $5, true, $6::date, $6::date, $7)
             ON CONFLICT (url) DO UPDATE SET
-              last_seen_at = now(),
+              last_checked_at = $6::date,
               is_active = true,
-              title = COALESCE(EXCLUDED.title, charts_catalog.title),
+              chart_type = EXCLUDED.chart_type,
               genre_slug = COALESCE(EXCLUDED.genre_slug, charts_catalog.genre_slug),
               genre_name = COALESCE(EXCLUDED.genre_name, charts_catalog.genre_name),
-              chart_family = EXCLUDED.chart_family`,
+              notes = COALESCE(EXCLUDED.notes, charts_catalog.notes)`,
             [
-              SOURCE,
-              link.url,
-              "genre",
-              chartFamily,
+              PLATFORM,
+              chartType,
               genre.genre_slug,
               genre.genre_name,
+              link.url,
+              today,
               link.title ?? null,
             ]
           );
@@ -86,9 +88,8 @@ export async function runBeatportDiscovery(): Promise<DiscoveryResult> {
       const inactiveRes = await pool.query(
         `UPDATE charts_catalog
          SET is_active = false
-         WHERE source = $1 AND NOT (url = ANY($2::text[]))
-         RETURNING id`,
-        [SOURCE, seenArray]
+         WHERE platform = $1 AND NOT (url = ANY($2::text[]))`,
+        [PLATFORM, seenArray]
       );
       result.markedInactive = inactiveRes.rowCount ?? 0;
     }

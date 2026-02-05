@@ -1,12 +1,11 @@
 /**
- * Phase 2 (hybrid) — Cron endpoint for daily chart ingestion.
- * Primary source: beatport (chart mirror). Optional: ?source=songstats.
- * Vercel calls on schedule; CRON_SECRET optional.
+ * v2 — Cron: daily ingestion (Beatport only). After ingest runs normalize + score.
  */
 
 import { NextResponse } from "next/server";
 import { runIngest, getAvailableSources } from "@/ingest/run";
-import { refreshLeadScores } from "@/segment/refresh";
+import { refreshArtistMetrics } from "@/segment/normalize";
+import { refreshLeadScoresV2 } from "@/segment/score";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -41,17 +40,20 @@ export async function GET(request: Request) {
   console.log("[cron/ingest] start", { source: sourceSlug, chartDate, chartFamily });
   try {
     const result = await runIngest(sourceSlug, chartDate, { chartFamily });
-    let leadScoresRefreshed = 0;
+    let metricsUpdated = 0;
+    let scoresUpdated = 0;
     try {
-      leadScoresRefreshed = await refreshLeadScores();
+      metricsUpdated = await refreshArtistMetrics();
+      scoresUpdated = await refreshLeadScoresV2();
     } catch (e) {
-      console.warn("refresh_lead_scores failed (run migrations 007–008):", e);
+      console.warn("normalize/score failed (run migration 013):", e);
     }
     console.log("[cron/ingest] end", {
       fetched: result.fetched,
       inserted: result.inserted,
       skipped: result.skipped,
-      leadScoresRefreshed,
+      metricsUpdated,
+      scoresUpdated,
     });
     return NextResponse.json({
       ok: true,
@@ -60,7 +62,8 @@ export async function GET(request: Request) {
       fetched: result.fetched,
       inserted: result.inserted,
       skipped: result.skipped,
-      leadScoresRefreshed,
+      metricsUpdated,
+      scoresUpdated,
     });
   } catch (err) {
     console.error("Cron ingest error:", err);

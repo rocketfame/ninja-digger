@@ -1,18 +1,16 @@
 import Link from "next/link";
 import { query } from "@/lib/db";
 
-const SEGMENTS = ["core", "regular", "fresh", "momentum", "flyers"] as const;
+const SEGMENTS_V2 = ["NEW_ENTRY", "CONSISTENT", "FAST_GROWING", "DECLINING", "TOP_PERFORMER"] as const;
 
-type LeadRow = {
-  artist_id: number;
-  artist_name: string;
+type LeadRowV2 = {
+  artist_beatport_id: string;
+  artist_name: string | null;
   segment: string;
   score: string;
-  appearances: number;
-  first_seen: string;
-  last_seen: string;
-  outreach_status: string | null;
-  readiness: boolean | null;
+  total_chart_entries: number;
+  first_seen: string | null;
+  last_seen: string | null;
 };
 
 export const dynamic = "force-dynamic";
@@ -25,38 +23,41 @@ export default async function LeadsPage({
   const resolved = await searchParams;
   const segmentFilter = resolved.segment;
   const segment =
-    segmentFilter && SEGMENTS.includes(segmentFilter as (typeof SEGMENTS)[number])
+    segmentFilter && SEGMENTS_V2.includes(segmentFilter as (typeof SEGMENTS_V2)[number])
       ? segmentFilter
       : null;
 
-  let leads: LeadRow[] = [];
+  let leads: LeadRowV2[] = [];
   let error: string | null = null;
 
   try {
     if (segment) {
-      leads = await query<LeadRow>(
-        `SELECT als.artist_id, als.artist_name, als.segment, als.score::text, als.appearances,
-                als.first_seen::text AS first_seen, als.last_seen::text AS last_seen,
-                lo.status AS outreach_status, lo.readiness
-         FROM artist_lead_score als
-         LEFT JOIN lead_outreach lo ON lo.artist_id = als.artist_id
-         WHERE als.segment = $1
-         ORDER BY als.score DESC NULLS LAST`,
+      leads = await query<LeadRowV2>(
+        `SELECT ls.artist_beatport_id, am.artist_name, ls.segment, ls.score::text,
+                am.total_chart_entries, am.first_seen::text AS first_seen, am.last_seen::text AS last_seen
+         FROM lead_scores ls
+         LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
+         WHERE ls.segment = $1
+         ORDER BY ls.score DESC NULLS LAST`,
         [segment]
       );
     } else {
-      leads = await query<LeadRow>(
-        `SELECT als.artist_id, als.artist_name, als.segment, als.score::text, als.appearances,
-                als.first_seen::text AS first_seen, als.last_seen::text AS last_seen,
-                lo.status AS outreach_status, lo.readiness
-         FROM artist_lead_score als
-         LEFT JOIN lead_outreach lo ON lo.artist_id = als.artist_id
-         ORDER BY als.score DESC NULLS LAST`
+      leads = await query<LeadRowV2>(
+        `SELECT ls.artist_beatport_id, am.artist_name, ls.segment, ls.score::text,
+                am.total_chart_entries, am.first_seen::text AS first_seen, am.last_seen::text AS last_seen
+         FROM lead_scores ls
+         LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
+         ORDER BY ls.score DESC NULLS LAST`
       );
     }
   } catch (e) {
-    error =
-      e instanceof Error ? e.message : "Failed to load leads. Run migrations 007–008.";
+    const msg = e instanceof Error ? e.message : "Failed to load leads.";
+    if (msg.includes("DATABASE_URL")) {
+      error =
+        "Add DATABASE_URL to your environment (.env locally or Vercel → Settings → Environment Variables). Then run discovery, ingest, normalize and score so leads appear here.";
+    } else {
+      error = msg;
+    }
   }
 
   return (
@@ -78,20 +79,20 @@ export default async function LeadsPage({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-stone-500">Segment:</span>
             <Link
-            href="/leads"
-            className={`rounded px-2 py-1 text-sm ${!segment ? "bg-stone-800 text-white" : "bg-stone-200 text-stone-700 hover:bg-stone-300"}`}
-          >
-            all
-          </Link>
-          {SEGMENTS.map((s) => (
-            <Link
-              key={s}
-              href={`/leads?segment=${s}`}
-              className={`rounded px-2 py-1 text-sm ${segment === s ? "bg-stone-800 text-white" : "bg-stone-200 text-stone-700 hover:bg-stone-300"}`}
+              href="/leads"
+              className={`rounded px-2 py-1 text-sm ${!segment ? "bg-stone-800 text-white" : "bg-stone-200 text-stone-700 hover:bg-stone-300"}`}
             >
-              {s}
+              all
             </Link>
-          ))}
+            {SEGMENTS_V2.map((s) => (
+              <Link
+                key={s}
+                href={`/leads?segment=${s}`}
+                className={`rounded px-2 py-1 text-sm ${segment === s ? "bg-stone-800 text-white" : "bg-stone-200 text-stone-700 hover:bg-stone-300"}`}
+              >
+                {s}
+              </Link>
+            ))}
           </div>
           {!error && leads.length > 0 && (
             <a
@@ -110,7 +111,7 @@ export default async function LeadsPage({
         )}
 
         {!error && leads.length === 0 && (
-          <p className="text-stone-500">No leads yet. Run ingestion and migrations.</p>
+          <p className="text-stone-500">No leads yet. Run discovery, ingest, normalize and score (migration 013).</p>
         )}
 
         {!error && leads.length > 0 && (
@@ -124,31 +125,27 @@ export default async function LeadsPage({
                   <th className="px-3 py-2 font-medium">Appearances</th>
                   <th className="px-3 py-2 font-medium">First seen</th>
                   <th className="px-3 py-2 font-medium">Last seen</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="px-3 py-2 font-medium">Ready</th>
                 </tr>
               </thead>
               <tbody>
                 {leads.map((row) => (
                   <tr
-                    key={row.artist_id}
+                    key={row.artist_beatport_id}
                     className="border-b border-stone-100 hover:bg-stone-50"
                   >
                     <td className="px-3 py-2">
                       <Link
-                        href={`/artist/${row.artist_id}`}
+                        href={`/artist/bp/${row.artist_beatport_id}`}
                         className="font-medium text-stone-900 underline hover:no-underline"
                       >
-                        {row.artist_name}
+                        {row.artist_name ?? row.artist_beatport_id || "—"}
                       </Link>
                     </td>
                     <td className="px-3 py-2">{row.segment}</td>
                     <td className="px-3 py-2">{row.score}</td>
-                    <td className="px-3 py-2">{row.appearances}</td>
-                    <td className="px-3 py-2">{row.first_seen}</td>
-                    <td className="px-3 py-2">{row.last_seen}</td>
-                    <td className="px-3 py-2">{row.outreach_status ?? "—"}</td>
-                    <td className="px-3 py-2">{row.readiness ? "✓" : "—"}</td>
+                    <td className="px-3 py-2">{row.total_chart_entries}</td>
+                    <td className="px-3 py-2">{row.first_seen ?? "—"}</td>
+                    <td className="px-3 py-2">{row.last_seen ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>
