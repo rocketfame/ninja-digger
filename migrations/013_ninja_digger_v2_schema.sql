@@ -10,13 +10,28 @@ DROP VIEW IF EXISTS artist_chart_stats;
 DROP VIEW IF EXISTS artist_chart_history;
 DROP FUNCTION IF EXISTS refresh_lead_scores();
 
--- 2. Rename existing tables to _legacy
-ALTER TABLE IF EXISTS charts_catalog RENAME TO charts_catalog_legacy;
-ALTER TABLE IF EXISTS chart_entries RENAME TO chart_entries_legacy;
-ALTER TABLE IF EXISTS lead_scores RENAME TO lead_scores_legacy;
+-- 2. Rename existing tables to _legacy only when current table is legacy and _legacy does not exist (idempotent re-run)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'charts_catalog' AND column_name = 'source')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'charts_catalog_legacy') THEN
+    ALTER TABLE charts_catalog RENAME TO charts_catalog_legacy;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'chart_entries' AND column_name = 'track_id')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'chart_entries_legacy') THEN
+    ALTER TABLE chart_entries RENAME TO chart_entries_legacy;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'lead_scores' AND column_name = 'artist_id')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'lead_scores_legacy') THEN
+    ALTER TABLE lead_scores RENAME TO lead_scores_legacy;
+  END IF;
+END $$;
 
--- Recreate views that depended on old chart_entries/lead_scores so legacy artist page still works
-CREATE OR REPLACE VIEW artist_chart_stats AS
+-- Recreate views that depended on old chart_entries/lead_scores so legacy artist page still works (only if legacy table exists)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'chart_entries_legacy') THEN
+    CREATE OR REPLACE VIEW artist_chart_stats AS
 SELECT
   a.id AS artist_id,
   a.name AS artist_name,
@@ -48,9 +63,11 @@ JOIN chart_entries_legacy ce ON ce.track_id = t.id
 LEFT JOIN labels l ON l.id = t.label_id
 JOIN sources s ON s.id = ce.source_id
 ORDER BY ce.chart_date DESC, ce.position;
+  END IF;
+END $$;
 
 -- 3. charts_catalog (v2)
-CREATE TABLE charts_catalog (
+CREATE TABLE IF NOT EXISTS charts_catalog (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   platform TEXT NOT NULL DEFAULT 'beatport',
   chart_type TEXT NOT NULL,
@@ -63,13 +80,13 @@ CREATE TABLE charts_catalog (
   notes TEXT
 );
 
-CREATE INDEX idx_charts_catalog_v2_platform_active ON charts_catalog(platform, is_active);
-CREATE INDEX idx_charts_catalog_v2_genre ON charts_catalog(genre_slug);
+CREATE INDEX IF NOT EXISTS idx_charts_catalog_v2_platform_active ON charts_catalog(platform, is_active);
+CREATE INDEX IF NOT EXISTS idx_charts_catalog_v2_genre ON charts_catalog(genre_slug);
 
 COMMENT ON TABLE charts_catalog IS 'v2: Beatport chart catalog; discovery fills this';
 
 -- 4. chart_entries (v2) — raw snapshots, append-only
-CREATE TABLE chart_entries (
+CREATE TABLE IF NOT EXISTS chart_entries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   chart_id UUID NOT NULL REFERENCES charts_catalog(id) ON DELETE CASCADE,
   snapshot_date DATE NOT NULL,
@@ -85,13 +102,13 @@ CREATE TABLE chart_entries (
   UNIQUE (chart_id, snapshot_date, position)
 );
 
-CREATE INDEX idx_chart_entries_v2_artist_date ON chart_entries(artist_beatport_id, snapshot_date);
-CREATE INDEX idx_chart_entries_v2_chart_date ON chart_entries(chart_id, snapshot_date);
+CREATE INDEX IF NOT EXISTS idx_chart_entries_v2_artist_date ON chart_entries(artist_beatport_id, snapshot_date);
+CREATE INDEX IF NOT EXISTS idx_chart_entries_v2_chart_date ON chart_entries(chart_id, snapshot_date);
 
 COMMENT ON TABLE chart_entries IS 'v2: raw chart snapshots; idempotent per (chart_id, snapshot_date, position)';
 
 -- 5. artist_metrics (v2) — derived, recalculated by normalize job
-CREATE TABLE artist_metrics (
+CREATE TABLE IF NOT EXISTS artist_metrics (
   artist_beatport_id TEXT PRIMARY KEY,
   artist_name TEXT,
   first_seen DATE,
@@ -109,7 +126,7 @@ CREATE TABLE artist_metrics (
 COMMENT ON TABLE artist_metrics IS 'v2: aggregated metrics per artist; filled by /api/cron/normalize';
 
 -- 6. lead_scores (v2)
-CREATE TABLE lead_scores (
+CREATE TABLE IF NOT EXISTS lead_scores (
   artist_beatport_id TEXT PRIMARY KEY,
   score NUMERIC NOT NULL,
   segment TEXT NOT NULL,
@@ -120,7 +137,7 @@ CREATE TABLE lead_scores (
   )
 );
 
-CREATE INDEX idx_lead_scores_v2_segment ON lead_scores(segment);
+CREATE INDEX IF NOT EXISTS idx_lead_scores_v2_segment ON lead_scores(segment);
 
 COMMENT ON TABLE lead_scores IS 'v2: lead score and segment; filled by /api/cron/score';
 
