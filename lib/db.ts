@@ -2,14 +2,23 @@ import { Pool } from "pg";
 
 let _pool: Pool | null = null;
 
+/** Normalize DATABASE_URL so pg does not emit SSL mode warning (require/prefer/verify-ca → verify-full). */
+function normalizeConnectionString(url: string): string {
+  return url
+    .replace(/([?&])sslmode=require\b/gi, "$1sslmode=verify-full")
+    .replace(/([?&])sslmode=prefer\b/gi, "$1sslmode=verify-full")
+    .replace(/([?&])sslmode=verify-ca\b/gi, "$1sslmode=verify-full");
+}
+
 function getPool(): Pool {
   if (!_pool) {
-    const connectionString = process.env.DATABASE_URL;
+    let connectionString = process.env.DATABASE_URL;
     if (!connectionString) {
       throw new Error(
         "DATABASE_URL is not set. Copy .env.example to .env and configure Postgres."
       );
     }
+    connectionString = normalizeConnectionString(connectionString);
     _pool = new Pool({
       connectionString,
       max: 10,

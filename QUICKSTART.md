@@ -22,8 +22,10 @@ cp .env.example .env
 Відкрий `.env` і встав **тільки** рядок з базою:
 
 ```
-DATABASE_URL=postgresql://user:password@host:5432/database?sslmode=require
+DATABASE_URL=postgresql://user:password@host:5432/database?sslmode=verify-full
 ```
+
+(Якщо бачиш попередження pg про SSL — зміни в URL `sslmode=require` на `sslmode=verify-full` або додай `uselibpqcompat=true&` перед `sslmode=require`.)
 
 (Підстав свої `user`, `password`, `host`, `database`.)
 
