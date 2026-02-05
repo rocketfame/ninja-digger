@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { query } from "@/lib/db";
+import { DiscoveryControl } from "./DiscoveryControl";
 
 const SEGMENTS_V2 = ["NEW_ENTRY", "CONSISTENT", "FAST_GROWING", "DECLINING", "TOP_PERFORMER"] as const;
 
@@ -74,6 +75,8 @@ export default async function LeadsPage({
 
       <main className="mx-auto max-w-5xl px-4 py-6">
         <h1 className="mb-4 text-xl font-semibold">Leads</h1>
+
+        <DiscoveryControl />
 
         <div className="mb-4 flex flex-wrap items-center gap-4">
           <div className="flex flex-wrap items-center gap-2">

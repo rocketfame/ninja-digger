@@ -1,0 +1,158 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+
+type Run = {
+  id: string;
+  status: string;
+  stage: string | null;
+  progress: string | null;
+  started_at: string;
+  finished_at: string | null;
+  charts_count: number | null;
+  artists_count: number | null;
+  leads_count: number | null;
+  error_message: string | null;
+};
+
+const POLL_INTERVAL_MS = 2500;
+
+function formatTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZoneName: "short",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+export function DiscoveryControl() {
+  const [run, setRun] = useState<Run | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [trigger, setTrigger] = useState(0);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/internal/discovery/status");
+      const data = await res.json();
+      setRun(data.run ?? null);
+    } catch {
+      setRun(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStatus();
+  }, [fetchStatus, trigger]);
+
+  useEffect(() => {
+    if (!loading && run?.status !== "running") return;
+    const t = setInterval(fetchStatus, POLL_INTERVAL_MS);
+    return () => clearInterval(t);
+  }, [loading, run?.status, fetchStatus]);
+
+  const handleRun = async () => {
+    if (loading || run?.status === "running") return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/internal/discovery/run", { method: "POST" });
+      const data = await res.json();
+      if (data.run) setRun(data.run);
+      else setTrigger((x) => x + 1);
+    } catch {
+      setTrigger((x) => x + 1);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isRunning = run?.status === "running" || loading;
+  const lastRun = run?.finished_at ? run.started_at : null;
+  const statusLabel =
+    run?.status === "running"
+      ? "Running"
+      : run?.status === "completed"
+        ? "Completed"
+        : run?.status === "error"
+          ? "Error"
+          : "Idle";
+
+  const statusBadge = {
+    Idle: (
+      <span className="inline-flex items-center gap-1 rounded-full bg-stone-200 px-2 py-0.5 text-xs font-medium text-stone-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Idle
+      </span>
+    ),
+    Running: (
+      <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" /> Running…
+      </span>
+    ),
+    Completed: (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Completed
+      </span>
+    ),
+    Error: (
+      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+        <span className="h-1.5 w-1.5 rounded-full bg-red-500" /> Error
+      </span>
+    ),
+  };
+
+  return (
+    <section className="mb-6 rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={isRunning}
+            className="rounded-lg bg-stone-800 px-4 py-2 text-sm font-medium text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isRunning ? "Running… ⏳" : "Run Discovery"}
+          </button>
+          {statusBadge[statusLabel as keyof typeof statusBadge]}
+          {lastRun && (
+            <span className="text-xs text-stone-500">
+              Last run: {formatTime(lastRun)}
+            </span>
+          )}
+        </div>
+        {(run?.charts_count != null || run?.artists_count != null || run?.leads_count != null) && (
+          <div className="flex flex-wrap gap-4 text-xs text-stone-500">
+            {run.charts_count != null && (
+              <span>{run.charts_count} charts</span>
+            )}
+            {run.artists_count != null && (
+              <span>{run.artists_count} artists</span>
+            )}
+            {run.leads_count != null && (
+              <span>{run.leads_count} leads</span>
+            )}
+          </div>
+        )}
+      </div>
+      {run?.status === "running" && run.progress && (
+        <p className="mt-2 text-sm text-stone-600">{run.progress}</p>
+      )}
+      {run?.status === "completed" && (
+        <p className="mt-2 text-sm text-emerald-700">
+          ✔ Discovery completed
+          {run.artists_count != null && ` · ${run.artists_count} artists`}
+          {run.leads_count != null && ` · ${run.leads_count} leads`}
+        </p>
+      )}
+      {run?.status === "error" && run.error_message && (
+        <p className="mt-2 text-sm text-red-600">{run.error_message}</p>
+      )}
+    </section>
+  );
+}
