@@ -5,5 +5,8 @@ ALTER TABLE chart_entries
   DROP CONSTRAINT IF EXISTS chart_entries_source_id_chart_date_position_key;
 
 ALTER TABLE chart_entries
+  DROP CONSTRAINT IF EXISTS chart_entries_source_date_position_type_key;
+
+ALTER TABLE chart_entries
   ADD CONSTRAINT chart_entries_source_date_position_type_key
   UNIQUE (source_id, chart_date, position, chart_type);
