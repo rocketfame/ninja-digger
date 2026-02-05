@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { OracleModal } from "./OracleModal";
 
 type Run = {
   id: string;
@@ -37,6 +39,8 @@ export function DiscoveryControl() {
   const [run, setRun] = useState<Run | null>(null);
   const [loading, setLoading] = useState(false);
   const [trigger, setTrigger] = useState(0);
+  const [oracleOpen, setOracleOpen] = useState(false);
+  const router = useRouter();
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -119,6 +123,19 @@ export function DiscoveryControl() {
           >
             {isRunning ? "Running… ⏳" : "Run Discovery"}
           </button>
+          <button
+            type="button"
+            onClick={() => setOracleOpen(true)}
+            className="rounded-lg border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-stone-50"
+          >
+            Oracle Mode
+          </button>
+          <OracleModal
+            open={oracleOpen}
+            onClose={() => setOracleOpen(false)}
+            onAddToLeads={() => router.refresh()}
+            onSaveSegment={() => router.refresh()}
+          />
           {statusBadge[statusLabel as keyof typeof statusBadge]}
           {lastRun && (
             <span className="text-xs text-stone-500">

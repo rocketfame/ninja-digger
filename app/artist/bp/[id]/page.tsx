@@ -1,16 +1,19 @@
 import Link from "next/link";
 import { query } from "@/lib/db";
 import { notFound } from "next/navigation";
+import { ArtistLeadCard } from "./ArtistLeadCard";
 
 type ArtistV2 = {
   artist_beatport_id: string;
   artist_name: string | null;
+  artist_slug: string | null;
   first_seen: string | null;
   last_seen: string | null;
   total_days_in_charts: number | null;
   total_chart_entries: number | null;
   avg_position: string | null;
   best_position: number | null;
+  genres: string[] | null;
   segment: string | null;
   score: string | null;
   signals: Record<string, unknown> | null;
@@ -29,9 +32,11 @@ export default async function ArtistBeatportPage({
   let artist: ArtistV2 | null = null;
   try {
     const rows = await query<ArtistV2>(
-      `SELECT am.artist_beatport_id, am.artist_name, am.first_seen::text, am.last_seen::text,
+      `SELECT am.artist_beatport_id, am.artist_name,
+              (SELECT ce.artist_slug FROM chart_entries ce WHERE ce.artist_beatport_id = am.artist_beatport_id AND ce.artist_slug IS NOT NULL AND ce.artist_slug <> '' ORDER BY ce.snapshot_date DESC LIMIT 1) AS artist_slug,
+              am.first_seen::text, am.last_seen::text,
               am.total_days_in_charts, am.total_chart_entries, am.avg_position::text, am.best_position,
-              ls.segment, ls.score::text, ls.signals
+              am.genres, ls.segment, ls.score::text, ls.signals
        FROM artist_metrics am
        LEFT JOIN lead_scores ls ON ls.artist_beatport_id = am.artist_beatport_id
        WHERE am.artist_beatport_id = $1`,
@@ -43,6 +48,9 @@ export default async function ArtistBeatportPage({
   }
 
   if (!artist) notFound();
+
+  const beatportUrl =
+    `https://www.beatport.com/artist/${(artist.artist_slug || "artist").replace(/^\/+|\/+$/g, "")}/${artist.artist_beatport_id}`;
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900">
@@ -57,28 +65,10 @@ export default async function ArtistBeatportPage({
       </header>
 
       <main className="mx-auto max-w-2xl px-4 py-6">
-        <h1 className="mb-4 text-xl font-semibold">{artist.artist_name ?? artist.artist_beatport_id}</h1>
-        <p className="mb-2 text-sm text-stone-500">Beatport ID: {artist.artist_beatport_id}</p>
-
-        <dl className="space-y-2 text-sm">
-          <div><dt className="font-medium text-stone-500">Segment</dt><dd>{artist.segment ?? "—"}</dd></div>
-          <div><dt className="font-medium text-stone-500">Score</dt><dd>{artist.score ?? "—"}</dd></div>
-          <div><dt className="font-medium text-stone-500">First seen</dt><dd>{artist.first_seen ?? "—"}</dd></div>
-          <div><dt className="font-medium text-stone-500">Last seen</dt><dd>{artist.last_seen ?? "—"}</dd></div>
-          <div><dt className="font-medium text-stone-500">Days in charts</dt><dd>{artist.total_days_in_charts ?? "—"}</dd></div>
-          <div><dt className="font-medium text-stone-500">Chart entries</dt><dd>{artist.total_chart_entries ?? "—"}</dd></div>
-          <div><dt className="font-medium text-stone-500">Avg position</dt><dd>{artist.avg_position ?? "—"}</dd></div>
-          <div><dt className="font-medium text-stone-500">Best position</dt><dd>{artist.best_position ?? "—"}</dd></div>
-        </dl>
-
-        {artist.signals && Object.keys(artist.signals).length > 0 && (
-          <section className="mt-6">
-            <h2 className="mb-2 text-sm font-medium text-stone-500">Signals</h2>
-            <pre className="overflow-auto rounded bg-stone-100 p-3 text-xs">
-              {JSON.stringify(artist.signals, null, 2)}
-            </pre>
-          </section>
-        )}
+        <ArtistLeadCard
+          artist={artist}
+          beatportUrl={beatportUrl}
+        />
       </main>
     </div>
   );

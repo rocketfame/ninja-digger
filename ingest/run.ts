@@ -7,8 +7,17 @@ import { query, pool } from "@/lib/db";
 import type { IngestionSource, IngestResult } from "@/ingest/types";
 import { BeatportSource } from "@/ingest/sources/beatport";
 import { SongstatsSource } from "@/ingest/songstats";
-import { fetchHtml, parseChartEntries } from "@/ingest/discovery/beatportDiscovery";
+import {
+  fetchHtml,
+  parseChartEntries,
+  classifyChartFamily,
+} from "@/ingest/discovery/beatportDiscovery";
 import type { ParsedChartEntry } from "@/ingest/discovery/beatportDiscovery";
+
+function extractGenreFromUrl(url: string): string | null {
+  const match = url.match(/\/genre\/([^/]+)/i);
+  return match ? match[1] : null;
+}
 
 export const SOURCES: Record<string, IngestionSource> = {
   beatport: BeatportSource,
@@ -152,4 +161,54 @@ export async function runIngest(
   }
 
   throw new Error("v2: Only beatport ingestion is supported. Other sources (e.g. songstats) are optional later.");
+}
+
+/**
+ * Oracle / Add to Leads: ensure one Beatport chart URL is in catalog, then ingest it.
+ * Returns chart id and ingest result. Caller should run normalize + score after.
+ */
+export async function ensureChartInCatalogAndIngest(
+  chartUrl: string,
+  snapshotDate: string
+): Promise<{ chartId: string; result: IngestResult }> {
+  const url = chartUrl.trim();
+  if (!url) throw new Error("Chart URL is required.");
+  if (!url.includes("beatport.com")) throw new Error("Only Beatport chart URLs are supported.");
+
+  const chartType = classifyChartFamily(url, null);
+  const genreSlug = extractGenreFromUrl(url);
+
+  const existing = await query<{ id: string }>(
+    `SELECT id FROM charts_catalog WHERE url = $1 AND platform = 'beatport'`,
+    [url]
+  );
+  let chartId: string;
+  if (existing.length > 0) {
+    chartId = existing[0].id;
+  } else {
+    const ins = await pool.query<{ id: string }>(
+      `INSERT INTO charts_catalog (platform, chart_type, genre_slug, url, is_active, discovered_at, last_checked_at)
+       VALUES ('beatport', $1, $2, $3, true, CURRENT_DATE, CURRENT_DATE)
+       RETURNING id`,
+      [chartType, genreSlug, url]
+    );
+    chartId = ins.rows[0]?.id;
+    if (!chartId) throw new Error("Failed to insert chart into catalog.");
+  }
+
+  const html = await fetchHtml(url);
+  const parsed = parseChartEntries(html, { chart_family: chartType, genre_slug: genreSlug });
+  const { inserted, skipped } = await insertChartEntriesV2(chartId, snapshotDate, parsed);
+
+  return {
+    chartId,
+    result: {
+      sourceId: 0,
+      sourceName: "beatport",
+      chartDate: snapshotDate,
+      fetched: parsed.length,
+      inserted,
+      skipped,
+    },
+  };
 }
