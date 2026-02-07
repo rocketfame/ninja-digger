@@ -107,7 +107,90 @@ export function BptoptrackerBackfill() {
         </p>
         <BptoptrackerSyncButton onDone={() => router.refresh()} />
       </div>
+
+      <div className="mt-4 pt-4 border-t border-stone-200">
+        <h3 className="mb-1 text-sm font-medium text-stone-700">Імпорт з буфера</h3>
+        <p className="mb-2 text-xs text-stone-500">
+          Чарт на bptoptracker рендериться через JS, тому автоматичний backfill не бачить таблицю. Відкрий чарт у браузері, виділи всю таблицю (включно з заголовком), скопіюй (Ctrl+C) і встав сюди.
+        </p>
+        <ImportPasteBlock genreSlug={genreSlug} onDone={() => router.refresh()} />
+      </div>
     </section>
+  );
+}
+
+function ImportPasteBlock({ genreSlug, onDone }: { genreSlug: string; onDone: () => void }) {
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [tsvText, setTsvText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const run = useCallback(async () => {
+    if (!tsvText.trim()) return;
+    setLoading(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/internal/bptoptracker/import-paste", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          genreSlug: genreSlug.trim(),
+          date: date.trim(),
+          tsvText: tsvText.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        playSuccessSound();
+        setMsg({
+          ok: true,
+          text: `Імпортовано: ${data.inserted} записів (пропущено ${data.skipped}). Дата ${data.date}, жанр ${data.genreSlug}.`,
+        });
+        setTsvText("");
+        onDone();
+      } else {
+        setMsg({ ok: false, text: data.error ?? "Failed" });
+      }
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Request failed" });
+    } finally {
+      setLoading(false);
+    }
+  }, [genreSlug, date, tsvText, onDone]);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="text-xs text-stone-500">
+          Дата чарту:
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="ml-1 rounded border border-stone-300 px-2 py-1 text-sm"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={run}
+          disabled={loading || !tsvText.trim()}
+          className="inline-flex items-center justify-center gap-2 rounded bg-stone-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-600 disabled:opacity-50"
+        >
+          {loading && <ButtonSpinner />}
+          {loading ? "Імпорт…" : "Імпортувати з буфера"}
+        </button>
+      </div>
+      <textarea
+        value={tsvText}
+        onChange={(e) => setTsvText(e.target.value)}
+        placeholder="Встав сюди скопійовану таблицю чарту (з заголовком Title, Artists, …)"
+        rows={6}
+        className="w-full rounded border border-stone-300 px-2 py-1.5 text-sm font-mono"
+      />
+      {msg && (
+        <p className={`text-sm ${msg.ok ? "text-emerald-700" : "text-red-600"}`}>{msg.text}</p>
+      )}
+    </div>
   );
 }
 

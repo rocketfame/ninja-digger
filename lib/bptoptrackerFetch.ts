@@ -143,6 +143,45 @@ export async function fetchChartForDate(genreSlug: string, date: string): Promis
 }
 
 /**
+ * Parse chart from copy-paste TSV (e.g. from bptoptracker chart page).
+ * Columns: Position [movement] [?] Title Artists Remixers Genre Label Released
+ * Rows with position OUT or not 1–100 are skipped.
+ */
+export function parseChartTsv(
+  tsvText: string,
+  genreSlug: string,
+  snapshotDate: string
+): BptoptrackerDailyRow[] {
+  const rows: BptoptrackerDailyRow[] = [];
+  const lines = tsvText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  for (const line of lines) {
+    const cols = line.split("\t").map((s) => s.trim());
+    if (cols.length < 6) continue;
+    const posRaw = cols[0];
+    if (posRaw.toUpperCase() === "OUT") continue;
+    const position = parseInt(posRaw, 10);
+    if (!Number.isFinite(position) || position < 1 || position > 200) continue;
+    const title = cols[3] ?? "";
+    const artists = cols[4] ?? "";
+    const primaryArtist = artists.split(",").map((a) => a.trim()).filter(Boolean)[0] ?? "";
+    if (isBlockedArtist(primaryArtist) || isBlockedTrack(title)) continue;
+    const movement = (cols[1] || cols[2] || "").trim() || null;
+    rows.push({
+      snapshot_date: snapshotDate,
+      genre_slug: genreSlug,
+      position,
+      track_title: title || null,
+      artist_name: primaryArtist,
+      artists_full: artists || null,
+      label_name: (cols[7] ?? "").trim() || null,
+      released: (cols[8] ?? "").trim() || null,
+      movement,
+    });
+  }
+  return rows;
+}
+
+/**
  * Generate date range YYYY-MM-DD from dateFrom to dateTo (inclusive).
  */
 export function dateRange(dateFrom: string, dateTo: string): string[] {

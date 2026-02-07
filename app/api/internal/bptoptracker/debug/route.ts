@@ -72,6 +72,15 @@ export async function GET(request: Request) {
         ? html.slice(tableStart, tableStart + 2500).replace(/\s+/g, " ").trim()
         : html.slice(0, 1500).replace(/\s+/g, " ").trim();
 
+    // No tables = page is likely client-rendered (SPA). Look for embedded data.
+    const scriptJson = html.match(/<script[^>]*type\s*=\s*["']application\/json["'][^>]*>([\s\S]*?)<\/script>/i);
+    const nextData = html.match(/<script[^>]*id\s*=\s*["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
+    const hasEmbeddedJson = !!(scriptJson?.[1]?.trim() || nextData?.[1]?.trim());
+    const noTablesReason =
+      tables.length === 0
+        ? "Сторінка рендериться в браузері (JS/SPA): таблиці чарту немає в початковому HTML. Варіанти: (1) В DevTools → Network знайти API, який повертає чарт; (2) Використати headless browser (Playwright)."
+        : null;
+
     return NextResponse.json({
       url,
       status: res.status,
@@ -85,6 +94,8 @@ export async function GET(request: Request) {
       cookieUsed: !!cookie,
       structureHint,
       htmlSnippet: htmlSnippet.slice(0, 2500),
+      hasEmbeddedJson,
+      noTablesReason,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
