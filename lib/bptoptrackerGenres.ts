@@ -19,7 +19,7 @@ export const BPTOPTRACKER_GENRES: { value: string; label: string }[] = [
   { value: "deep-house", label: "Deep House" },
   { value: "dj-tools-acapellas", label: "DJ Tools / Acapellas" },
   { value: "downtempo", label: "Downtempo" },
-  { value: "drum-and-bass", label: "Drum & Bass" },
+  { value: "drum-bass", label: "Drum & Bass" },
   { value: "dubstep", label: "Dubstep" },
   { value: "electro-classic-detroit-modern", label: "Electro (Classic / Detroit / Modern)" },
   { value: "electronica", label: "Electronica" },

@@ -2,19 +2,18 @@
  * POST /api/internal/bptoptracker/backfill
  * Body: { genreSlug: string | "__all__", dateFrom: string (YYYY-MM-DD), dateTo: string (YYYY-MM-DD) }
  * When genreSlug === "__all__", runs backfill for all genres (same date range).
- *
- * Flow: 1) Log in. 2) For each genre (and each date when one genre), request
- * https://www.bptoptracker.com/top/track/{genreSlug}/{date} and parse into bptoptracker_daily.
+ * Optimized: parallel fetches (concurrency limit), batch INSERT.
  */
 
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getBptoptrackerCookie, clearBptoptrackerCookieCache, getLastLoginError } from "@/lib/bptoptrackerAuth";
-import { fetchChartForDate, dateRange } from "@/lib/bptoptrackerFetch";
+import { fetchChartForDate, dateRange, type BptoptrackerDailyRow } from "@/lib/bptoptrackerFetch";
 import { getBptoptrackerGenreSlugs } from "@/lib/bptoptrackerGenres";
 
-const DELAY_MS = 1500;
-const DELAY_BETWEEN_GENRES_MS = 2000;
+const CONCURRENCY = 5;
+const BATCH_DELAY_MS = 500;
+const INSERT_BATCH_SIZE = 150;
 
 export async function POST(request: Request) {
   try {
@@ -62,44 +61,62 @@ export async function POST(request: Request) {
       );
     }
 
+    const tasks: { genreSlug: string; date: string }[] = [];
+    for (const genreSlug of genreSlugs) for (const date of dates) tasks.push({ genreSlug, date });
+
+    const errors: string[] = [];
+    const allRows: BptoptrackerDailyRow[] = [];
+
+    for (let i = 0; i < tasks.length; i += CONCURRENCY) {
+      if (i > 0) await new Promise((r) => setTimeout(r, BATCH_DELAY_MS));
+      const chunk = tasks.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        chunk.map(async (t) => {
+          try {
+            const rows = await fetchChartForDate(t.genreSlug, t.date);
+            return { genreSlug: t.genreSlug, date: t.date, rows };
+          } catch (e) {
+            return { genreSlug: t.genreSlug, date: t.date, error: e instanceof Error ? e.message : String(e) };
+          }
+        })
+      );
+      for (const r of results) {
+        if ("error" in r && r.error) errors.push(`${r.genreSlug}/${r.date}: ${r.error}`);
+        if ("rows" in r && r.rows?.length) allRows.push(...r.rows);
+      }
+    }
+
     let totalInserted = 0;
     let totalSkipped = 0;
-    const errors: string[] = [];
-
-    for (let g = 0; g < genreSlugs.length; g++) {
-      const genreSlug = genreSlugs[g];
-      if (g > 0) await new Promise((r) => setTimeout(r, DELAY_BETWEEN_GENRES_MS));
-
-      for (let i = 0; i < dates.length; i++) {
-        const date = dates[i];
-        if (i > 0) await new Promise((r) => setTimeout(r, DELAY_MS));
-        try {
-          const rows = await fetchChartForDate(genreSlug, date);
-          for (const row of rows) {
-            const result = await pool.query(
-              `INSERT INTO bptoptracker_daily (snapshot_date, genre_slug, position, track_title, artist_name, artists_full, label_name, released, movement)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-               ON CONFLICT (snapshot_date, genre_slug, position) DO NOTHING`,
-              [
-                row.snapshot_date,
-                row.genre_slug,
-                row.position,
-                row.track_title,
-                row.artist_name,
-                row.artists_full,
-                row.label_name,
-                row.released,
-                row.movement,
-              ]
-            );
-            if ((result.rowCount ?? 0) > 0) totalInserted++;
-            else totalSkipped++;
-          }
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          errors.push(`${genreSlug}/${date}: ${msg}`);
-        }
+    for (let j = 0; j < allRows.length; j += INSERT_BATCH_SIZE) {
+      const batch = allRows.slice(j, j + INSERT_BATCH_SIZE);
+      const values: (string | number | null)[] = [];
+      const placeholders: string[] = [];
+      let param = 1;
+      for (const row of batch) {
+        placeholders.push(`($${param}, $${param + 1}, $${param + 2}, $${param + 3}, $${param + 4}, $${param + 5}, $${param + 6}, $${param + 7}, $${param + 8})`);
+        values.push(
+          row.snapshot_date,
+          row.genre_slug,
+          row.position,
+          row.track_title,
+          row.artist_name,
+          row.artists_full,
+          row.label_name,
+          row.released,
+          row.movement
+        );
+        param += 9;
       }
+      const result = await pool.query(
+        `INSERT INTO bptoptracker_daily (snapshot_date, genre_slug, position, track_title, artist_name, artists_full, label_name, released, movement)
+         VALUES ${placeholders.join(", ")}
+         ON CONFLICT (snapshot_date, genre_slug, position) DO NOTHING`,
+        values
+      );
+      const inserted = result.rowCount ?? 0;
+      totalInserted += inserted;
+      totalSkipped += batch.length - inserted;
     }
 
     const totalRequests = genreSlugs.length * dates.length;

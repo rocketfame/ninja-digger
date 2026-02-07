@@ -77,7 +77,7 @@ export function BptoptrackerBackfill() {
             ))}
           </select>
           {genreSlug === ALL_GENRES_VALUE && (
-            <p className="mt-1 text-xs text-amber-700">Макс. 60 днів за запуск, парсинг по всіх жанрах по черзі. Частина жанрів/дат може давати 404 — на сайті немає даних за ці дати.</p>
+            <p className="mt-1 text-xs text-amber-700">Макс. 60 днів за запуск.</p>
           )}
         </div>
         <div>
@@ -111,7 +111,7 @@ export function BptoptrackerBackfill() {
                 const to = new Date(dateTo).getTime();
                 const days = Number.isFinite(from) && Number.isFinite(to) ? Math.max(1, Math.ceil((to - from) / 86400000) + 1) : 30;
                 const genresCount = genreSlug === ALL_GENRES_VALUE ? BPTOPTRACKER_GENRES.length : 1;
-                const secPerSlot = genreSlug === ALL_GENRES_VALUE ? 8 : 4;
+                const secPerSlot = genreSlug === ALL_GENRES_VALUE ? 2.5 : 4;
                 const min = Math.max(1, Math.ceil((days * genresCount * secPerSlot) / 60));
                 return `Виконується… (${min <= 1 ? "до 1 хв" : `~${min} хв`})`;
               })()
