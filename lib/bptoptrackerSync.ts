@@ -24,9 +24,20 @@ async function getOrCreateBptoptrackerChartId(genreSlug: string): Promise<string
   return id;
 }
 
+/** Synthetic ID for bptoptracker-only artists (same as Beatport pool, just no Beatport ID yet). */
+function syntheticArtistId(artistName: string): string {
+  const slug = artistName
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "");
+  return `bptoptracker:${slug || "unknown"}`;
+}
+
 /**
- * For each row in bptoptracker_daily, resolve artist_beatport_id (manual link or artist_metrics match).
+ * For each row in bptoptracker_daily, resolve artist_beatport_id (manual link, artist_metrics match, or synthetic).
  * Insert into chart_entries with bptoptracker chart_id. Idempotent per (chart_id, snapshot_date, position).
+ * Артисти з BP Top Tracker = артисти з Beatport; якщо ми ще не маємо beatport_id, використовуємо синтетичний id.
  */
 export async function syncBptoptrackerToChartEntries(): Promise<{
   chartEntriesInserted: number;
@@ -63,8 +74,8 @@ export async function syncBptoptrackerToChartEntries(): Promise<{
       }
     }
 
-    const artistBeatportId = await resolveArtistBeatportId(row.artist_name);
-    if (!artistBeatportId) continue;
+    let artistBeatportId = await resolveArtistBeatportId(row.artist_name);
+    if (!artistBeatportId) artistBeatportId = syntheticArtistId(row.artist_name);
 
     matchedArtistIds.add(artistBeatportId);
     try {

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ButtonSpinner } from "@/app/components/ButtonSpinner";
@@ -114,6 +115,13 @@ export function BptoptrackerBackfill() {
           Чарт на bptoptracker рендериться через JS, тому автоматичний backfill не бачить таблицю. Відкрий чарт у браузері, виділи всю таблицю (включно з заголовком), скопіюй (Ctrl+C) і встав сюди.
         </p>
         <ImportPasteBlock genreSlug={genreSlug} onDone={() => router.refresh()} />
+        <p className="mt-2 text-xs text-stone-500">
+          Усі артисти з імпорту — на сторінці{" "}
+          <Link href="/bptoptracker" className="text-stone-700 underline">
+            Артисти з BP Top Tracker
+          </Link>
+          . У таблиці лідів нижче зʼявляються лише ті, кого вже знайдено з Beatport (Discovery) або привʼязано вручну там; решту можна привʼязати на сторінці Артисти з BP Top Tracker.
+        </p>
       </div>
     </section>
   );
