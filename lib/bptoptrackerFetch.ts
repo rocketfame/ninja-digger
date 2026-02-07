@@ -39,7 +39,8 @@ function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
   const $ = cheerio.load(html);
   const seen = new Set<string>();
 
-  function processRow($row: cheerio.Cheerio<cheerio.Element>, date: string, genre: string): void {
+  // Cheerio selection (result of $(row)); avoid generic for @types/cheerio compatibility
+  function processRow($row: cheerio.Cheerio, date: string, genre: string): void {
     const tds = $row.find("td");
     if (tds.length < 3) return;
     const texts = tds.map((__, td) => $(td).text().trim()).get();
