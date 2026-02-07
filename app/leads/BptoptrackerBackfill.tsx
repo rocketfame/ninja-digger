@@ -93,6 +93,7 @@ export function BptoptrackerBackfill() {
           {loading ? "Backfill…" : "Запустити backfill"}
         </button>
         <CleanJunkButton onDone={() => router.refresh()} />
+        <DebugOneDayButton genreSlug={genreSlug} dateTo={dateTo} />
       </div>
       {message && (
         <p className={`mt-2 text-sm ${message.ok ? "text-emerald-700" : "text-red-600"}`}>
@@ -107,6 +108,46 @@ export function BptoptrackerBackfill() {
         <BptoptrackerSyncButton onDone={() => router.refresh()} />
       </div>
     </section>
+  );
+}
+
+function DebugOneDayButton({ genreSlug, dateTo }: { genreSlug: string; dateTo: string }) {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+
+  const run = useCallback(async () => {
+    setLoading(true);
+    setResult(null);
+    try {
+      const res = await fetch(
+        `/api/internal/bptoptracker/debug?genre=${encodeURIComponent(genreSlug.trim())}&date=${encodeURIComponent(dateTo.trim())}`
+      );
+      const data = await res.json();
+      setResult(data.error ? { error: data.error } : data);
+    } catch (e) {
+      setResult({ error: e instanceof Error ? e.message : "Request failed" });
+    } finally {
+      setLoading(false);
+    }
+  }, [genreSlug, dateTo]);
+
+  return (
+    <div className="flex flex-col gap-1">
+      <button
+        type="button"
+        onClick={run}
+        disabled={loading}
+        className="inline-flex items-center justify-center gap-2 rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-50 disabled:opacity-50"
+      >
+        {loading && <ButtonSpinner className="text-stone-500" />}
+        {loading ? "Перевірка…" : "Перевірити один день"}
+      </button>
+      {result && (
+        <pre className="mt-1 max-h-40 overflow-auto rounded border border-stone-200 bg-stone-50 p-2 text-xs text-stone-700">
+          {JSON.stringify(result, null, 2)}
+        </pre>
+      )}
+    </div>
   );
 }
 
