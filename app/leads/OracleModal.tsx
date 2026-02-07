@@ -170,7 +170,7 @@ export function OracleModal({
                 className="inline-flex items-center justify-center gap-2 rounded bg-stone-800 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
               >
                 {loading && <ButtonSpinner />}
-                {loading ? "Сканування…" : "Сканувати та переглянути"}
+                {loading ? "Сканування… (до 30 с)" : "Сканувати та переглянути"}
               </button>
             </div>
           </div>
@@ -290,7 +290,7 @@ export function OracleModal({
                   className="inline-flex items-center justify-center gap-2 rounded bg-stone-800 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
                 >
                   {saveLoading && <ButtonSpinner />}
-                  {saveLoading ? "Збереження…" : "Зберегти сегмент"}
+                  {saveLoading ? "Збереження… (до 10 с)" : "Зберегти сегмент"}
                 </button>
                 <button
                   type="button"

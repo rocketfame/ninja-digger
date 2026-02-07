@@ -1,9 +1,18 @@
 import Link from "next/link";
 import { query } from "@/lib/db";
+import { getBlocklistValuesForSql } from "@/lib/bptoptrackerBlocklist";
 import { DiscoveryControl } from "./DiscoveryControl";
 import { BptoptrackerBackfill } from "./BptoptrackerBackfill";
 
 const SEGMENTS_V2 = ["NEW_ENTRY", "CONSISTENT", "FAST_GROWING", "DECLINING", "TOP_PERFORMER"] as const;
+
+const SEGMENT_LABELS: Record<string, string> = {
+  NEW_ENTRY: "Новий вхід",
+  CONSISTENT: "Стабільний",
+  FAST_GROWING: "Швидке зростання",
+  DECLINING: "Спад",
+  TOP_PERFORMER: "Топ-перформер",
+};
 
 type LeadRowV2 = {
   artist_beatport_id: string;
@@ -13,6 +22,7 @@ type LeadRowV2 = {
   total_chart_entries: number;
   first_seen: string | null;
   last_seen: string | null;
+  genres: string[] | null;
 };
 
 export const dynamic = "force-dynamic";
@@ -31,25 +41,39 @@ export default async function LeadsPage({
 
   let leads: LeadRowV2[] = [];
   let error: string | null = null;
+  const blocklist = getBlocklistValuesForSql();
+
+  const blocklistCondition = `(array_length($2::text[], 1) IS NULL OR (
+    am.artist_name IS NULL OR (
+      NOT (LOWER(TRIM(am.artist_name)) = ANY($2::text[]))
+      AND NOT (LOWER(TRIM(REGEXP_REPLACE(am.artist_name, '\\s*[→↗⟶➔›].*$', '', 'gi'))) = ANY($2::text[]))
+      AND NOT (LOWER(TRIM(am.artist_name)) LIKE 'about us%')
+      AND NOT (am.artist_name ~ '^\\d+\\s*\\/\\s*')
+    )
+  ))`;
 
   try {
     if (segment) {
       leads = await query<LeadRowV2>(
         `SELECT ls.artist_beatport_id, am.artist_name, ls.segment, ls.score::text,
-                am.total_chart_entries, am.first_seen::text AS first_seen, am.last_seen::text AS last_seen
+                am.total_chart_entries, am.first_seen::text AS first_seen, am.last_seen::text AS last_seen,
+                am.genres AS genres
          FROM lead_scores ls
          LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
-         WHERE ls.segment = $1
+         WHERE ls.segment = $1 AND ${blocklistCondition}
          ORDER BY ls.score DESC NULLS LAST`,
-        [segment]
+        [segment, blocklist]
       );
     } else {
       leads = await query<LeadRowV2>(
         `SELECT ls.artist_beatport_id, am.artist_name, ls.segment, ls.score::text,
-                am.total_chart_entries, am.first_seen::text AS first_seen, am.last_seen::text AS last_seen
+                am.total_chart_entries, am.first_seen::text AS first_seen, am.last_seen::text AS last_seen,
+                am.genres AS genres
          FROM lead_scores ls
          LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
-         ORDER BY ls.score DESC NULLS LAST`
+         WHERE ${blocklistCondition.replace(/\$2/g, "$1")}
+         ORDER BY ls.score DESC NULLS LAST`,
+        [blocklist]
       );
     }
   } catch (e) {
@@ -99,7 +123,7 @@ export default async function LeadsPage({
                 href={`/leads?segment=${s}`}
                 className={`rounded px-2 py-1 text-sm ${segment === s ? "bg-stone-800 text-white" : "bg-stone-200 text-stone-700 hover:bg-stone-300"}`}
               >
-                {s}
+                {SEGMENT_LABELS[s] ?? s}
               </Link>
             ))}
           </div>
@@ -134,6 +158,7 @@ export default async function LeadsPage({
                   <th className="px-3 py-2 font-medium">Входжень</th>
                   <th className="px-3 py-2 font-medium">Вперше</th>
                   <th className="px-3 py-2 font-medium">Востаннє</th>
+                  <th className="px-3 py-2 font-medium">Жанр</th>
                 </tr>
               </thead>
               <tbody>
@@ -144,17 +169,20 @@ export default async function LeadsPage({
                   >
                     <td className="px-3 py-2">
                       <Link
-                        href={`/artist/bp/${row.artist_beatport_id}`}
+                        href={`/artist/bp/${row.artist_beatport_id.startsWith("bptoptracker:") ? row.artist_beatport_id.replace(/^bptoptracker:/, "") : row.artist_beatport_id}`}
                         className="font-medium text-stone-900 underline hover:no-underline"
                       >
                         {(row.artist_name ?? row.artist_beatport_id) || "—"}
                       </Link>
                     </td>
-                    <td className="px-3 py-2">{row.segment}</td>
+                    <td className="px-3 py-2">{SEGMENT_LABELS[row.segment] ?? row.segment}</td>
                     <td className="px-3 py-2">{row.score}</td>
                     <td className="px-3 py-2">{row.total_chart_entries}</td>
                     <td className="px-3 py-2">{row.first_seen ?? "—"}</td>
                     <td className="px-3 py-2">{row.last_seen ?? "—"}</td>
+                    <td className="px-3 py-2 text-stone-600">
+                      {Array.isArray(row.genres) && row.genres.length > 0 ? row.genres.slice(0, 3).join(", ") : "—"}
+                    </td>
                   </tr>
                 ))}
               </tbody>

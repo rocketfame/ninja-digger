@@ -1,10 +1,11 @@
 /**
- * Sync bptoptracker_daily → chart_entries for artists we can match to artist_beatport_id.
+ * Sync bptoptracker_daily → chart_entries. Optimized: bulk resolve artist IDs, batch INSERT.
  * Then run normalize + score so they appear in lead_scores.
- * One chart per genre in charts_catalog (platform=bptoptracker).
  */
 
 import { pool, query } from "@/lib/db";
+
+const BATCH_SIZE = 200;
 
 async function getOrCreateBptoptrackerChartId(genreSlug: string): Promise<string> {
   const url = `https://bptoptracker.com/top/track/${genreSlug}`;
@@ -24,7 +25,21 @@ async function getOrCreateBptoptrackerChartId(genreSlug: string): Promise<string
   return id;
 }
 
-/** Synthetic ID for bptoptracker-only artists (same as Beatport pool, just no Beatport ID yet). */
+/** Preload chart_id for all genres that appear in rows. */
+async function preloadChartIds(genreSlugs: string[]): Promise<Map<string, string>> {
+  const uniq = [...new Set(genreSlugs)];
+  const map = new Map<string, string>();
+  for (const slug of uniq) {
+    try {
+      map.set(slug, await getOrCreateBptoptrackerChartId(slug));
+    } catch {
+      // skip failed genre
+    }
+  }
+  return map;
+}
+
+/** Synthetic ID for bptoptracker-only artists. */
 function syntheticArtistId(artistName: string): string {
   const slug = artistName
     .trim()
@@ -35,10 +50,36 @@ function syntheticArtistId(artistName: string): string {
 }
 
 /**
- * For each row in bptoptracker_daily, resolve artist_beatport_id (manual link, artist_metrics match, or synthetic).
- * Insert into chart_entries with bptoptracker chart_id. Idempotent per (chart_id, snapshot_date, position).
- * Артисти з BP Top Tracker = артисти з Beatport; якщо ми ще не маємо beatport_id, використовуємо синтетичний id.
+ * Resolve artist_beatport_id for many names in 2 queries: manual links, then artist_metrics.
+ * Returns Map: normalized (trimmed) name -> artist_beatport_id. Missing names use synthetic in caller.
  */
+async function resolveArtistBeatportIdsBulk(
+  uniqueNames: string[]
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const trimmed = uniqueNames.map((n) => n.trim()).filter(Boolean);
+  if (trimmed.length === 0) return map;
+
+  const manual = await query<{ artist_name: string; artist_beatport_id: string }>(
+    `SELECT artist_name, artist_beatport_id FROM bptoptracker_artist_links WHERE artist_name = ANY($1::text[])`,
+    [trimmed]
+  );
+  for (const r of manual) map.set(r.artist_name.trim().toLowerCase(), r.artist_beatport_id);
+
+  const stillMissing = trimmed.filter((n) => !map.has(n.toLowerCase()));
+  if (stillMissing.length === 0) return map;
+
+  const metrics = await query<{ artist_name: string; artist_beatport_id: string }>(
+    `SELECT DISTINCT ON (LOWER(TRIM(artist_name))) artist_name, artist_beatport_id
+     FROM artist_metrics
+     WHERE LOWER(TRIM(artist_name)) = ANY(SELECT LOWER(TRIM(x)) FROM unnest($1::text[]) AS x)
+     ORDER BY LOWER(TRIM(artist_name)), artist_beatport_id`,
+    [stillMissing]
+  );
+  for (const r of metrics) map.set(r.artist_name.trim().toLowerCase(), r.artist_beatport_id);
+  return map;
+}
+
 export async function syncBptoptrackerToChartEntries(): Promise<{
   chartEntriesInserted: number;
   artistsMatched: number;
@@ -61,42 +102,79 @@ export async function syncBptoptrackerToChartEntries(): Promise<{
      FROM bptoptracker_daily ORDER BY snapshot_date, genre_slug, position`
   );
 
-  const genreChartIds = new Map<string, string>();
+  if (rows.length === 0) {
+    return { chartEntriesInserted: 0, artistsMatched: 0, errors: [] };
+  }
+
+  const genreSlugs = rows.map((r) => r.genre_slug);
+  const genreChartIds = await preloadChartIds(genreSlugs);
+
+  const uniqueArtistNames = [...new Set(rows.map((r) => r.artist_name.trim()).filter(Boolean))];
+  const artistIdMap = await resolveArtistBeatportIdsBulk(uniqueArtistNames);
+
+  const toInsert: {
+    chart_id: string;
+    snapshot_date: string;
+    position: number;
+    track_title: string | null;
+    artist_name: string;
+    artist_beatport_id: string;
+    label_name: string | null;
+    release_title: string | null;
+  }[] = [];
+
   for (const row of rows) {
-    let chartId = genreChartIds.get(row.genre_slug);
-    if (!chartId) {
-      try {
-        chartId = await getOrCreateBptoptrackerChartId(row.genre_slug);
-        genreChartIds.set(row.genre_slug, chartId);
-      } catch (e) {
-        errors.push(`genre ${row.genre_slug}: ${e instanceof Error ? e.message : e}`);
-        continue;
-      }
+    const chartId = genreChartIds.get(row.genre_slug);
+    if (!chartId) continue;
+
+    const trimmed = row.artist_name.trim();
+    const artistBeatportId = trimmed ? artistIdMap.get(trimmed.toLowerCase()) ?? null : null;
+    const resolvedId = artistBeatportId ?? syntheticArtistId(row.artist_name);
+
+    matchedArtistIds.add(resolvedId);
+    toInsert.push({
+      chart_id: chartId,
+      snapshot_date: row.snapshot_date,
+      position: row.position,
+      track_title: row.track_title,
+      artist_name: row.artist_name,
+      artist_beatport_id: resolvedId,
+      label_name: row.label_name,
+      release_title: row.released,
+    });
+  }
+
+  for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
+    const batch = toInsert.slice(i, i + BATCH_SIZE);
+    const values: (string | number | null)[] = [];
+    const placeholders: string[] = [];
+    let param = 1;
+    for (const r of batch) {
+      placeholders.push(
+        `($${param}, $${param + 1}, $${param + 2}, $${param + 3}, $${param + 4}, $${param + 5}, $${param + 6}, $${param + 7}, 'bptoptracker')`
+      );
+      values.push(
+        r.chart_id,
+        r.snapshot_date,
+        r.position,
+        r.track_title,
+        r.artist_name,
+        r.artist_beatport_id,
+        r.label_name,
+        r.release_title
+      );
+      param += 8;
     }
-
-    let artistBeatportId = await resolveArtistBeatportId(row.artist_name);
-    if (!artistBeatportId) artistBeatportId = syntheticArtistId(row.artist_name);
-
-    matchedArtistIds.add(artistBeatportId);
     try {
       const result = await pool.query(
         `INSERT INTO chart_entries (chart_id, snapshot_date, position, track_title, artist_name, artist_beatport_id, label_name, release_title, source)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'bptoptracker')
+         VALUES ${placeholders.join(", ")}
          ON CONFLICT (chart_id, snapshot_date, position) DO NOTHING`,
-        [
-          chartId,
-          row.snapshot_date,
-          row.position,
-          row.track_title,
-          row.artist_name,
-          artistBeatportId,
-          row.label_name,
-          row.released,
-        ]
+        values
       );
-      if ((result.rowCount ?? 0) > 0) chartEntriesInserted++;
+      chartEntriesInserted += result.rowCount ?? 0;
     } catch (e) {
-      errors.push(`${row.artist_name} ${row.snapshot_date}: ${e instanceof Error ? e.message : e}`);
+      errors.push(`batch ${i / BATCH_SIZE + 1}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -105,19 +183,4 @@ export async function syncBptoptrackerToChartEntries(): Promise<{
     artistsMatched: matchedArtistIds.size,
     errors: errors.slice(0, 50),
   };
-}
-
-async function resolveArtistBeatportId(artistName: string): Promise<string | null> {
-  const trimmed = artistName.trim();
-  if (!trimmed) return null;
-  const manual = await query<{ artist_beatport_id: string }>(
-    `SELECT artist_beatport_id FROM bptoptracker_artist_links WHERE artist_name = $1`,
-    [trimmed]
-  );
-  if (manual.length > 0) return manual[0].artist_beatport_id;
-  const match = await query<{ artist_beatport_id: string }>(
-    `SELECT artist_beatport_id FROM artist_metrics WHERE LOWER(TRIM(artist_name)) = LOWER($1) LIMIT 1`,
-    [trimmed]
-  );
-  return match.length > 0 ? match[0].artist_beatport_id : null;
 }

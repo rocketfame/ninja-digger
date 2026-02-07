@@ -30,8 +30,14 @@ export default async function ArtistBeatportPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
-  if (!id) notFound();
+  const { id: rawId } = await params;
+  if (!rawId) notFound();
+
+  // Уніфікований id для пошуку: числовий залишається, slug (ape-drums) → bptoptracker:ape-drums
+  const id =
+    /^\d+$/.test(rawId) || rawId.startsWith("bptoptracker:")
+      ? rawId
+      : `bptoptracker:${rawId}`;
 
   let artist: ArtistV2 | null = null;
   let profile: { status: string; notes: string | null } | null = null;
@@ -69,10 +75,92 @@ export default async function ArtistBeatportPage({
     artist = null;
   }
 
-  if (!artist) notFound();
+  if (!artist) {
+    // Fallback: id у вигляді bptoptracker:slug — збираємо дані з chart_entries
+    const syntheticMatch = id.match(/^bptoptracker:(.+)$/);
+    if (syntheticMatch) {
+      const slugFromUrl = syntheticMatch[1];
+      const normalizedSlug = slugFromUrl.replace(/-+/g, "-").replace(/^-|-$/g, "");
+      const idsToTry = [id];
+      if (normalizedSlug !== slugFromUrl) idsToTry.push(`bptoptracker:${normalizedSlug}`);
+
+      let row: {
+        artist_beatport_id: string;
+        artist_name: string;
+        first_seen: string;
+        last_seen: string;
+        total_chart_entries: string;
+        avg_position: string;
+        best_position: string;
+        genres: string[];
+      } | null = null;
+      for (const tryId of idsToTry) {
+        const fromChart = await query<{
+          artist_beatport_id: string;
+          artist_name: string;
+          first_seen: string;
+          last_seen: string;
+          total_chart_entries: string;
+          avg_position: string;
+          best_position: string;
+          genres: string[];
+        }>(
+          `SELECT ce.artist_beatport_id,
+                  MAX(ce.artist_name) AS artist_name,
+                  MIN(ce.snapshot_date)::text AS first_seen,
+                  MAX(ce.snapshot_date)::text AS last_seen,
+                  COUNT(*)::text AS total_chart_entries,
+                  AVG(ce.position)::numeric(10,2)::text AS avg_position,
+                  MIN(ce.position)::text AS best_position,
+                  ARRAY_AGG(DISTINCT cc.genre_slug) FILTER (WHERE cc.genre_slug IS NOT NULL) AS genres
+           FROM chart_entries ce
+           JOIN charts_catalog cc ON cc.id = ce.chart_id
+           WHERE ce.artist_beatport_id = $1
+           GROUP BY ce.artist_beatport_id`,
+          [tryId]
+        );
+        row = fromChart[0] ?? null;
+        if (row) break;
+      }
+
+      if (row) {
+        const resolvedId = row.artist_beatport_id;
+        artist = {
+          artist_beatport_id: resolvedId,
+          artist_name: row.artist_name,
+          artist_slug: null,
+          first_seen: row.first_seen,
+          last_seen: row.last_seen,
+          total_days_in_charts: null,
+          total_chart_entries: Number(row.total_chart_entries) || null,
+          avg_position: row.avg_position,
+          best_position: Number(row.best_position) || null,
+          genres: Array.isArray(row.genres) ? row.genres.filter(Boolean) : null,
+          segment: null,
+          score: null,
+          signals: null,
+        };
+        const [profRows, linkRows, contactRows] = await Promise.all([
+          query<{ status: string; notes: string | null }>(`SELECT status, notes FROM lead_profiles WHERE artist_beatport_id = $1`, [resolvedId]),
+          query<{ type: string; url: string }>(`SELECT type, url FROM artist_links WHERE artist_beatport_id = $1 ORDER BY type`, [resolvedId]),
+          query<{ type: string; value: string }>(`SELECT type, value FROM artist_contacts WHERE artist_beatport_id = $1`, [resolvedId]),
+        ]);
+        profile = profRows[0] ?? null;
+        links = linkRows;
+        contacts = contactRows;
+      }
+    }
+    if (!artist) notFound();
+  }
 
   let displayName = artist.artist_name ?? artist.artist_beatport_id;
-  let beatportUrl = `https://www.beatport.com/artist/${(artist.artist_slug || "artist").replace(/^\/+|\/+$/g, "")}/${artist.artist_beatport_id}`;
+  const isSynthetic = !isNumericBeatportId(artist.artist_beatport_id);
+  const bptoptrackerSlug = isSynthetic && artist.artist_beatport_id.startsWith("bptoptracker:")
+    ? artist.artist_beatport_id.replace(/^bptoptracker:/, "")
+    : null;
+  let beatportUrl = bptoptrackerSlug
+    ? `https://www.bptoptracker.com/artist/${bptoptrackerSlug}`
+    : `https://www.beatport.com/artist/${(artist.artist_slug || "artist").replace(/^\/+|\/+$/g, "")}/${artist.artist_beatport_id}`;
   let imageUrl: string | null = null;
 
   if (isNumericBeatportId(artist.artist_beatport_id)) {
@@ -117,6 +205,7 @@ export default async function ArtistBeatportPage({
           initialProfile={profile}
           links={links}
           contacts={contacts}
+          linkLabel={bptoptrackerSlug ? "BP Top Tracker" : undefined}
         />
       </main>
     </div>

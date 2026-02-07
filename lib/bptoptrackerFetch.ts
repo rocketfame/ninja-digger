@@ -43,25 +43,28 @@ function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
   function processRow($row: cheerio.Cheerio, date: string, genre: string): void {
     const tds = $row.find("td");
     if (tds.length < 3) return;
+    // Prefer bptoptracker structure: .position, .progression, .artwork, .title, .artists, .remixers, .genre, .label, .released (9 cols)
+    const byClass = {
+      position: $row.find("td.position").text().trim(),
+      title: $row.find("td.title").text().trim(),
+      artists: $row.find("td.artists").text().trim(),
+      label: $row.find("td.label").text().trim(),
+      released: $row.find("td.released").text().trim(),
+      progression: $row.find("td.progression").text().trim(),
+    };
     const texts = tds.map((__, td) => $(td).text().trim()).get();
-    const rankNum = parseInt(texts[0], 10);
+    const rankNum = parseInt(byClass.position || texts[0], 10);
     if (!Number.isFinite(rankNum) || rankNum < 1 || rankNum > 200) return;
-    let title = "";
-    let artists = "";
-    let label = "";
-    let released = "";
-    let movement = "";
-    if (texts.length >= 5) {
-      title = (texts[1] ?? texts[2] ?? "").replace(/[↑↓→]\d*/g, "").trim();
-      artists = texts[2] ?? texts[3] ?? "";
-      label = texts[3] ?? texts[4] ?? "";
-      released = texts[4] ?? texts[5] ?? "";
-      movement = texts[1]?.match(/[↑↓→]\d*/)?.[0] ?? "";
-    } else {
-      title = $row.find("[class*='title'], [class*='track']").first().text().trim();
-      artists = $row.find("[class*='artist']").first().text().trim();
-      label = $row.find("[class*='label']").first().text().trim();
-      released = $row.find("[class*='release']").first().text().trim();
+    let title = byClass.title || (texts.length >= 5 ? (texts[1] ?? texts[2] ?? texts[3] ?? "").replace(/[↑↓→]\d*/g, "").trim() : "");
+    let artists = byClass.artists || (texts.length >= 5 ? (texts[2] ?? texts[3] ?? texts[4] ?? "") : "");
+    let label = byClass.label || (texts.length >= 5 ? (texts[3] ?? texts[4] ?? texts[7] ?? "") : "");
+    let released = byClass.released || (texts.length >= 5 ? (texts[4] ?? texts[5] ?? texts[8] ?? "") : "");
+    let movement = byClass.progression?.match(/[↑↓→]\d*/)?.[0] ?? texts[1]?.match(/[↑↓→]\d*/)?.[0] ?? "";
+    if (!title && !artists && texts.length >= 9) {
+      title = (texts[3] ?? "").replace(/[↑↓→]\d*/g, "").trim();
+      artists = texts[4] ?? "";
+      label = texts[7] ?? "";
+      released = texts[8] ?? "";
     }
     const primaryArtist = artists.split(",").map((a) => a.trim()).filter(Boolean)[0]?.trim() || "";
     if (isBlockedArtist(primaryArtist) || isBlockedTrack(title)) return;
@@ -126,6 +129,7 @@ function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
 
 /**
  * Fetch one chart page (genre + date) and return parsed rows.
+ * Expects already logged-in session (getBptoptrackerCookie). URL pattern: /top/track/{genreSlug}/{date}.
  */
 export async function fetchChartForDate(genreSlug: string, date: string): Promise<BptoptrackerDailyRow[]> {
   const cookie = await getBptoptrackerCookie();
@@ -137,8 +141,12 @@ export async function fetchChartForDate(genreSlug: string, date: string): Promis
       ...(cookie ? { Cookie: cookie } : {}),
     },
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
   const html = await res.text();
+  // #region agent log
+  const looksLikeLogin = looksLikeLoginOrLandingPage(html);
+  fetch("http://127.0.0.1:7245/ingest/7798bf67-c5b4-45c1-bfd1-dc5453bf1c4b", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "bptoptrackerFetch.ts:fetchChartForDate", message: "chart fetch", data: { genreSlug, date, cookiePresent: !!cookie, resStatus: res.status, htmlLength: html.length, looksLikeLogin }, hypothesisId: "H4", timestamp: Date.now() }) }).catch(() => {});
+  // #endregion
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
   return parseChartHtml(html, url);
 }
 

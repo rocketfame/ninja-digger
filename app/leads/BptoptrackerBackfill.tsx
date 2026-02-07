@@ -1,32 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ButtonSpinner } from "@/app/components/ButtonSpinner";
 import { playSuccessSound } from "@/lib/successSound";
+import { BPTOPTRACKER_GENRES } from "@/lib/bptoptrackerGenres";
 
-const BPTOPTRACKER_GENRES: { value: string; label: string }[] = [
-  { value: "afro-house", label: "Afro House" },
-  { value: "techno", label: "Techno" },
-  { value: "house", label: "House" },
-  { value: "tech-house", label: "Tech House" },
-  { value: "deep-house", label: "Deep House" },
-  { value: "progressive-house", label: "Progressive House" },
-  { value: "melodic-house", label: "Melodic House" },
-  { value: "minimal-deep-tech", label: "Minimal / Deep Tech" },
-  { value: "electro-house", label: "Electro House" },
-  { value: "indie-dance", label: "Indie Dance" },
-  { value: "drum-and-bass", label: "Drum & Bass" },
-  { value: "dubstep", label: "Dubstep" },
-  { value: "trance", label: "Trance" },
-  { value: "psy-trance", label: "Psy Trance" },
-  { value: "hard-techno", label: "Hard Techno" },
-  { value: "organic-house", label: "Organic House" },
-  { value: "nu-disco", label: "Nu Disco" },
-  { value: "disco", label: "Disco" },
-  { value: "funk", label: "Funk" },
-];
+const ALL_GENRES_VALUE = "__all__";
 
 export function BptoptrackerBackfill() {
   const router = useRouter();
@@ -56,9 +36,13 @@ export function BptoptrackerBackfill() {
       const data = await res.json();
       if (data.ok) {
         playSuccessSound();
+        const errText = data.errors?.length ? "Помилки: " + data.errors.slice(0, 5).join("; ") + (data.errors.length > 5 ? ` … ще ${data.errors.length - 5}` : "") : "";
+        const rangeText = data.genresProcessed
+          ? `${data.genresProcessed} жанрів, ${data.datesRequested} днів`
+          : `${data.datesRequested} днів`;
         setMessage({
           ok: true,
-          text: `Вставлено ${data.totalInserted}, пропущено ${data.totalSkipped} (${data.datesRequested} днів). ${data.errors?.length ? "Помилки: " + data.errors.join("; ") : ""}`,
+          text: `Вставлено ${data.totalInserted}, пропущено ${data.totalSkipped} (${rangeText}). ${errText}${data.hint ?? ""}`.trim(),
         });
         router.refresh();
       } else {
@@ -75,7 +59,7 @@ export function BptoptrackerBackfill() {
     <section className="mb-6 rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
       <h2 className="mb-2 text-sm font-semibold text-stone-700">BP Top Tracker — backfill (ретро 2–3 міс.)</h2>
       <p className="mb-3 text-xs text-stone-500">
-        Заповнити базу даних за минулі дні. Задай BPTOPTRACKER_EMAIL та BPTOPTRACKER_PASSWORD у .env.
+        Заповнити базу даних за минулі дні. Задай BPTOPTRACKER_EMAIL та BPTOPTRACKER_PASSWORD у .env. Жанр має збігатися з URL на bptoptracker.com (наприклад tech-house, house, trance, afro-house).
       </p>
       <div className="flex flex-wrap items-end gap-3">
         <div>
@@ -83,14 +67,18 @@ export function BptoptrackerBackfill() {
           <select
             value={genreSlug}
             onChange={(e) => setGenreSlug(e.target.value)}
-            className="mt-0.5 w-44 rounded border border-stone-300 bg-white px-2 py-1.5 text-sm text-stone-800"
+            className="mt-0.5 w-56 rounded border border-stone-300 bg-white px-2 py-1.5 text-sm text-stone-800"
           >
+            <option value={ALL_GENRES_VALUE}>Усі жанри</option>
             {BPTOPTRACKER_GENRES.map((g) => (
               <option key={g.value} value={g.value}>
                 {g.label}
               </option>
             ))}
           </select>
+          {genreSlug === ALL_GENRES_VALUE && (
+            <p className="mt-1 text-xs text-amber-700">Макс. 60 днів за запуск, парсинг по всіх жанрах по черзі. Частина жанрів/дат може давати 404 — на сайті немає даних за ці дати.</p>
+          )}
         </div>
         <div>
           <label className="block text-xs text-stone-500">З дати</label>
@@ -117,10 +105,20 @@ export function BptoptrackerBackfill() {
           className="inline-flex items-center justify-center gap-2 rounded bg-stone-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-600 disabled:opacity-50"
         >
           {loading && <ButtonSpinner />}
-          {loading ? "Виконується…" : "Запустити backfill"}
+          {loading
+            ? (() => {
+                const from = new Date(dateFrom).getTime();
+                const to = new Date(dateTo).getTime();
+                const days = Number.isFinite(from) && Number.isFinite(to) ? Math.max(1, Math.ceil((to - from) / 86400000) + 1) : 30;
+                const genresCount = genreSlug === ALL_GENRES_VALUE ? BPTOPTRACKER_GENRES.length : 1;
+                const secPerSlot = genreSlug === ALL_GENRES_VALUE ? 8 : 4;
+                const min = Math.max(1, Math.ceil((days * genresCount * secPerSlot) / 60));
+                return `Виконується… (${min <= 1 ? "до 1 хв" : `~${min} хв`})`;
+              })()
+            : "Запустити backfill"}
         </button>
         <CleanJunkButton onDone={() => router.refresh()} />
-        <DebugOneDayButton genreSlug={genreSlug} dateTo={dateTo} />
+        <DebugOneDayButton genreSlug={genreSlug} dateTo={dateTo} disabled={genreSlug === ALL_GENRES_VALUE} />
       </div>
       {message && (
         <p className={`mt-2 text-sm ${message.ok ? "text-emerald-700" : "text-red-600"}`}>
@@ -135,100 +133,11 @@ export function BptoptrackerBackfill() {
         <BptoptrackerSyncButton onDone={() => router.refresh()} />
       </div>
 
-      <div className="mt-4 pt-4 border-t border-stone-200">
-        <h3 className="mb-1 text-sm font-medium text-stone-700">Імпорт з буфера</h3>
-        <p className="mb-2 text-xs text-stone-500">
-          Чарт на bptoptracker рендериться через JS, тому автоматичний backfill не бачить таблицю. Відкрий чарт у браузері, виділи всю таблицю (включно з заголовком), скопіюй (Ctrl+C) і встав сюди.
-        </p>
-        <ImportPasteBlock genreSlug={genreSlug} onDone={() => router.refresh()} />
-        <p className="mt-2 text-xs text-stone-500">
-          Усі артисти з імпорту — на сторінці{" "}
-          <Link href="/bptoptracker" className="text-stone-700 underline">
-            Артисти з BP Top Tracker
-          </Link>
-          . У таблиці лідів нижче зʼявляються лише ті, кого вже знайдено з Beatport (Discovery) або привʼязано вручну там; решту можна привʼязати на сторінці Артисти з BP Top Tracker.
-        </p>
-      </div>
     </section>
   );
 }
 
-function ImportPasteBlock({ genreSlug, onDone }: { genreSlug: string; onDone: () => void }) {
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [tsvText, setTsvText] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-
-  const run = useCallback(async () => {
-    if (!tsvText.trim()) return;
-    setLoading(true);
-    setMsg(null);
-    try {
-      const res = await fetch("/api/internal/bptoptracker/import-paste", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          genreSlug: genreSlug.trim(),
-          date: date.trim(),
-          tsvText: tsvText.trim(),
-        }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        playSuccessSound();
-        setMsg({
-          ok: true,
-          text: `Імпортовано: ${data.inserted} записів (пропущено ${data.skipped}). Дата ${data.date}, жанр ${data.genreSlug}.`,
-        });
-        setTsvText("");
-        onDone();
-      } else {
-        setMsg({ ok: false, text: data.error ?? "Помилка" });
-      }
-    } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : "Помилка запиту" });
-    } finally {
-      setLoading(false);
-    }
-  }, [genreSlug, date, tsvText, onDone]);
-
-  return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="text-xs text-stone-500">
-          Дата чарту:
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="ml-1 rounded border border-stone-300 px-2 py-1 text-sm"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={run}
-          disabled={loading || !tsvText.trim()}
-          className="inline-flex items-center justify-center gap-2 rounded bg-stone-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-600 disabled:opacity-50"
-        >
-          {loading && <ButtonSpinner />}
-          {loading ? "Імпорт…" : "Імпортувати з буфера"}
-        </button>
-      </div>
-      <textarea
-        value={tsvText}
-        onChange={(e) => setTsvText(e.target.value)}
-        placeholder="Встав сюди скопійовану таблицю чарту (з заголовком Title, Artists, …)"
-        rows={6}
-        className="w-full rounded border border-stone-300 px-2 py-1.5 text-sm font-mono"
-      />
-      {msg && (
-        <p className={`text-sm ${msg.ok ? "text-emerald-700" : "text-red-600"}`}>{msg.text}</p>
-      )}
-    </div>
-  );
-}
-
-function DebugOneDayButton({ genreSlug, dateTo }: { genreSlug: string; dateTo: string }) {
+function DebugOneDayButton({ genreSlug, dateTo, disabled }: { genreSlug: string; dateTo: string; disabled?: boolean }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
 
@@ -253,11 +162,11 @@ function DebugOneDayButton({ genreSlug, dateTo }: { genreSlug: string; dateTo: s
       <button
         type="button"
         onClick={run}
-        disabled={loading}
+        disabled={loading || disabled}
         className="inline-flex items-center justify-center gap-2 rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-50 disabled:opacity-50"
       >
         {loading && <ButtonSpinner className="text-stone-500" />}
-        {loading ? "Перевірка…" : "Перевірити один день"}
+        {loading ? "Перевірка… (до 10 с)" : "Перевірити один день"}
       </button>
       {result && (
         <pre className="mt-1 max-h-40 overflow-auto rounded border border-stone-200 bg-stone-50 p-2 text-xs text-stone-700">
@@ -301,7 +210,7 @@ function CleanJunkButton({ onDone }: { onDone: () => void }) {
         className="inline-flex items-center justify-center gap-2 rounded border border-amber-400 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
       >
         {loading && <ButtonSpinner className="text-amber-700" />}
-        {loading ? "Очищення…" : "Очистити сміттєві записи"}
+        {loading ? "Очищення… (кілька секунд)" : "Очистити сміттєві записи"}
       </button>
       {msg && (
         <p className={`mt-2 text-sm ${msg.ok ? "text-emerald-700" : "text-red-600"}`}>{msg.text}</p>
@@ -346,7 +255,7 @@ function BptoptrackerSyncButton({ onDone }: { onDone: () => void }) {
         className="inline-flex items-center justify-center gap-2 rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
       >
         {loading && <ButtonSpinner />}
-        {loading ? "Синхронізація…" : "Синхронізувати ретро з лідами"}
+        {loading ? "Синхронізація… (оптимізовано)" : "Синхронізувати ретро з лідами"}
       </button>
       {msg && (
         <p className={`mt-2 text-sm ${msg.ok ? "text-emerald-700" : "text-red-600"}`}>

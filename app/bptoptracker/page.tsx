@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { query } from "@/lib/db";
+import { getBlocklistValuesForSql } from "@/lib/bptoptrackerBlocklist";
 import { BptoptrackerFilters } from "./BptoptrackerFilters";
 
 type AggRow = {
@@ -38,6 +39,7 @@ export default async function BptoptrackerArtistsPage({
     // table might not exist yet
   }
 
+  const blocklist = getBlocklistValuesForSql();
   try {
     const agg = await query<{
       artist_name: string;
@@ -51,7 +53,18 @@ export default async function BptoptrackerArtistsPage({
       moves_down: string;
       lead_id: string | null;
     }>(
-      `WITH agg AS (
+      `WITH base AS (
+        SELECT artist_name, position, snapshot_date, genre_slug, movement
+        FROM bptoptracker_daily
+        WHERE (($1::text IS NULL OR $1 = '') OR genre_slug = $1)
+          AND ($2::date IS NULL OR snapshot_date >= $2::date)
+          AND ($3::date IS NULL OR snapshot_date <= $3::date)
+          AND (array_length($4::text[], 1) IS NULL OR (
+            NOT (LOWER(TRIM(artist_name)) = ANY($4::text[]))
+            AND NOT (LOWER(TRIM(REGEXP_REPLACE(artist_name, '\\s*[→↗⟶➔›].*$', '', 'gi'))) = ANY($4::text[]))
+            AND NOT (LOWER(TRIM(artist_name)) LIKE 'about us%')))
+      ),
+      agg AS (
         SELECT
           artist_name,
           COUNT(*)::int AS appearances,
@@ -62,10 +75,7 @@ export default async function BptoptrackerArtistsPage({
           ARRAY_AGG(DISTINCT genre_slug) AS genres,
           COUNT(*) FILTER (WHERE movement LIKE '↑%')::int AS moves_up,
           COUNT(*) FILTER (WHERE movement LIKE '↓%')::int AS moves_down
-        FROM bptoptracker_daily
-        WHERE (($1::text IS NULL OR $1 = '') OR genre_slug = $1)
-          AND ($2::date IS NULL OR snapshot_date >= $2::date)
-          AND ($3::date IS NULL OR snapshot_date <= $3::date)
+        FROM base
         GROUP BY artist_name
       )
       SELECT agg.*,
@@ -75,7 +85,7 @@ export default async function BptoptrackerArtistsPage({
       LEFT JOIN bptoptracker_artist_links bl ON bl.artist_name = agg.artist_name
       ORDER BY agg.appearances DESC, agg.best_position ASC
       LIMIT 500`,
-      [genre || null, dateFrom || null, dateTo || null]
+      [genre || null, dateFrom || null, dateTo || null, blocklist]
     );
     rows = agg.map((r) => ({
       artist_name: r.artist_name,
@@ -164,7 +174,7 @@ export default async function BptoptrackerArtistsPage({
                   <td className="px-3 py-2">
                     {r.lead_id ? (
                       <Link
-                        href={`/artist/bp/${r.lead_id}`}
+                        href={`/artist/bp/${r.lead_id.startsWith("bptoptracker:") ? r.lead_id.replace(/^bptoptracker:/, "") : r.lead_id}`}
                         className="text-stone-700 underline hover:no-underline"
                       >
                         Відкрити лід

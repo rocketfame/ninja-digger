@@ -49,6 +49,7 @@ export function ArtistLeadCard({
   initialProfile,
   links = [],
   contacts = [],
+  linkLabel = "Beatport",
 }: {
   artist: Artist;
   beatportUrl: string;
@@ -56,6 +57,8 @@ export function ArtistLeadCard({
   initialProfile?: Profile | null;
   links?: LinkRow[];
   contacts?: ContactRow[];
+  /** When link is to BP Top Tracker (synthetic id), pass "BP Top Tracker" */
+  linkLabel?: string;
 }) {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
@@ -212,7 +215,7 @@ export function ArtistLeadCard({
         <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
           <div>
             <dt className="text-stone-500">Платформа</dt>
-            <dd>Beatport</dd>
+            <dd>{linkLabel}</dd>
           </div>
           <div>
             <dt className="text-stone-500">Вперше в чартах</dt>
@@ -242,7 +245,7 @@ export function ArtistLeadCard({
               rel="noopener noreferrer"
               className="text-sm text-stone-700 underline hover:text-stone-900"
             >
-              Beatport
+              {linkLabel}
             </a>
           </li>
           {links.map((l) => (
@@ -331,7 +334,7 @@ export function ArtistLeadCard({
           className="inline-flex items-center justify-center gap-2 rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50"
         >
           {enrichLoading && <ButtonSpinner />}
-          {enrichLoading ? "Виконується…" : "Запустити Enrichment"}
+          {enrichLoading ? "Виконується… (до 2 хв)" : "Запустити Enrichment"}
         </button>
         <button
           type="button"

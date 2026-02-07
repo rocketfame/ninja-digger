@@ -52,6 +52,7 @@ const BLOCKLIST = new Set([
   "historical data",
   "register for free",
   "beatport top 100",
+  "140 / deep dubstep / grime",
 ]);
 
 const BLOCKLIST_TRACK = new Set([
@@ -67,13 +68,22 @@ function normalizeForMatch(s: string): string {
   return s.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+/** Strip trailing arrow/symbols and space for blocklist match (e.g. "about us →" → "about us"). */
+function stripTrailingNav(s: string): string {
+  return s.replace(/\s*[→↗⟶➔›]\s*.*$/gi, "").trim();
+}
+
 export function isBlockedArtist(name: string | null | undefined): boolean {
   if (!name || typeof name !== "string") return true;
   const n = normalizeForMatch(name);
   if (n.length < 2) return true;
   if (BLOCKLIST.has(n)) return true;
+  const nStripped = normalizeForMatch(stripTrailingNav(name));
+  if (nStripped && BLOCKLIST.has(nStripped)) return true;
+  if (/about\s+us\b/i.test(n)) return true;
   if (n.includes("→") || n.includes("©") || n.length > 80) return true;
   if (/^(top|chart|track|artist)\s*\d*$/i.test(n)) return true;
+  if (/^\d+\s*\/\s*.+/.test(n)) return true;
   return false;
 }
 
@@ -93,7 +103,9 @@ export function looksLikeLoginOrLandingPage(html: string): boolean {
   const hasLogin = /\b(sign in|login|password|email\s*:)\b/.test(lower);
   const hasNav = /\b(try now|register now|about us)\b/.test(lower);
   const smallOrNoChart = html.length < 15000 || !/\b(top 100|chart|position)\b/i.test(html);
-  return (hasLogin || hasNav) && smallOrNoChart;
+  // Login page can be ~19k bytes; treat as login if it has the login form (email + password inputs)
+  const hasLoginForm = /name="email"/i.test(html) && (/name="password"/i.test(html) || /password\s*:/i.test(lower));
+  return ((hasLogin || hasNav) && smallOrNoChart) || hasLoginForm;
 }
 
 /** Values to use in SQL: LOWER(artist_name) IN (...). For cleanup of bad rows. */
