@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OracleModal } from "./OracleModal";
+import { ButtonSpinner } from "@/app/components/ButtonSpinner";
+import { playSuccessSound } from "@/lib/successSound";
 
 type Run = {
   id: string;
@@ -41,12 +43,19 @@ export function DiscoveryControl() {
   const [trigger, setTrigger] = useState(0);
   const [oracleOpen, setOracleOpen] = useState(false);
   const router = useRouter();
+  const prevStatusRef = useRef<string | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/internal/discovery/status");
       const data = await res.json();
-      setRun(data.run ?? null);
+      const nextRun = data.run ?? null;
+      const nextStatus = nextRun?.status ?? null;
+      if (prevStatusRef.current === "running" && nextStatus === "completed") {
+        playSuccessSound();
+      }
+      prevStatusRef.current = nextStatus;
+      setRun(nextRun);
     } catch {
       setRun(null);
     }
@@ -119,9 +128,10 @@ export function DiscoveryControl() {
             type="button"
             onClick={handleRun}
             disabled={isRunning}
-            className="rounded-lg bg-stone-800 px-4 py-2 text-sm font-medium text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-stone-800 px-4 py-2 text-sm font-medium text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isRunning ? "Running… ⏳" : "Run Discovery"}
+            {isRunning && <ButtonSpinner />}
+            {isRunning ? "Running…" : "Run Discovery"}
           </button>
           <button
             type="button"

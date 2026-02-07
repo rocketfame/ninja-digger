@@ -2,6 +2,8 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ButtonSpinner } from "@/app/components/ButtonSpinner";
+import { playSuccessSound } from "@/lib/successSound";
 
 export function BptoptrackerBackfill() {
   const router = useRouter();
@@ -30,6 +32,7 @@ export function BptoptrackerBackfill() {
       });
       const data = await res.json();
       if (data.ok) {
+        playSuccessSound();
         setMessage({
           ok: true,
           text: `Inserted ${data.totalInserted}, skipped ${data.totalSkipped} (${data.datesRequested} days). ${data.errors?.length ? "Errors: " + data.errors.join("; ") : ""}`,
@@ -84,8 +87,9 @@ export function BptoptrackerBackfill() {
           type="button"
           onClick={runBackfill}
           disabled={loading}
-          className="rounded bg-stone-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-600 disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-2 rounded bg-stone-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-600 disabled:opacity-50"
         >
+          {loading && <ButtonSpinner />}
           {loading ? "Backfill…" : "Запустити backfill"}
         </button>
         <CleanJunkButton onDone={() => router.refresh()} />
@@ -117,6 +121,7 @@ function CleanJunkButton({ onDone }: { onDone: () => void }) {
       const res = await fetch("/api/internal/bptoptracker/clean", { method: "POST" });
       const data = await res.json();
       if (data.ok) {
+        playSuccessSound();
         setMsg({ ok: true, text: `Видалено сміттєвих записів: ${data.deleted}` });
         onDone();
       } else {
@@ -135,9 +140,10 @@ function CleanJunkButton({ onDone }: { onDone: () => void }) {
         type="button"
         onClick={runClean}
         disabled={loading}
-        className="rounded border border-amber-400 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+        className="inline-flex items-center justify-center gap-2 rounded border border-amber-400 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
       >
-        {loading ? "…" : "Очистити сміттєві записи"}
+        {loading && <ButtonSpinner className="text-amber-700" />}
+        {loading ? "Очищення…" : "Очистити сміттєві записи"}
       </button>
       {msg && (
         <p className={`mt-2 text-sm ${msg.ok ? "text-emerald-700" : "text-red-600"}`}>{msg.text}</p>
@@ -157,6 +163,7 @@ function BptoptrackerSyncButton({ onDone }: { onDone: () => void }) {
       const res = await fetch("/api/internal/bptoptracker/sync", { method: "POST" });
       const data = await res.json();
       if (data.ok) {
+        playSuccessSound();
         setMsg({
           ok: true,
           text: `Додано ${data.chartEntriesInserted} записів, ${data.artistsMatched} артистів → оновлено ${data.metricsUpdated} метрик, ${data.scoresUpdated} лідів. ${data.errors?.length ? "Помилки: " + data.errors.slice(0, 3).join("; ") : ""}`,
@@ -178,8 +185,9 @@ function BptoptrackerSyncButton({ onDone }: { onDone: () => void }) {
         type="button"
         onClick={runSync}
         disabled={loading}
-        className="rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
+        className="inline-flex items-center justify-center gap-2 rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
       >
+        {loading && <ButtonSpinner />}
         {loading ? "Синхронізація…" : "Синхронізувати ретро з лідами"}
       </button>
       {msg && (

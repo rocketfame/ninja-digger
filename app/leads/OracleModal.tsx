@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useState } from "react";
+import { ButtonSpinner } from "@/app/components/ButtonSpinner";
+import { playSuccessSound } from "@/lib/successSound";
 
 type ChartMeta = {
   genre: string | null;
@@ -67,6 +69,7 @@ export function OracleModal({
       });
       const data = await res.json();
       if (data.ok && data.items) {
+        playSuccessSound();
         setResult({
           ok: true,
           source: data.source,
@@ -102,6 +105,7 @@ export function OracleModal({
       });
       const data = await res.json();
       if (data.ok && data.segmentId) {
+        playSuccessSound();
         setSavedSegmentId(data.segmentId);
         onSaveSegment?.();
       } else {
@@ -163,8 +167,9 @@ export function OracleModal({
                 type="button"
                 onClick={handleScan}
                 disabled={loading || !url.trim()}
-                className="rounded bg-stone-800 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-2 rounded bg-stone-800 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
               >
+                {loading && <ButtonSpinner />}
                 {loading ? "Scanning…" : "Scan & Preview"}
               </button>
             </div>
@@ -282,8 +287,9 @@ export function OracleModal({
                   type="button"
                   onClick={handleSaveSegment}
                   disabled={saveLoading}
-                  className="rounded bg-stone-800 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
+                  className="inline-flex items-center justify-center gap-2 rounded bg-stone-800 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
                 >
+                  {saveLoading && <ButtonSpinner />}
                   {saveLoading ? "Saving…" : "Save Segment"}
                 </button>
                 <button

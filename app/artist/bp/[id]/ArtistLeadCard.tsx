@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ButtonSpinner } from "@/app/components/ButtonSpinner";
+import { playSuccessSound } from "@/lib/successSound";
 
 const PROFILE_STATUSES = ["New", "Contacted", "In Progress", "Won", "Lost"] as const;
 
@@ -103,7 +105,11 @@ export function ArtistLeadCard({
       const res = await fetch(`/api/internal/enrich/artist?artistId=${encodeURIComponent(artist.artist_beatport_id)}`, {
         method: "POST",
       });
-      if (res.ok) router.refresh();
+      const data = await res.json().catch(() => ({}));
+      if (data?.ok ?? res.ok) {
+        playSuccessSound();
+        router.refresh();
+      }
     } finally {
       setEnrichLoading(false);
     }
@@ -294,8 +300,9 @@ export function ArtistLeadCard({
           type="button"
           onClick={runEnrichment}
           disabled={enrichLoading}
-          className="rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-2 rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50"
         >
+          {enrichLoading && <ButtonSpinner />}
           {enrichLoading ? "Running…" : "Run Enrichment"}
         </button>
         <button

@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
+import { ButtonSpinner } from "@/app/components/ButtonSpinner";
+import { playSuccessSound } from "@/lib/successSound";
 
 type LeadOption = { artist_beatport_id: string; artist_name: string | null };
 
@@ -33,6 +35,7 @@ export function LinkToLeadForm({
       });
       const data = await res.json();
       if (data.ok) {
+        playSuccessSound();
         router.push("/bptoptracker");
         router.refresh();
       } else {
@@ -87,8 +90,9 @@ export function LinkToLeadForm({
           type="button"
           onClick={submit}
           disabled={loading || !selectedId}
-          className="rounded bg-stone-800 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-2 rounded bg-stone-800 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
         >
+          {loading && <ButtonSpinner />}
           {loading ? "Зберігаю…" : "Зберегти привʼязку"}
         </button>
         <Link
