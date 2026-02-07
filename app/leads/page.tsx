@@ -53,10 +53,10 @@ export default async function LeadsPage({
       );
     }
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Failed to load leads.";
+    const msg = e instanceof Error ? e.message : "Не вдалося завантажити ліди.";
     if (msg.includes("DATABASE_URL")) {
       error =
-        "Add DATABASE_URL to your environment (.env locally or Vercel → Settings → Environment Variables). Then run discovery, ingest, normalize and score so leads appear here.";
+        "Додайте DATABASE_URL у середовище (.env локально або Vercel → Settings → Environment Variables). Потім запустіть discovery, ingest, normalize та score, щоб тут зʼявились ліди.";
     } else {
       error = msg;
     }
@@ -67,10 +67,10 @@ export default async function LeadsPage({
       <header className="border-b border-stone-200 bg-white px-4 py-3">
         <nav className="flex items-center gap-4">
           <Link href="/" className="text-stone-600 hover:text-stone-900">
-            Home
+            Головна
           </Link>
           <span className="text-stone-400">|</span>
-          <span className="font-medium">Leads</span>
+          <span className="font-medium">Ліди</span>
           <span className="text-stone-400">|</span>
           <Link href="/bptoptracker" className="text-stone-600 hover:text-stone-900">
             Артисти з BP Top Tracker
@@ -79,19 +79,19 @@ export default async function LeadsPage({
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-6">
-        <h1 className="mb-4 text-xl font-semibold">Leads</h1>
+        <h1 className="mb-4 text-xl font-semibold">Ліди</h1>
 
         <DiscoveryControl />
         <BptoptrackerBackfill />
 
         <div className="mb-4 flex flex-wrap items-center gap-4">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-stone-500">Segment:</span>
+            <span className="text-sm text-stone-500">Сегмент:</span>
             <Link
               href="/leads"
               className={`rounded px-2 py-1 text-sm ${!segment ? "bg-stone-800 text-white" : "bg-stone-200 text-stone-700 hover:bg-stone-300"}`}
             >
-              all
+              всі
             </Link>
             {SEGMENTS_V2.map((s) => (
               <Link
@@ -108,7 +108,7 @@ export default async function LeadsPage({
               href={`/api/leads/export${segment ? `?segment=${segment}` : ""}`}
               className="rounded bg-stone-700 px-3 py-1.5 text-sm text-white hover:bg-stone-600"
             >
-              Export CSV
+              Експорт CSV
             </a>
           )}
         </div>
@@ -120,7 +120,7 @@ export default async function LeadsPage({
         )}
 
         {!error && leads.length === 0 && (
-          <p className="text-stone-500">No leads yet. Run discovery, ingest, normalize and score (migration 013).</p>
+          <p className="text-stone-500">Лідів ще немає. Запустіть discovery, ingest, normalize та score.</p>
         )}
 
         {!error && leads.length > 0 && (
@@ -128,12 +128,12 @@ export default async function LeadsPage({
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-stone-200 bg-stone-100">
-                  <th className="px-3 py-2 font-medium">Artist</th>
-                  <th className="px-3 py-2 font-medium">Segment</th>
-                  <th className="px-3 py-2 font-medium">Score</th>
-                  <th className="px-3 py-2 font-medium">Appearances</th>
-                  <th className="px-3 py-2 font-medium">First seen</th>
-                  <th className="px-3 py-2 font-medium">Last seen</th>
+                  <th className="px-3 py-2 font-medium">Артист</th>
+                  <th className="px-3 py-2 font-medium">Сегмент</th>
+                  <th className="px-3 py-2 font-medium">Бал</th>
+                  <th className="px-3 py-2 font-medium">Входжень</th>
+                  <th className="px-3 py-2 font-medium">Вперше</th>
+                  <th className="px-3 py-2 font-medium">Востаннє</th>
                 </tr>
               </thead>
               <tbody>

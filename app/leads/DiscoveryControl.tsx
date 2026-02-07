@@ -100,22 +100,22 @@ export function DiscoveryControl() {
   const statusBadge = {
     Idle: (
       <span className="inline-flex items-center gap-1 rounded-full bg-stone-200 px-2 py-0.5 text-xs font-medium text-stone-700">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Idle
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Очікує
       </span>
     ),
     Running: (
       <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" /> Running…
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" /> Виконується…
       </span>
     ),
     Completed: (
       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Completed
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Завершено
       </span>
     ),
     Error: (
       <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
-        <span className="h-1.5 w-1.5 rounded-full bg-red-500" /> Error
+        <span className="h-1.5 w-1.5 rounded-full bg-red-500" /> Помилка
       </span>
     ),
   };
@@ -131,14 +131,14 @@ export function DiscoveryControl() {
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-stone-800 px-4 py-2 text-sm font-medium text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isRunning && <ButtonSpinner />}
-            {isRunning ? "Running…" : "Run Discovery"}
+            {isRunning ? "Виконується…" : "Запустити Discovery"}
           </button>
           <button
             type="button"
             onClick={() => setOracleOpen(true)}
             className="rounded-lg border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-stone-50"
           >
-            Oracle Mode
+            Режим Oracle
           </button>
           <OracleModal
             open={oracleOpen}
@@ -148,20 +148,20 @@ export function DiscoveryControl() {
           {statusBadge[statusLabel as keyof typeof statusBadge]}
           {lastRun && (
             <span className="text-xs text-stone-500">
-              Last run: {formatTime(lastRun)}
+              Останній запуск: {formatTime(lastRun)}
             </span>
           )}
         </div>
         {(run?.charts_count != null || run?.artists_count != null || run?.leads_count != null) && (
           <div className="flex flex-wrap gap-4 text-xs text-stone-500">
             {run.charts_count != null && (
-              <span>{run.charts_count} charts</span>
+              <span>{run.charts_count} чартів</span>
             )}
             {run.artists_count != null && (
-              <span>{run.artists_count} artists</span>
+              <span>{run.artists_count} артистів</span>
             )}
             {run.leads_count != null && (
-              <span>{run.leads_count} leads</span>
+              <span>{run.leads_count} лідів</span>
             )}
           </div>
         )}
@@ -171,9 +171,9 @@ export function DiscoveryControl() {
       )}
       {run?.status === "completed" && (
         <p className="mt-2 text-sm text-emerald-700">
-          ✔ Discovery completed
-          {run.artists_count != null && ` · ${run.artists_count} artists`}
-          {run.leads_count != null && ` · ${run.leads_count} leads`}
+          ✔ Discovery завершено
+          {run.artists_count != null && ` · ${run.artists_count} артистів`}
+          {run.leads_count != null && ` · ${run.leads_count} лідів`}
         </p>
       )}
       {run?.status === "error" && run.error_message && (

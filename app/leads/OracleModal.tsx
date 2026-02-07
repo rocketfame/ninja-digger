@@ -78,10 +78,10 @@ export function OracleModal({
           counts: data.counts,
         });
       } else {
-        setError(data.error ?? "Scan failed.");
+        setError(data.error ?? "Сканування не вдалося.");
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Request failed.");
+      setError(e instanceof Error ? e.message : "Помилка запиту.");
     } finally {
       setLoading(false);
     }
@@ -89,7 +89,7 @@ export function OracleModal({
 
   const handleSaveSegment = useCallback(async () => {
     if (!result || !result.items.length) return;
-    const name = segmentName.trim() || result.chartMeta.genre || "Oracle segment";
+    const name = segmentName.trim() || result.chartMeta.genre || "Сегмент Oracle";
     setSaveLoading(true);
     setError(null);
     try {
@@ -109,10 +109,10 @@ export function OracleModal({
         setSavedSegmentId(data.segmentId);
         onSaveSegment?.();
       } else {
-        setError(data.error ?? "Save failed.");
+        setError(data.error ?? "Збереження не вдалося.");
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Request failed.");
+      setError(e instanceof Error ? e.message : "Помилка запиту.");
     } finally {
       setSaveLoading(false);
     }
@@ -140,16 +140,16 @@ export function OracleModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-stone-200 px-4 py-3">
-          <h2 className="text-lg font-semibold text-stone-900">Oracle Mode</h2>
+          <h2 className="text-lg font-semibold text-stone-900">Режим Oracle</h2>
           <p className="mt-0.5 text-sm text-stone-500">
-            Paste a chart or source URL to scan and preview artists/tracks.
+            Вставте URL чарту або джерела, щоб відсканувати та переглянути артистів/треки.
           </p>
         </div>
 
         <div className="p-4 space-y-4">
           <div>
             <label className="block text-sm font-medium text-stone-700 mb-1">
-              Paste chart / source URL
+              URL чарту або джерела
             </label>
             <div className="flex gap-2">
               <input
@@ -170,7 +170,7 @@ export function OracleModal({
                 className="inline-flex items-center justify-center gap-2 rounded bg-stone-800 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
               >
                 {loading && <ButtonSpinner />}
-                {loading ? "Scanning…" : "Scan & Preview"}
+                {loading ? "Сканування…" : "Сканувати та переглянути"}
               </button>
             </div>
           </div>
@@ -182,7 +182,7 @@ export function OracleModal({
               onClick={() => setOptionsOpen((o) => !o)}
               className="text-sm font-medium text-stone-600 hover:text-stone-900"
             >
-              {optionsOpen ? "−" : "+"} Optional: Segment name, Notes
+              {optionsOpen ? "−" : "+"} Опційно: назва сегменту, нотатки
             </button>
             {optionsOpen && (
               <div className="mt-2 space-y-2">
@@ -190,13 +190,13 @@ export function OracleModal({
                   type="text"
                   value={segmentName}
                   onChange={(e) => setSegmentName(e.target.value)}
-                  placeholder="Segment name"
+                  placeholder="Назва сегменту"
                   className="w-full rounded border border-stone-300 px-3 py-2 text-sm"
                 />
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Notes"
+                  placeholder="Нотатки"
                   rows={2}
                   className="w-full rounded border border-stone-300 px-3 py-2 text-sm"
                 />
@@ -211,26 +211,26 @@ export function OracleModal({
           {/* After save: toast + CTAs */}
           {savedSegmentId && (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 space-y-3">
-              <p className="font-medium text-emerald-800">Segment created</p>
+              <p className="font-medium text-emerald-800">Сегмент створено</p>
               <div className="flex flex-wrap gap-2">
                 <Link
                   href={`/segments/${savedSegmentId}`}
                   className="rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-700"
                 >
-                  Open Segment
+                  Відкрити сегмент
                 </Link>
                 <Link
                   href={`/segments/${savedSegmentId}#enrich`}
                   className="rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
                 >
-                  Run Enrichment
+                  Запустити Enrichment
                 </Link>
                 <button
                   type="button"
                   onClick={handleCancel}
                   className="rounded border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
                 >
-                  Close
+                  Закрити
                 </button>
               </div>
             </div>
@@ -240,22 +240,22 @@ export function OracleModal({
           {result && !savedSegmentId && (
             <div className="rounded-lg border border-stone-200 bg-stone-50 p-4 space-y-4">
               <div className="flex flex-wrap gap-4 text-sm">
-                <span><strong>Source:</strong> {result.source}</span>
+                <span><strong>Джерело:</strong> {result.source}</span>
                 {result.chartMeta.genre && (
-                  <span><strong>Genre:</strong> {result.chartMeta.genre}</span>
+                  <span><strong>Жанр:</strong> {result.chartMeta.genre}</span>
                 )}
-                <span><strong>Chart type:</strong> {result.chartMeta.chartType}</span>
-                <span><strong>Charts:</strong> {result.counts.charts} · <strong>Tracks:</strong> {result.counts.tracks} · <strong>Artists:</strong> {result.counts.artists}</span>
+                <span><strong>Тип чарту:</strong> {result.chartMeta.chartType}</span>
+                <span><strong>Чартів:</strong> {result.counts.charts} · <strong>Треків:</strong> {result.counts.tracks} · <strong>Артистів:</strong> {result.counts.artists}</span>
               </div>
 
               <div className="overflow-x-auto rounded border border-stone-200 bg-white">
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-stone-200 bg-stone-100">
-                      <th className="px-3 py-2 font-medium">Rank</th>
-                      <th className="px-3 py-2 font-medium">Artist</th>
-                      <th className="px-3 py-2 font-medium">Track</th>
-                      <th className="px-3 py-2 font-medium">Artist URL</th>
+                      <th className="px-3 py-2 font-medium">Позиція</th>
+                      <th className="px-3 py-2 font-medium">Артист</th>
+                      <th className="px-3 py-2 font-medium">Трек</th>
+                      <th className="px-3 py-2 font-medium">URL артиста</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -277,7 +277,7 @@ export function OracleModal({
                 </table>
                 {result.items.length > PREVIEW_TOP && (
                   <p className="px-3 py-2 text-xs text-stone-500">
-                    Showing top {PREVIEW_TOP} of {result.items.length} items.
+                    Показано перші {PREVIEW_TOP} з {result.items.length} записів.
                   </p>
                 )}
               </div>
@@ -290,14 +290,14 @@ export function OracleModal({
                   className="inline-flex items-center justify-center gap-2 rounded bg-stone-800 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
                 >
                   {saveLoading && <ButtonSpinner />}
-                  {saveLoading ? "Saving…" : "Save Segment"}
+                  {saveLoading ? "Збереження…" : "Зберегти сегмент"}
                 </button>
                 <button
                   type="button"
                   onClick={handleCancel}
                   className="rounded border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
                 >
-                  Cancel
+                  Скасувати
                 </button>
               </div>
             </div>

@@ -58,14 +58,14 @@ export function BptoptrackerBackfill() {
         playSuccessSound();
         setMessage({
           ok: true,
-          text: `Inserted ${data.totalInserted}, skipped ${data.totalSkipped} (${data.datesRequested} days). ${data.errors?.length ? "Errors: " + data.errors.join("; ") : ""}`,
+          text: `Вставлено ${data.totalInserted}, пропущено ${data.totalSkipped} (${data.datesRequested} днів). ${data.errors?.length ? "Помилки: " + data.errors.join("; ") : ""}`,
         });
         router.refresh();
       } else {
-        setMessage({ ok: false, text: data.error ?? "Failed" });
+        setMessage({ ok: false, text: data.error ?? "Помилка" });
       }
     } catch (e) {
-      setMessage({ ok: false, text: e instanceof Error ? e.message : "Request failed" });
+      setMessage({ ok: false, text: e instanceof Error ? e.message : "Помилка запиту" });
     } finally {
       setLoading(false);
     }
@@ -117,7 +117,7 @@ export function BptoptrackerBackfill() {
           className="inline-flex items-center justify-center gap-2 rounded bg-stone-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-600 disabled:opacity-50"
         >
           {loading && <ButtonSpinner />}
-          {loading ? "Backfill…" : "Запустити backfill"}
+          {loading ? "Виконується…" : "Запустити backfill"}
         </button>
         <CleanJunkButton onDone={() => router.refresh()} />
         <DebugOneDayButton genreSlug={genreSlug} dateTo={dateTo} />
@@ -183,10 +183,10 @@ function ImportPasteBlock({ genreSlug, onDone }: { genreSlug: string; onDone: ()
         setTsvText("");
         onDone();
       } else {
-        setMsg({ ok: false, text: data.error ?? "Failed" });
+        setMsg({ ok: false, text: data.error ?? "Помилка" });
       }
     } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : "Request failed" });
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Помилка запиту" });
     } finally {
       setLoading(false);
     }
@@ -242,7 +242,7 @@ function DebugOneDayButton({ genreSlug, dateTo }: { genreSlug: string; dateTo: s
       const data = await res.json();
       setResult(data.error ? { error: data.error } : data);
     } catch (e) {
-      setResult({ error: e instanceof Error ? e.message : "Request failed" });
+      setResult({ error: e instanceof Error ? e.message : "Помилка запиту" });
     } finally {
       setLoading(false);
     }
@@ -283,10 +283,10 @@ function CleanJunkButton({ onDone }: { onDone: () => void }) {
         setMsg({ ok: true, text: `Видалено сміттєвих записів: ${data.deleted}` });
         onDone();
       } else {
-        setMsg({ ok: false, text: data.error ?? "Failed" });
+        setMsg({ ok: false, text: data.error ?? "Помилка" });
       }
     } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : "Request failed" });
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Помилка запиту" });
     } finally {
       setLoading(false);
     }
@@ -328,10 +328,10 @@ function BptoptrackerSyncButton({ onDone }: { onDone: () => void }) {
         });
         onDone();
       } else {
-        setMsg({ ok: false, text: data.error ?? "Failed" });
+        setMsg({ ok: false, text: data.error ?? "Помилка" });
       }
     } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : "Request failed" });
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Помилка запиту" });
     } finally {
       setLoading(false);
     }

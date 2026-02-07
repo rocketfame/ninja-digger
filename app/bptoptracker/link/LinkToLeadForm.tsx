@@ -39,10 +39,10 @@ export function LinkToLeadForm({
         router.push("/bptoptracker");
         router.refresh();
       } else {
-        setError(data.error ?? "Failed");
+        setError(data.error ?? "Помилка");
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Request failed");
+      setError(e instanceof Error ? e.message : "Помилка запиту");
     } finally {
       setLoading(false);
     }

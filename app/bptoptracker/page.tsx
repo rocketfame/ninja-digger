@@ -97,9 +97,9 @@ export default async function BptoptrackerArtistsPage({
     <div className="min-h-screen bg-stone-50 text-stone-900">
       <header className="border-b border-stone-200 bg-white px-4 py-3">
         <nav className="flex items-center gap-4">
-          <Link href="/" className="text-stone-600 hover:text-stone-900">Home</Link>
+          <Link href="/" className="text-stone-600 hover:text-stone-900">Головна</Link>
           <span className="text-stone-400">|</span>
-          <Link href="/leads" className="text-stone-600 hover:text-stone-900">Leads</Link>
+          <Link href="/leads" className="text-stone-600 hover:text-stone-900">Ліди</Link>
           <span className="text-stone-400">|</span>
           <span className="font-medium">Артисти з BP Top Tracker</span>
         </nav>

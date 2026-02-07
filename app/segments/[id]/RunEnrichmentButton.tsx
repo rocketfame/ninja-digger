@@ -20,13 +20,13 @@ export function RunEnrichmentButton({ segmentId }: { segmentId: string }) {
       const data = await res.json();
       if (data.ok) {
         playSuccessSound();
-        setMessage(`Processed ${data.processed ?? 0} artists. Links: ${data.linksAdded ?? 0}, contacts: ${data.contactsAdded ?? 0}.`);
+        setMessage(`Оброблено ${data.processed ?? 0} артистів. Посилань: ${data.linksAdded ?? 0}, контактів: ${data.contactsAdded ?? 0}.`);
         router.refresh();
       } else {
-        setMessage(data.error ?? "Failed");
+        setMessage(data.error ?? "Помилка");
       }
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Request failed");
+      setMessage(e instanceof Error ? e.message : "Помилка запиту");
     } finally {
       setLoading(false);
     }
@@ -41,7 +41,7 @@ export function RunEnrichmentButton({ segmentId }: { segmentId: string }) {
         className="inline-flex items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 shadow-sm hover:bg-stone-50 disabled:opacity-50"
       >
         {loading && <ButtonSpinner />}
-        {loading ? "Running…" : "Run Enrichment"}
+        {loading ? "Виконується…" : "Запустити Enrichment"}
       </button>
       {message && <span className="text-sm text-stone-600">{message}</span>}
     </div>

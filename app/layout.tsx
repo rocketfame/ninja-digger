@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Ninja Digger",
-  description: "Beatport data research for manual outreach",
+  description: "Дослідження даних Beatport для ручного outreach",
 };
 
 export default function RootLayout({
@@ -12,7 +12,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="uk">
       <body>{children}</body>
     </html>
   );

@@ -56,9 +56,9 @@ export default async function SegmentPage({
     <div className="min-h-screen bg-stone-50 text-stone-900">
       <header className="border-b border-stone-200 bg-white px-4 py-3">
         <nav className="flex items-center gap-4">
-          <Link href="/" className="text-stone-600 hover:text-stone-900">Home</Link>
+          <Link href="/" className="text-stone-600 hover:text-stone-900">Головна</Link>
           <span className="text-stone-400">|</span>
-          <Link href="/leads" className="text-stone-600 hover:text-stone-900">Leads</Link>
+          <Link href="/leads" className="text-stone-600 hover:text-stone-900">Ліди</Link>
           <span className="text-stone-400">|</span>
           <span className="font-medium">{segment.name}</span>
         </nav>
@@ -69,7 +69,7 @@ export default async function SegmentPage({
           <div>
             <h1 className="text-xl font-semibold">{segment.name}</h1>
             <p className="text-sm text-stone-500">
-              {segment.source_type} · {items.length} items
+              {segment.source_type} · {items.length} записів
               {segment.source_url && (
                 <>
                   {" · "}
@@ -79,7 +79,7 @@ export default async function SegmentPage({
                     rel="noopener noreferrer"
                     className="text-stone-600 underline hover:text-stone-800"
                   >
-                    Source
+                    Джерело
                   </a>
                 </>
               )}
@@ -96,8 +96,8 @@ export default async function SegmentPage({
             <thead>
               <tr className="border-b border-stone-200 bg-stone-100">
                 <th className="px-3 py-2 font-medium">#</th>
-                <th className="px-3 py-2 font-medium">Artist</th>
-                <th className="px-3 py-2 font-medium">Track</th>
+                <th className="px-3 py-2 font-medium">Артист</th>
+                <th className="px-3 py-2 font-medium">Трек</th>
               </tr>
             </thead>
             <tbody>
