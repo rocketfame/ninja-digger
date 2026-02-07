@@ -39,8 +39,7 @@ function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
   const $ = cheerio.load(html);
   const seen = new Set<string>();
 
-  $("table tbody tr, .chart-table tbody tr, tbody tr").each((_, row) => {
-    const $row = $(row);
+  function processRow($row: cheerio.Cheerio<cheerio.Element>, date: string, genre: string): void {
     const tds = $row.find("td");
     if (tds.length < 3) return;
     const texts = tds.map((__, td) => $(td).text().trim()).get();
@@ -79,7 +78,21 @@ function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
       released: released || null,
       movement: movement || null,
     });
+  }
+
+  // Primary: table with tbody
+  $("table tbody tr, .chart-table tbody tr, tbody tr").each((_, row) => {
+    processRow($(row), date, genre);
   });
+
+  // Fallback: table without tbody (table > tr) — many sites use this
+  if (rows.length === 0) {
+    $("table tr").each((_, row) => {
+      const $row = $(row);
+      if ($row.find("th").length && $row.find("td").length === 0) return; // skip header row
+      processRow($row, date, genre);
+    });
+  }
 
   if (rows.length === 0) {
     $("tr, [class*='row']").each((i, el) => {

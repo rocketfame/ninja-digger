@@ -48,6 +48,30 @@ export async function GET(request: Request) {
     const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
     const hasChartKeyword = /\b(top 100|chart|position|rank)\b/i.test(html);
 
+    // Structure hints: what tables/rows exist so we can adapt the parser
+    const tables = $("table").toArray();
+    const structureHint = {
+      tableCount: tables.length,
+      tables: tables.slice(0, 5).map((t, i) => {
+        const $t = $(t);
+        const theadTr = $t.find("thead tr").length;
+        const tbodyTr = $t.find("tbody tr").length;
+        const directTr = $t.find("> tr").length;
+        const firstTrTds = $t.find("tbody tr").first().find("td").length || $t.find("tr").first().find("td").length;
+        const firstTrText = $t.find("tbody tr").first().text().trim().slice(0, 120) || $t.find("tr").first().text().trim().slice(0, 120);
+        return { i, theadTr, tbodyTr, directTr, firstTrTds, firstTrText };
+      }),
+      anyTrWithTds: $("tr").filter((_, el) => $(el).find("td").length >= 3).length,
+      sampleSelector: "table tr (no tbody): " + $("table tr").length + ", table tbody tr: " + $("table tbody tr").length,
+    };
+
+    // Snippet of first table HTML to see real structure (max 2.5k chars)
+    const tableStart = html.indexOf("<table");
+    const htmlSnippet =
+      tableStart >= 0
+        ? html.slice(tableStart, tableStart + 2500).replace(/\s+/g, " ").trim()
+        : html.slice(0, 1500).replace(/\s+/g, " ").trim();
+
     return NextResponse.json({
       url,
       status: res.status,
@@ -59,6 +83,8 @@ export async function GET(request: Request) {
       validRowsWithRank1to200: validRows,
       firstRowPreview: firstRowTexts,
       cookieUsed: !!cookie,
+      structureHint,
+      htmlSnippet: htmlSnippet.slice(0, 2500),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
