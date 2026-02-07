@@ -1,0 +1,14 @@
+---
+description: BP Top Tracker and Beatstats are Beatport-derived data sources. Fixed project context.
+globs:
+alwaysApply: true
+---
+
+# BP Top Tracker & Beatstats = Beatport data
+
+**Do not forget:** BP Top Tracker and Beatstats are services that are directly connected to Beatport (API or equivalent, implicitly). They pull information from Beatport and have been doing so for a long time. They did the "dirty work" for us.
+
+- We **directly process their data** (charts, artists, positions) and use it for our pipeline.
+- Their artists **are** Beatport artists; we treat them as such (e.g. synthetic IDs when we don't have Beatport ID yet, then real ID when we link).
+- We do **not** need to scrape Beatport ourselves for this chart/artist data—these aggregators are our primary source.
+- This is **fixed project context**. Apply it in all design and implementation decisions (sync, leads, segments, naming, docs).

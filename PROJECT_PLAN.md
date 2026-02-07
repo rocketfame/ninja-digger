@@ -21,6 +21,10 @@ Deterministic data-research tool for Beatport-related artists, DJs, and labels (
 - **Secondary (optional) data source:** Enterprise APIs (e.g. Songstats), pluggable later without refactoring
 - **Rule:** All ingestion sources must implement the same normalized output schema.
 
+### BP Top Tracker & Beatstats = Beatport data (global rule)
+
+**BP Top Tracker and Beatstats are services that pull data directly from Beatport** (via API or equivalent, implicitly). They have been doing this for a long time and have done the heavy lifting. **We treat their data as Beatport-derived:** we ingest and process their information (charts, artists, positions) and use it for our pipeline. We do not need to scrape Beatport directly for this—these aggregators are our primary source for chart/artist data from the Beatport ecosystem. This is fixed project context: remember it in all design and implementation decisions.
+
 Cursor must follow this plan strictly. No phase skipping. No premature optimization. No “helpful” deviations.
 
 ---

@@ -1,7 +1,11 @@
 import Link from "next/link";
-import { query } from "@/lib/db";
+import { query, pool } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { ArtistLeadCard } from "./ArtistLeadCard";
+import {
+  fetchBeatportArtistInfo,
+  isNumericBeatportId,
+} from "@/lib/beatportArtist";
 
 type ArtistV2 = {
   artist_beatport_id: string;
@@ -67,8 +71,31 @@ export default async function ArtistBeatportPage({
 
   if (!artist) notFound();
 
-  const beatportUrl =
-    `https://www.beatport.com/artist/${(artist.artist_slug || "artist").replace(/^\/+|\/+$/g, "")}/${artist.artist_beatport_id}`;
+  let displayName = artist.artist_name ?? artist.artist_beatport_id;
+  let beatportUrl = `https://www.beatport.com/artist/${(artist.artist_slug || "artist").replace(/^\/+|\/+$/g, "")}/${artist.artist_beatport_id}`;
+  let imageUrl: string | null = null;
+
+  if (isNumericBeatportId(artist.artist_beatport_id)) {
+    const beatportInfo = await fetchBeatportArtistInfo(
+      artist.artist_beatport_id,
+      artist.artist_slug
+    );
+    if (beatportInfo) {
+      beatportUrl = beatportInfo.url;
+      displayName = beatportInfo.name;
+      imageUrl = beatportInfo.imageUrl;
+      if (beatportInfo.name && beatportInfo.name !== (artist.artist_name ?? "")) {
+        try {
+          await pool.query(
+            `UPDATE artist_metrics SET artist_name = $1 WHERE artist_beatport_id = $2`,
+            [beatportInfo.name, artist.artist_beatport_id]
+          );
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900">
@@ -78,14 +105,15 @@ export default async function ArtistBeatportPage({
           <span className="text-stone-400">|</span>
           <Link href="/leads" className="text-stone-600 hover:text-stone-900">Leads</Link>
           <span className="text-stone-400">|</span>
-          <span className="font-medium">{artist.artist_name ?? artist.artist_beatport_id}</span>
+          <span className="font-medium">{displayName}</span>
         </nav>
       </header>
 
       <main className="mx-auto max-w-2xl px-4 py-6">
         <ArtistLeadCard
-          artist={artist}
+          artist={{ ...artist, artist_name: displayName }}
           beatportUrl={beatportUrl}
+          imageUrl={imageUrl}
           initialProfile={profile}
           links={links}
           contacts={contacts}

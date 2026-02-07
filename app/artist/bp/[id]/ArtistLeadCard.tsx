@@ -39,12 +39,14 @@ type ContactRow = { type: string; value: string };
 export function ArtistLeadCard({
   artist,
   beatportUrl,
+  imageUrl = null,
   initialProfile,
   links = [],
   contacts = [],
 }: {
   artist: Artist;
   beatportUrl: string;
+  imageUrl?: string | null;
   initialProfile?: Profile | null;
   links?: LinkRow[];
   contacts?: ContactRow[];
@@ -144,36 +146,56 @@ export function ArtistLeadCard({
 
   return (
     <article className="rounded-xl border border-stone-200 bg-white shadow-sm overflow-hidden">
-      {/* Header: name, genres, segment badge, score */}
+      {/* Header: image (from Beatport), name, genres, segment badge, score */}
       <div className="border-b border-stone-100 bg-stone-50/50 px-4 py-4">
-        <h1 className="text-xl font-semibold text-stone-900">{displayName}</h1>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          {genres.length > 0 && (
-            <span className="text-xs text-stone-500">
-              {genres.slice(0, 5).join(", ")}
-              {genres.length > 5 ? ` +${genres.length - 5}` : ""}
-            </span>
-          )}
-          {segment && (
-            <span
-              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                segment === "NEW_ENTRY"
-                  ? "bg-blue-100 text-blue-800"
-                  : segment === "FAST_GROWING"
-                    ? "bg-emerald-100 text-emerald-800"
-                    : segment === "TOP_PERFORMER"
-                      ? "bg-amber-100 text-amber-800"
-                      : "bg-stone-200 text-stone-700"
-              }`}
+        <div className="flex items-start gap-4">
+          {imageUrl && (
+            <a
+              href={beatportUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 rounded-lg overflow-hidden border border-stone-200 bg-stone-100 w-24 h-24"
             >
-              {segment}
-            </span>
+              <img
+                src={imageUrl}
+                alt=""
+                className="w-full h-full object-cover"
+                width={96}
+                height={96}
+              />
+            </a>
           )}
-          {artist.score != null && (
-            <span className="text-sm font-medium text-stone-700">Score: {artist.score}</span>
-          )}
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl font-semibold text-stone-900">{displayName}</h1>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {genres.length > 0 && (
+                <span className="text-xs text-stone-500">
+                  {genres.slice(0, 5).join(", ")}
+                  {genres.length > 5 ? ` +${genres.length - 5}` : ""}
+                </span>
+              )}
+              {segment && (
+                <span
+                  className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                    segment === "NEW_ENTRY"
+                      ? "bg-blue-100 text-blue-800"
+                      : segment === "FAST_GROWING"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : segment === "TOP_PERFORMER"
+                          ? "bg-amber-100 text-amber-800"
+                          : "bg-stone-200 text-stone-700"
+                  }`}
+                >
+                  {segment}
+                </span>
+              )}
+              {artist.score != null && (
+                <span className="text-sm font-medium text-stone-700">Score: {artist.score}</span>
+              )}
+            </div>
+            <p className="mt-2 text-sm text-stone-500">Why this lead? {teaser}</p>
+          </div>
         </div>
-        <p className="mt-2 text-sm text-stone-500">Why this lead? {teaser}</p>
       </div>
 
       {/* Discovery: source, first seen, charts count */}
