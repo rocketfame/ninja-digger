@@ -1,10 +1,15 @@
 /**
  * Fetch and parse BP Top Tracker chart page; return rows for bptoptracker_daily.
- * Uses getBptoptrackerCookie() for auth.
+ * Uses getBptoptrackerCookie() for auth. Rejects UI text (blocklist) and login page.
  */
 
 import * as cheerio from "cheerio";
 import { getBptoptrackerCookie } from "./bptoptrackerAuth";
+import {
+  isBlockedArtist,
+  isBlockedTrack,
+  looksLikeLoginOrLandingPage,
+} from "./bptoptrackerBlocklist";
 
 const ORIGIN = "https://www.bptoptracker.com";
 
@@ -21,8 +26,10 @@ export type BptoptrackerDailyRow = {
 };
 
 function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
-  if (/login|password|sign in|email\s*:/i.test(html) && html.length < 8000) {
-    throw new Error("BP Top Tracker returned login page. Check BPTOPTRACKER_EMAIL and BPTOPTRACKER_PASSWORD (or BPTOPTRACKER_COOKIE) in env.");
+  if (looksLikeLoginOrLandingPage(html)) {
+    throw new Error(
+      "BP Top Tracker повернув сторінку логіну або головну, не чарт. Перевір BPTOPTRACKER_EMAIL та BPTOPTRACKER_PASSWORD у .env і спробуй знову."
+    );
   }
   const genreMatch = pageUrl.match(/\/top\/track\/([^/]+)\/(\d{4}-\d{2}-\d{2})/i);
   const genre = genreMatch ? genreMatch[1] : "unknown";
@@ -38,7 +45,7 @@ function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
     if (tds.length < 3) return;
     const texts = tds.map((__, td) => $(td).text().trim()).get();
     const rankNum = parseInt(texts[0], 10);
-    if (!Number.isFinite(rankNum) || rankNum < 1) return;
+    if (!Number.isFinite(rankNum) || rankNum < 1 || rankNum > 200) return;
     let title = "";
     let artists = "";
     let label = "";
@@ -56,7 +63,8 @@ function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
       label = $row.find("[class*='label']").first().text().trim();
       released = $row.find("[class*='release']").first().text().trim();
     }
-    const primaryArtist = artists.split(",").map((a) => a.trim()).filter(Boolean)[0] || "Unknown";
+    const primaryArtist = artists.split(",").map((a) => a.trim()).filter(Boolean)[0]?.trim() || "";
+    if (isBlockedArtist(primaryArtist) || isBlockedTrack(title)) return;
     const key = `${date}-${genre}-${rankNum}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -78,13 +86,13 @@ function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
       const $el = $(el);
       const title = $el.find("a").first().text().trim();
       const artist = $el.find("[class*='artist'], a").eq(1).text().trim();
-      if (title || artist) {
+      if (artist && !isBlockedArtist(artist) && !isBlockedTrack(title) && i < 200) {
         rows.push({
           snapshot_date: date,
           genre_slug: genre,
           position: i + 1,
           track_title: title || null,
-          artist_name: artist || "Unknown",
+          artist_name: artist,
           artists_full: null,
           label_name: null,
           released: null,
@@ -92,6 +100,12 @@ function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
         });
       }
     });
+  }
+
+  if (rows.length === 0) {
+    throw new Error(
+      "Не знайдено жодного валідного рядка чарту. Можливо сторінка логіну або змінилась структура сайту."
+    );
   }
   return rows;
 }

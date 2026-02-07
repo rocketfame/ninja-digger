@@ -10,6 +10,11 @@ import {
   classifyChartFamily,
 } from "@/ingest/discovery/beatportDiscovery";
 import type { ParsedChartEntry } from "@/ingest/discovery/beatportDiscovery";
+import {
+  looksLikeLoginOrLandingPage,
+  isBlockedArtist,
+  isBlockedTrack,
+} from "@/lib/bptoptrackerBlocklist";
 
 const BEATPORT_ORIGIN = "https://www.beatport.com";
 const BPTOTRACKER_ORIGIN = "https://www.bptoptracker.com";
@@ -112,10 +117,12 @@ async function fetchForSource(url: string, source: OracleSource): Promise<string
   return await res.text();
 }
 
-/** BP Top Tracker: /top/track/afro-house/2026-02-03 — table with Rank, Title, Artists, Label, Released; optional rank movement. */
+/** BP Top Tracker: /top/track/afro-house/2026-02-03 — table with Rank, Title, Artists, Label, Released. */
 function parseBptoptrackerChart(html: string, pageUrl: string): { items: OracleScanItem[]; genre: string; date: string } {
-  if (/login|password|sign in|email\s*:/i.test(html) && html.length < 8000) {
-    throw new Error("BP Top Tracker returned login page. Set BPTOPTRACKER_COOKIE in env with your session cookie, or log in and paste the chart URL while authenticated.");
+  if (looksLikeLoginOrLandingPage(html)) {
+    throw new Error(
+      "BP Top Tracker повернув сторінку логіну або головну. Перевір BPTOPTRACKER_EMAIL та BPTOPTRACKER_PASSWORD у .env."
+    );
   }
   const $ = cheerio.load(html);
   const genreMatch = pageUrl.match(/\/top\/track\/([^/]+)\/(\d{4}-\d{2}-\d{2})/i);
@@ -130,28 +137,27 @@ function parseBptoptrackerChart(html: string, pageUrl: string): { items: OracleS
     const tds = $row.find("td");
     if (tds.length < 3) return;
     const texts = tds.map((__, td) => $(td).text().trim()).get();
-    const rankNum = parseInt(texts[0], 10) || items.length + 1;
+    const rankNum = parseInt(texts[0], 10);
+    if (!Number.isFinite(rankNum) || rankNum < 1 || rankNum > 200) return;
     let title = "";
     let artists = "";
     let label = "";
     let released = "";
     let movement = "";
     if (texts.length >= 5) {
-      title = texts[1] ?? texts[2] ?? "";
+      title = (texts[1] ?? texts[2] ?? "").replace(/[↑↓→]\d*/g, "").trim();
       artists = texts[2] ?? texts[3] ?? "";
       label = texts[3] ?? texts[4] ?? "";
       released = texts[4] ?? texts[5] ?? "";
       movement = texts[1]?.match(/[↑↓→]\d*/)?.[0] ?? "";
     } else {
-      const links = $row.find("a");
-      title = $row.find("[class*='title'], [class*='track']").first().text().trim() || links.eq(1).text().trim();
-      artists = $row.find("[class*='artist']").first().text().trim() || links.eq(2).text().trim();
+      title = $row.find("[class*='title'], [class*='track']").first().text().trim();
+      artists = $row.find("[class*='artist']").first().text().trim();
       label = $row.find("[class*='label']").first().text().trim();
       released = $row.find("[class*='release']").first().text().trim();
     }
-    if (!title && !artists) return;
-    const artistList = artists.split(",").map((a) => a.trim()).filter(Boolean);
-    const primaryArtist = artistList[0] || "Unknown";
+    const primaryArtist = artists.split(",").map((a) => a.trim()).filter(Boolean)[0]?.trim() || "";
+    if (isBlockedArtist(primaryArtist) || isBlockedTrack(title)) return;
     const key = `${rankNum}-${title}-${primaryArtist}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -175,25 +181,8 @@ function parseBptoptrackerChart(html: string, pageUrl: string): { items: OracleS
   });
 
   if (items.length === 0) {
-    $("tr, [class*='row'], [class*='item']").each((i, el) => {
-      const $el = $(el);
-      const rank = i + 1;
-      const title = $el.find("a").first().text().trim() || $el.text().slice(0, 80).trim();
-      const artist = $el.find("[class*='artist'], a").eq(1).text().trim() || "";
-      if (title || artist) {
-        items.push({
-          artist_beatport_id: "",
-          artist_name: artist || "Unknown",
-          artist_url: "",
-          track_name: title || "—",
-          track_url: null,
-          rank,
-          raw_json: { genre, date, source: "bptoptracker" } as Record<string, unknown>,
-        });
-      }
-    });
+    throw new Error("Не знайдено валідних рядків чарту. Можливо сторінка логіну або змінилась структура.");
   }
-
   return { items, genre, date };
 }
 

@@ -88,6 +88,7 @@ export function BptoptrackerBackfill() {
         >
           {loading ? "Backfill…" : "Запустити backfill"}
         </button>
+        <CleanJunkButton onDone={() => router.refresh()} />
       </div>
       {message && (
         <p className={`mt-2 text-sm ${message.ok ? "text-emerald-700" : "text-red-600"}`}>
@@ -102,6 +103,46 @@ export function BptoptrackerBackfill() {
         <BptoptrackerSyncButton onDone={() => router.refresh()} />
       </div>
     </section>
+  );
+}
+
+function CleanJunkButton({ onDone }: { onDone: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const runClean = useCallback(async () => {
+    setLoading(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/internal/bptoptracker/clean", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setMsg({ ok: true, text: `Видалено сміттєвих записів: ${data.deleted}` });
+        onDone();
+      } else {
+        setMsg({ ok: false, text: data.error ?? "Failed" });
+      }
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Request failed" });
+    } finally {
+      setLoading(false);
+    }
+  }, [onDone]);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={runClean}
+        disabled={loading}
+        className="rounded border border-amber-400 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+      >
+        {loading ? "…" : "Очистити сміттєві записи"}
+      </button>
+      {msg && (
+        <p className={`mt-2 text-sm ${msg.ok ? "text-emerald-700" : "text-red-600"}`}>{msg.text}</p>
+      )}
+    </>
   );
 }
 
