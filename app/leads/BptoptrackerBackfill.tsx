@@ -6,6 +6,28 @@ import { useRouter } from "next/navigation";
 import { ButtonSpinner } from "@/app/components/ButtonSpinner";
 import { playSuccessSound } from "@/lib/successSound";
 
+const BPTOPTRACKER_GENRES: { value: string; label: string }[] = [
+  { value: "afro-house", label: "Afro House" },
+  { value: "techno", label: "Techno" },
+  { value: "house", label: "House" },
+  { value: "tech-house", label: "Tech House" },
+  { value: "deep-house", label: "Deep House" },
+  { value: "progressive-house", label: "Progressive House" },
+  { value: "melodic-house", label: "Melodic House" },
+  { value: "minimal-deep-tech", label: "Minimal / Deep Tech" },
+  { value: "electro-house", label: "Electro House" },
+  { value: "indie-dance", label: "Indie Dance" },
+  { value: "drum-and-bass", label: "Drum & Bass" },
+  { value: "dubstep", label: "Dubstep" },
+  { value: "trance", label: "Trance" },
+  { value: "psy-trance", label: "Psy Trance" },
+  { value: "hard-techno", label: "Hard Techno" },
+  { value: "organic-house", label: "Organic House" },
+  { value: "nu-disco", label: "Nu Disco" },
+  { value: "disco", label: "Disco" },
+  { value: "funk", label: "Funk" },
+];
+
 export function BptoptrackerBackfill() {
   const router = useRouter();
   const [genreSlug, setGenreSlug] = useState("afro-house");
@@ -57,14 +79,18 @@ export function BptoptrackerBackfill() {
       </p>
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="block text-xs text-stone-500">Жанр (slug)</label>
-          <input
-            type="text"
+          <label className="block text-xs text-stone-500">Жанр</label>
+          <select
             value={genreSlug}
             onChange={(e) => setGenreSlug(e.target.value)}
-            placeholder="afro-house"
-            className="mt-0.5 w-32 rounded border border-stone-300 px-2 py-1.5 text-sm"
-          />
+            className="mt-0.5 w-44 rounded border border-stone-300 bg-white px-2 py-1.5 text-sm text-stone-800"
+          >
+            {BPTOPTRACKER_GENRES.map((g) => (
+              <option key={g.value} value={g.value}>
+                {g.label}
+              </option>
+            ))}
+          </select>
         </div>
         <div>
           <label className="block text-xs text-stone-500">З дати</label>
