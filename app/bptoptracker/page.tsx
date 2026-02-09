@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { query } from "@/lib/db";
 import { getBlocklistValuesForSql } from "@/lib/bptoptrackerBlocklist";
+import { formatDateDDMMYYYY } from "@/lib/formatDate";
 import { BptoptrackerFilters } from "./BptoptrackerFilters";
 
 type AggRow = {
@@ -104,20 +105,22 @@ export default async function BptoptrackerArtistsPage({
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 text-stone-900">
-      <header className="border-b border-stone-200 bg-white px-4 py-3">
-        <nav className="flex items-center gap-4">
-          <Link href="/" className="text-stone-600 hover:text-stone-900">Головна</Link>
-          <span className="text-stone-400">|</span>
-          <Link href="/leads" className="text-stone-600 hover:text-stone-900">Ліди</Link>
-          <span className="text-stone-400">|</span>
-          <span className="font-medium">Артисти з BP Top Tracker</span>
+    <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
+      <header className="border-b border-[var(--border)] bg-[var(--bg-header)] px-4 py-3">
+        <nav className="flex items-center gap-6">
+          <Link href="/" className="text-[var(--accent)] font-semibold tracking-tight hover:text-[var(--accent-hover)]">
+            Ninja Digger
+          </Link>
+          <span className="text-[var(--text-muted)]">|</span>
+          <Link href="/" className="text-[var(--text-muted)] hover:text-[var(--text)]">Головна</Link>
+          <Link href="/leads" className="text-[var(--text-muted)] hover:text-[var(--text)]">Ліди</Link>
+          <span className="font-medium text-[var(--text)]">BP Top Tracker</span>
         </nav>
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6">
-        <h1 className="mb-4 text-xl font-semibold">Артисти з BP Top Tracker</h1>
-        <p className="mb-4 text-sm text-stone-500">
+        <h1 className="mb-4 text-xl font-semibold text-[var(--text)]">Артисти з BP Top Tracker</h1>
+        <p className="mb-4 text-sm text-[var(--text-muted)]">
           Агрегація по артистах з ретроспективних чартів. Звʼязок з лідами — авто за іменем або ручне посилання.
         </p>
 
@@ -128,61 +131,61 @@ export default async function BptoptrackerArtistsPage({
           currentDateTo={dateTo ?? ""}
         />
 
-        <div className="mt-4 overflow-x-auto rounded border border-stone-200 bg-white">
+        <div className="mt-4 overflow-x-auto rounded border border-[var(--border)] bg-[var(--bg-card)]">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-stone-200 bg-stone-100">
-                <th className="px-3 py-2 font-medium">Артист</th>
-                <th className="px-3 py-2 font-medium">Жанри</th>
-                <th className="px-3 py-2 font-medium">Входжень</th>
-                <th className="px-3 py-2 font-medium">Найкраща поз.</th>
-                <th className="px-3 py-2 font-medium">Сер. поз.</th>
-                <th className="px-3 py-2 font-medium">Перша дата</th>
-                <th className="px-3 py-2 font-medium">Остання дата</th>
-                <th className="px-3 py-2 font-medium">Тренд</th>
-                <th className="px-3 py-2 font-medium">Лід</th>
+              <tr className="border-b border-[var(--border)] bg-[var(--bg-table-header)]">
+                <th className="px-3 py-2 font-medium text-[var(--text)]">Артист</th>
+                <th className="px-3 py-2 font-medium text-[var(--text)]">Жанри</th>
+                <th className="px-3 py-2 font-medium text-[var(--text)]">Входжень</th>
+                <th className="px-3 py-2 font-medium text-[var(--text)]">Найкраща поз.</th>
+                <th className="px-3 py-2 font-medium text-[var(--text)]">Сер. поз.</th>
+                <th className="px-3 py-2 font-medium text-[var(--text)]">Перша дата</th>
+                <th className="px-3 py-2 font-medium text-[var(--text)]">Остання дата</th>
+                <th className="px-3 py-2 font-medium text-[var(--text)]">Тренд</th>
+                <th className="px-3 py-2 font-medium text-[var(--text)]">Лід</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-3 py-6 text-center text-stone-500">
+                  <td colSpan={9} className="px-3 py-6 text-center text-[var(--text-muted)]">
                     Немає даних. Запусти backfill на сторінці Leads або обери інші фільтри.
                   </td>
                 </tr>
               )}
               {rows.map((r) => (
-                <tr key={r.artist_name} className="border-b border-stone-100 hover:bg-stone-50">
-                  <td className="px-3 py-2 font-medium">{r.artist_name}</td>
-                  <td className="px-3 py-2 text-stone-600">{r.genres.slice(0, 3).join(", ")}</td>
-                  <td className="px-3 py-2">{r.appearances}</td>
-                  <td className="px-3 py-2">#{r.best_position}</td>
-                  <td className="px-3 py-2">{r.avg_position}</td>
-                  <td className="px-3 py-2">{r.first_seen}</td>
-                  <td className="px-3 py-2">{r.last_seen}</td>
+                <tr key={r.artist_name} className="border-b border-[var(--border)] hover:bg-[var(--bg-hover)]">
+                  <td className="px-3 py-2 font-medium text-[var(--text)]">{r.artist_name}</td>
+                  <td className="px-3 py-2 text-[var(--text-muted)]">{r.genres.slice(0, 3).join(", ")}</td>
+                  <td className="px-3 py-2 text-[var(--text)]">{r.appearances}</td>
+                  <td className="px-3 py-2 text-[var(--text)]">#{r.best_position}</td>
+                  <td className="px-3 py-2 text-[var(--text)]">{r.avg_position}</td>
+                  <td className="px-3 py-2 text-[var(--text-muted)]">{formatDateDDMMYYYY(r.first_seen)}</td>
+                  <td className="px-3 py-2 text-[var(--text-muted)]">{formatDateDDMMYYYY(r.last_seen)}</td>
                   <td className="px-3 py-2">
                     <span title={`↑${r.moves_up} ↓${r.moves_down}`}>
                       {r.moves_up > r.moves_down ? (
-                        <span className="text-emerald-600">↑ {r.moves_up}</span>
+                        <span className="text-[var(--accent)]">↑ {r.moves_up}</span>
                       ) : r.moves_down > r.moves_up ? (
-                        <span className="text-red-600">↓ {r.moves_down}</span>
+                        <span className="text-[var(--danger)]">↓ {r.moves_down}</span>
                       ) : (
-                        <span className="text-stone-400">—</span>
+                        <span className="text-[var(--text-muted)]">—</span>
                       )}
                     </span>
                   </td>
                   <td className="px-3 py-2">
                     {r.lead_id ? (
                       <Link
-                        href={`/artist/bp/${r.lead_id.startsWith("bptoptracker:") ? r.lead_id.replace(/^bptoptracker:/, "") : r.lead_id}`}
-                        className="text-stone-700 underline hover:no-underline"
+                        href={`/artist/${r.lead_id.startsWith("bptoptracker:") ? r.lead_id.replace(/^bptoptracker:/, "") : r.lead_id}`}
+                        className="text-[var(--accent)] hover:underline"
                       >
                         Відкрити лід
                       </Link>
                     ) : (
                       <Link
                         href={`/bptoptracker/link?artist=${encodeURIComponent(r.artist_name)}`}
-                        className="text-stone-500 hover:text-stone-700"
+                        className="text-[var(--text-muted)] hover:text-[var(--text)]"
                       >
                         Привʼязати
                       </Link>

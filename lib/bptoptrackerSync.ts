@@ -1,5 +1,6 @@
 /**
  * Sync bptoptracker_daily → chart_entries. Optimized: bulk resolve artist IDs, batch INSERT.
+ * BP Top Tracker uses Beatport API — artist IDs in chart links are Beatport artist IDs (one catalog).
  * Then run normalize + score so they appear in lead_scores.
  */
 
@@ -89,6 +90,27 @@ export async function syncBptoptrackerToChartEntries(): Promise<{
   let chartEntriesInserted = 0;
   const matchedArtistIds = new Set<string>();
 
+  const hasArtistIdColumn = await pool.query(
+    `SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'bptoptracker_daily' AND column_name = 'artist_beatport_id' LIMIT 1`
+  );
+  const hasLinkPathColumnDaily = await pool.query(
+    `SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'bptoptracker_daily' AND column_name = 'artist_link_path' LIMIT 1`
+  );
+  const hasLinkPathColumnEntries = await pool.query(
+    `SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'chart_entries' AND column_name = 'artist_link_path' LIMIT 1`
+  );
+  const withLinkPathDaily = hasLinkPathColumnDaily.rows.length > 0;
+  const withLinkPathEntries = hasLinkPathColumnEntries.rows.length > 0;
+
+  let selectSql: string;
+  if (hasArtistIdColumn.rows.length > 0 && withLinkPathDaily) {
+    selectSql = `SELECT snapshot_date::text, genre_slug, position, track_title, artist_name, label_name, released, artist_beatport_id, artist_link_path FROM bptoptracker_daily ORDER BY snapshot_date, genre_slug, position`;
+  } else if (hasArtistIdColumn.rows.length > 0) {
+    selectSql = `SELECT snapshot_date::text, genre_slug, position, track_title, artist_name, label_name, released, artist_beatport_id, NULL::text AS artist_link_path FROM bptoptracker_daily ORDER BY snapshot_date, genre_slug, position`;
+  } else {
+    selectSql = `SELECT snapshot_date::text, genre_slug, position, track_title, artist_name, label_name, released, NULL::text AS artist_beatport_id, NULL::text AS artist_link_path FROM bptoptracker_daily ORDER BY snapshot_date, genre_slug, position`;
+  }
+
   const rows = await query<{
     snapshot_date: string;
     genre_slug: string;
@@ -97,10 +119,9 @@ export async function syncBptoptrackerToChartEntries(): Promise<{
     artist_name: string;
     label_name: string | null;
     released: string | null;
-  }>(
-    `SELECT snapshot_date::text, genre_slug, position, track_title, artist_name, label_name, released
-     FROM bptoptracker_daily ORDER BY snapshot_date, genre_slug, position`
-  );
+    artist_beatport_id: string | null;
+    artist_link_path: string | null;
+  }>(selectSql);
 
   if (rows.length === 0) {
     return { chartEntriesInserted: 0, artistsMatched: 0, errors: [] };
@@ -121,6 +142,7 @@ export async function syncBptoptrackerToChartEntries(): Promise<{
     artist_beatport_id: string;
     label_name: string | null;
     release_title: string | null;
+    artist_link_path: string | null;
   }[] = [];
 
   for (const row of rows) {
@@ -128,8 +150,12 @@ export async function syncBptoptrackerToChartEntries(): Promise<{
     if (!chartId) continue;
 
     const trimmed = row.artist_name.trim();
+    const fromChartLink = row.artist_beatport_id?.trim() && /^\d+$/.test(row.artist_beatport_id.trim())
+      ? row.artist_beatport_id.trim()
+      : null;
     const artistBeatportId = trimmed ? artistIdMap.get(trimmed.toLowerCase()) ?? null : null;
-    const resolvedId = artistBeatportId ?? syntheticArtistId(row.artist_name);
+    const resolvedId = fromChartLink ?? artistBeatportId ?? syntheticArtistId(row.artist_name);
+    const linkPath = fromChartLink && row.artist_link_path?.trim() ? row.artist_link_path.trim() : null;
 
     matchedArtistIds.add(resolvedId);
     toInsert.push({
@@ -141,6 +167,7 @@ export async function syncBptoptrackerToChartEntries(): Promise<{
       artist_beatport_id: resolvedId,
       label_name: row.label_name,
       release_title: row.released,
+      artist_link_path: linkPath,
     });
   }
 
@@ -150,26 +177,50 @@ export async function syncBptoptrackerToChartEntries(): Promise<{
     const placeholders: string[] = [];
     let param = 1;
     for (const r of batch) {
-      placeholders.push(
-        `($${param}, $${param + 1}, $${param + 2}, $${param + 3}, $${param + 4}, $${param + 5}, $${param + 6}, $${param + 7}, 'bptoptracker')`
-      );
-      values.push(
-        r.chart_id,
-        r.snapshot_date,
-        r.position,
-        r.track_title,
-        r.artist_name,
-        r.artist_beatport_id,
-        r.label_name,
-        r.release_title
-      );
-      param += 8;
+      if (withLinkPathEntries) {
+        placeholders.push(
+          `($${param}, $${param + 1}, $${param + 2}, $${param + 3}, $${param + 4}, $${param + 5}, $${param + 6}, $${param + 7}, $${param + 8}, 'bptoptracker')`
+        );
+        values.push(
+          r.chart_id,
+          r.snapshot_date,
+          r.position,
+          r.track_title,
+          r.artist_name,
+          r.artist_beatport_id,
+          r.label_name,
+          r.release_title,
+          r.artist_link_path
+        );
+        param += 9;
+      } else {
+        placeholders.push(
+          `($${param}, $${param + 1}, $${param + 2}, $${param + 3}, $${param + 4}, $${param + 5}, $${param + 6}, $${param + 7}, 'bptoptracker')`
+        );
+        values.push(
+          r.chart_id,
+          r.snapshot_date,
+          r.position,
+          r.track_title,
+          r.artist_name,
+          r.artist_beatport_id,
+          r.label_name,
+          r.release_title
+        );
+        param += 8;
+      }
     }
     try {
+      const insertCols = withLinkPathEntries
+        ? "chart_id, snapshot_date, position, track_title, artist_name, artist_beatport_id, label_name, release_title, artist_link_path, source"
+        : "chart_id, snapshot_date, position, track_title, artist_name, artist_beatport_id, label_name, release_title, source";
+      const onConflict = withLinkPathEntries
+        ? "ON CONFLICT (chart_id, snapshot_date, position) DO UPDATE SET artist_link_path = COALESCE(EXCLUDED.artist_link_path, chart_entries.artist_link_path)"
+        : "ON CONFLICT (chart_id, snapshot_date, position) DO NOTHING";
       const result = await pool.query(
-        `INSERT INTO chart_entries (chart_id, snapshot_date, position, track_title, artist_name, artist_beatport_id, label_name, release_title, source)
+        `INSERT INTO chart_entries (${insertCols})
          VALUES ${placeholders.join(", ")}
-         ON CONFLICT (chart_id, snapshot_date, position) DO NOTHING`,
+         ${onConflict}`,
         values
       );
       chartEntriesInserted += result.rowCount ?? 0;

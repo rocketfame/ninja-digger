@@ -1,33 +1,56 @@
 /**
- * POST /api/internal/enrich/segment?segmentId=...
- * Run enrichment for all artists in segment (rate-limited; first 5 per run to stay under timeout).
+ * POST /api/internal/enrich/segment?segmentId=...&force=1
+ * Run enrichment for artists in segment (rate-limited; up to 10 per run).
+ * By default skips artists who already have at least one link or contact; use force=1 to re-run for all.
  */
 
 import { NextResponse } from "next/server";
 import { query, pool } from "@/lib/db";
 import { runEnrichmentForArtist } from "@/lib/enrichV1";
 
-const MAX_ARTISTS_PER_RUN = 5;
+const MAX_ARTISTS_PER_RUN = 10;
+
+/** Артисти без жодного запису в artist_links і artist_contacts вважаються «без даних». */
+const WHERE_NOT_ENRICHED = `
+  AND NOT EXISTS (SELECT 1 FROM artist_links al WHERE al.artist_beatport_id = sa.artist_beatport_id)
+  AND NOT EXISTS (SELECT 1 FROM artist_contacts ac WHERE ac.artist_beatport_id = sa.artist_beatport_id)
+`;
 
 export async function POST(request: Request) {
   const { searchParams } = new URL(request.url);
   const segmentId = searchParams.get("segmentId");
+  const force = searchParams.get("force") === "1" || searchParams.get("force") === "true";
   if (!segmentId) {
     return NextResponse.json({ error: "segmentId required" }, { status: 400 });
   }
 
   let runId: string | null = null;
   try {
-    const artists = await query<{ artist_beatport_id: string }>(
-      `SELECT artist_beatport_id FROM segment_artists WHERE segment_id = $1 LIMIT $2`,
+    const artists = await query<{ artist_beatport_id: string; artist_name: string | null }>(
+      `SELECT sa.artist_beatport_id, am.artist_name
+       FROM segment_artists sa
+       LEFT JOIN artist_metrics am ON am.artist_beatport_id = sa.artist_beatport_id
+       WHERE sa.segment_id = $1
+       ${force ? "" : WHERE_NOT_ENRICHED}
+       ORDER BY sa.artist_beatport_id
+       LIMIT $2`,
       [segmentId, MAX_ARTISTS_PER_RUN]
     );
+    const [remainingRow] = await query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM segment_artists sa
+       WHERE sa.segment_id = $1 ${force ? "" : WHERE_NOT_ENRICHED}`,
+      [segmentId]
+    );
+    const remaining = parseInt(remainingRow?.count ?? "0", 10);
+
     if (artists.length === 0) {
       return NextResponse.json({
         ok: true,
         runId: null,
-        message: "No artists in segment",
+        message: force ? "No artists in segment" : "No artists left without data (all enriched or segment empty)",
         processed: 0,
+        remaining,
       });
     }
 
@@ -54,12 +77,22 @@ export async function POST(request: Request) {
       );
     }
 
+    const [remainingAfterRow] = await query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM segment_artists sa
+       WHERE sa.segment_id = $1 ${force ? "" : WHERE_NOT_ENRICHED}`,
+      [segmentId]
+    );
+    const remainingAfter = parseInt(remainingAfterRow?.count ?? "0", 10);
+
     return NextResponse.json({
       ok: true,
       runId,
       processed: artists.length,
       linksAdded,
       contactsAdded,
+      remaining: remainingAfter,
+      artists: artists.map((a) => ({ artist_beatport_id: a.artist_beatport_id, artist_name: a.artist_name ?? null })),
       error: lastError ?? undefined,
     });
   } catch (err) {

@@ -13,7 +13,7 @@ export function BptoptrackerBackfill() {
   const [genreSlug, setGenreSlug] = useState("afro-house");
   const [dateFrom, setDateFrom] = useState(() => {
     const d = new Date();
-    d.setMonth(d.getMonth() - 3);
+    d.setMonth(d.getMonth() - 4);
     return d.toISOString().slice(0, 10);
   });
   const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10));
@@ -40,10 +40,13 @@ export function BptoptrackerBackfill() {
         const rangeText = data.genresProcessed
           ? `${data.genresProcessed} жанрів, ${data.datesRequested} днів`
           : `${data.datesRequested} днів`;
-        setMessage({
-          ok: true,
-          text: `Вставлено ${data.totalInserted}, пропущено ${data.totalSkipped} (${rangeText}). ${errText}${data.hint ?? ""}`.trim(),
-        });
+        let text = `Вставлено ${data.totalInserted}, пропущено ${data.totalSkipped} (${rangeText}).`;
+        if (data.sync) {
+          text += ` Синхронізація: ${data.sync.chartEntriesInserted} записів у чарти, ${data.sync.metricsUpdated} метрик, ${data.sync.scoresUpdated} лідів.`;
+          if (data.sync.errors?.length) text += " " + data.sync.errors.slice(0, 2).join("; ");
+        }
+        text += ` ${errText}${data.hint ?? ""}`;
+        setMessage({ ok: true, text: text.trim() });
         router.refresh();
       } else {
         setMessage({ ok: false, text: data.error ?? "Помилка" });
@@ -56,18 +59,18 @@ export function BptoptrackerBackfill() {
   }, [genreSlug, dateFrom, dateTo, router]);
 
   return (
-    <section className="mb-6 rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-      <h2 className="mb-2 text-sm font-semibold text-stone-700">BP Top Tracker — backfill (ретро 2–3 міс.)</h2>
-      <p className="mb-3 text-xs text-stone-500">
-        Заповнити базу даних за минулі дні. Задай BPTOPTRACKER_EMAIL та BPTOPTRACKER_PASSWORD у .env. Жанр має збігатися з URL на bptoptracker.com (наприклад tech-house, house, trance, afro-house).
+    <section className="mb-6 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-4">
+      <h2 className="mb-2 text-sm font-semibold text-[var(--text)]">BP Top Tracker — backfill (ретро до 4 міс.)</h2>
+      <p className="mb-3 text-xs text-[var(--text-muted)]">
+        Заповнити базу даних за минулі дні (за замовчуванням 4 міс.). З чартів підтягуються посилання на артистів з ID — після backfill посилання Beatport/BP Top Tracker зʼявляться на картках артистів. Задай BPTOPTRACKER_EMAIL та BPTOPTRACKER_PASSWORD у .env. Жанр має збігатися з URL на bptoptracker.com (наприклад tech-house, house, trance, afro-house).
       </p>
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="block text-xs text-stone-500">Жанр</label>
+          <label className="block text-xs text-[var(--text-muted)]">Жанр</label>
           <select
             value={genreSlug}
             onChange={(e) => setGenreSlug(e.target.value)}
-            className="mt-0.5 w-56 rounded border border-stone-300 bg-white px-2 py-1.5 text-sm text-stone-800"
+            className="mt-0.5 w-56 rounded border border-[var(--border)] bg-[var(--bg-page)] px-2 py-1.5 text-sm text-[var(--text)]"
           >
             <option value={ALL_GENRES_VALUE}>Усі жанри</option>
             {BPTOPTRACKER_GENRES.map((g) => (
@@ -77,32 +80,32 @@ export function BptoptrackerBackfill() {
             ))}
           </select>
           {genreSlug === ALL_GENRES_VALUE && (
-            <p className="mt-1 text-xs text-amber-700">Макс. 60 днів за запуск.</p>
+            <p className="mt-1 text-xs text-amber-400">Макс. 125 днів за запуск (≈4 міс.).</p>
           )}
         </div>
         <div>
-          <label className="block text-xs text-stone-500">З дати</label>
+          <label className="block text-xs text-[var(--text-muted)]">З дати</label>
           <input
             type="date"
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
-            className="mt-0.5 rounded border border-stone-300 px-2 py-1.5 text-sm"
+            className="mt-0.5 rounded border border-[var(--border)] bg-[var(--bg-page)] px-2 py-1.5 text-sm text-[var(--text)]"
           />
         </div>
         <div>
-          <label className="block text-xs text-stone-500">По дату</label>
+          <label className="block text-xs text-[var(--text-muted)]">По дату</label>
           <input
             type="date"
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
-            className="mt-0.5 rounded border border-stone-300 px-2 py-1.5 text-sm"
+            className="mt-0.5 rounded border border-[var(--border)] bg-[var(--bg-page)] px-2 py-1.5 text-sm text-[var(--text)]"
           />
         </div>
         <button
           type="button"
           onClick={runBackfill}
           disabled={loading}
-          className="inline-flex items-center justify-center gap-2 rounded bg-stone-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-600 disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-2 rounded bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
         >
           {loading && <ButtonSpinner />}
           {loading
@@ -121,16 +124,19 @@ export function BptoptrackerBackfill() {
         <DebugOneDayButton genreSlug={genreSlug} dateTo={dateTo} disabled={genreSlug === ALL_GENRES_VALUE} />
       </div>
       {message && (
-        <p className={`mt-2 text-sm ${message.ok ? "text-emerald-700" : "text-red-600"}`}>
+        <p className={`mt-2 text-sm ${message.ok ? "text-[var(--accent)]" : "text-red-400"}`}>
           {message.text}
         </p>
       )}
 
-      <div className="mt-4 pt-4 border-t border-stone-200">
-        <p className="mb-2 text-xs text-stone-600">
-          Після backfill натисни «Синхронізувати ретро з лідами» — артисти, які збігаються за іменем з уже відомими (Beatport) або мають ручну привʼязку, потраплять у таблицю лідів нижче.
+      <div className="mt-4 pt-4 border-t border-[var(--border)]">
+        <p className="mb-2 text-xs text-[var(--text-muted)]">
+          Після backfill автоматично запускається синхронізація ретро з лідами — артисти зʼявляться в таблиці лідів нижче. Якщо потрібно пересинхронізувати без нового backfill:
         </p>
-        <BptoptrackerSyncButton onDone={() => router.refresh()} />
+        <div className="flex flex-wrap items-center gap-2">
+          <BptoptrackerSyncButton onDone={() => router.refresh()} />
+          <RefreshSegmentsButton onDone={() => router.refresh()} />
+        </div>
       </div>
 
     </section>
@@ -163,13 +169,13 @@ function DebugOneDayButton({ genreSlug, dateTo, disabled }: { genreSlug: string;
         type="button"
         onClick={run}
         disabled={loading || disabled}
-        className="inline-flex items-center justify-center gap-2 rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-50 disabled:opacity-50"
+        className="inline-flex items-center justify-center gap-2 rounded border border-[var(--border)] bg-[var(--bg-card)] px-3 py-1.5 text-sm font-medium text-[var(--text)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
       >
-        {loading && <ButtonSpinner className="text-stone-500" />}
+        {loading && <ButtonSpinner className="text-[var(--text-muted)]" />}
         {loading ? "Перевірка… (до 10 с)" : "Перевірити один день"}
       </button>
       {result && (
-        <pre className="mt-1 max-h-40 overflow-auto rounded border border-stone-200 bg-stone-50 p-2 text-xs text-stone-700">
+        <pre className="mt-1 max-h-40 overflow-auto rounded border border-[var(--border)] bg-[var(--bg-page)] p-2 text-xs text-[var(--text-muted)]">
           {JSON.stringify(result, null, 2)}
         </pre>
       )}
@@ -207,13 +213,13 @@ function CleanJunkButton({ onDone }: { onDone: () => void }) {
         type="button"
         onClick={runClean}
         disabled={loading}
-        className="inline-flex items-center justify-center gap-2 rounded border border-amber-400 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+        className="inline-flex items-center justify-center gap-2 rounded border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-sm font-medium text-amber-400 hover:bg-amber-500/20 disabled:opacity-50"
       >
-        {loading && <ButtonSpinner className="text-amber-700" />}
+        {loading && <ButtonSpinner className="text-amber-400" />}
         {loading ? "Очищення… (кілька секунд)" : "Очистити сміттєві записи"}
       </button>
       {msg && (
-        <p className={`mt-2 text-sm ${msg.ok ? "text-emerald-700" : "text-red-600"}`}>{msg.text}</p>
+        <p className={`mt-2 text-sm ${msg.ok ? "text-[var(--accent)]" : "text-red-400"}`}>{msg.text}</p>
       )}
     </>
   );
@@ -252,13 +258,57 @@ function BptoptrackerSyncButton({ onDone }: { onDone: () => void }) {
         type="button"
         onClick={runSync}
         disabled={loading}
-        className="inline-flex items-center justify-center gap-2 rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
+        className="inline-flex items-center justify-center gap-2 rounded bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
       >
         {loading && <ButtonSpinner />}
         {loading ? "Синхронізація… (оптимізовано)" : "Синхронізувати ретро з лідами"}
       </button>
       {msg && (
-        <p className={`mt-2 text-sm ${msg.ok ? "text-emerald-700" : "text-red-600"}`}>
+        <p className={`mt-2 text-sm ${msg.ok ? "text-[var(--accent)]" : "text-red-400"}`}>
+          {msg.text}
+        </p>
+      )}
+    </>
+  );
+}
+
+function RefreshSegmentsButton({ onDone }: { onDone: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const runRefresh = useCallback(async () => {
+    setLoading(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/internal/score", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        playSuccessSound();
+        setMsg({ ok: true, text: `Оновлено сегментів: ${data.updated}` });
+        onDone();
+      } else {
+        setMsg({ ok: false, text: data.error ?? "Помилка" });
+      }
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Помилка запиту" });
+    } finally {
+      setLoading(false);
+    }
+  }, [onDone]);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={runRefresh}
+        disabled={loading}
+        className="inline-flex items-center justify-center gap-2 rounded border border-[var(--border)] bg-[var(--bg-hover)] px-3 py-1.5 text-sm font-medium text-[var(--text)] hover:bg-[var(--bg-table-header)] disabled:opacity-50"
+      >
+        {loading && <ButtonSpinner className="text-[var(--text-muted)]" />}
+        {loading ? "Перерахунок…" : "Перерахувати сегменти"}
+      </button>
+      {msg && (
+        <p className={`mt-2 text-sm ${msg.ok ? "text-[var(--accent)]" : "text-red-400"}`}>
           {msg.text}
         </p>
       )}

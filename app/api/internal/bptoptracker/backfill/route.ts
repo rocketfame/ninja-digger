@@ -10,6 +10,9 @@ import { pool } from "@/lib/db";
 import { getBptoptrackerCookie, clearBptoptrackerCookieCache, getLastLoginError } from "@/lib/bptoptrackerAuth";
 import { fetchChartForDate, dateRange, type BptoptrackerDailyRow } from "@/lib/bptoptrackerFetch";
 import { getBptoptrackerGenreSlugs } from "@/lib/bptoptrackerGenres";
+import { syncBptoptrackerToChartEntries } from "@/lib/bptoptrackerSync";
+import { refreshArtistMetrics } from "@/segment/normalize";
+import { refreshLeadScoresV2 } from "@/segment/score";
 
 const CONCURRENCY = 5;
 const BATCH_DELAY_MS = 500;
@@ -33,15 +36,10 @@ export async function POST(request: Request) {
     const genreSlugs = allGenres ? getBptoptrackerGenreSlugs() : [genreSlugParam];
 
     const dates = dateRange(dateFrom, dateTo);
-    if (dates.length > 120) {
+    const MAX_DAYS = 125; // ~4 months
+    if (dates.length > MAX_DAYS) {
       return NextResponse.json(
-        { error: "Max 120 days per run. Use a shorter range." },
-        { status: 400 }
-      );
-    }
-    if (allGenres && dates.length > 60) {
-      return NextResponse.json(
-        { error: "Для «усі жанри» максимум 60 днів за один запуск (інакше занадто довго)." },
+        { error: `Максимум ${MAX_DAYS} днів за запуск (≈4 міс.). Зменш діапазон дат.` },
         { status: 400 }
       );
     }
@@ -86,6 +84,15 @@ export async function POST(request: Request) {
       }
     }
 
+    const hasArtistIdColumn = await pool.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'bptoptracker_daily' AND column_name = 'artist_beatport_id' LIMIT 1`
+    );
+    const hasLinkPathColumn = await pool.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'bptoptracker_daily' AND column_name = 'artist_link_path' LIMIT 1`
+    );
+    const withArtistId = hasArtistIdColumn.rows.length > 0;
+    const withLinkPath = hasLinkPathColumn.rows.length > 0;
+
     let totalInserted = 0;
     let totalSkipped = 0;
     for (let j = 0; j < allRows.length; j += INSERT_BATCH_SIZE) {
@@ -94,24 +101,67 @@ export async function POST(request: Request) {
       const placeholders: string[] = [];
       let param = 1;
       for (const row of batch) {
-        placeholders.push(`($${param}, $${param + 1}, $${param + 2}, $${param + 3}, $${param + 4}, $${param + 5}, $${param + 6}, $${param + 7}, $${param + 8})`);
-        values.push(
-          row.snapshot_date,
-          row.genre_slug,
-          row.position,
-          row.track_title,
-          row.artist_name,
-          row.artists_full,
-          row.label_name,
-          row.released,
-          row.movement
-        );
-        param += 9;
+        if (withArtistId && withLinkPath) {
+          placeholders.push(`($${param}, $${param + 1}, $${param + 2}, $${param + 3}, $${param + 4}, $${param + 5}, $${param + 6}, $${param + 7}, $${param + 8}, $${param + 9}, $${param + 10})`);
+          values.push(
+            row.snapshot_date,
+            row.genre_slug,
+            row.position,
+            row.track_title,
+            row.artist_name,
+            row.artists_full,
+            row.label_name,
+            row.released,
+            row.movement,
+            row.artist_beatport_id ?? null,
+            row.artist_link_path ?? null
+          );
+          param += 11;
+        } else if (withArtistId) {
+          placeholders.push(`($${param}, $${param + 1}, $${param + 2}, $${param + 3}, $${param + 4}, $${param + 5}, $${param + 6}, $${param + 7}, $${param + 8}, $${param + 9})`);
+          values.push(
+            row.snapshot_date,
+            row.genre_slug,
+            row.position,
+            row.track_title,
+            row.artist_name,
+            row.artists_full,
+            row.label_name,
+            row.released,
+            row.movement,
+            row.artist_beatport_id ?? null
+          );
+          param += 10;
+        } else {
+          placeholders.push(`($${param}, $${param + 1}, $${param + 2}, $${param + 3}, $${param + 4}, $${param + 5}, $${param + 6}, $${param + 7}, $${param + 8})`);
+          values.push(
+            row.snapshot_date,
+            row.genre_slug,
+            row.position,
+            row.track_title,
+            row.artist_name,
+            row.artists_full,
+            row.label_name,
+            row.released,
+            row.movement
+          );
+          param += 9;
+        }
       }
+      const insertCols =
+        withArtistId && withLinkPath
+          ? "snapshot_date, genre_slug, position, track_title, artist_name, artists_full, label_name, released, movement, artist_beatport_id, artist_link_path"
+          : withArtistId
+            ? "snapshot_date, genre_slug, position, track_title, artist_name, artists_full, label_name, released, movement, artist_beatport_id"
+            : "snapshot_date, genre_slug, position, track_title, artist_name, artists_full, label_name, released, movement";
+      const onConflict =
+        withArtistId && withLinkPath
+          ? "ON CONFLICT (snapshot_date, genre_slug, position) DO UPDATE SET artist_beatport_id = COALESCE(EXCLUDED.artist_beatport_id, bptoptracker_daily.artist_beatport_id), artist_link_path = COALESCE(EXCLUDED.artist_link_path, bptoptracker_daily.artist_link_path)"
+          : withArtistId
+            ? "ON CONFLICT (snapshot_date, genre_slug, position) DO UPDATE SET artist_beatport_id = COALESCE(EXCLUDED.artist_beatport_id, bptoptracker_daily.artist_beatport_id)"
+            : "ON CONFLICT (snapshot_date, genre_slug, position) DO NOTHING";
       const result = await pool.query(
-        `INSERT INTO bptoptracker_daily (snapshot_date, genre_slug, position, track_title, artist_name, artists_full, label_name, released, movement)
-         VALUES ${placeholders.join(", ")}
-         ON CONFLICT (snapshot_date, genre_slug, position) DO NOTHING`,
+        `INSERT INTO bptoptracker_daily (${insertCols}) VALUES ${placeholders.join(", ")} ${onConflict}`,
         values
       );
       const inserted = result.rowCount ?? 0;
@@ -129,6 +179,28 @@ export async function POST(request: Request) {
       hint = " Частина 404 — на bptoptracker може не бути даних за ці дати для деяких жанрів; вставлені дані збережено.";
     }
 
+    let syncResult: { chartEntriesInserted: number; artistsMatched: number; metricsUpdated: number; scoresUpdated: number; errors?: string[] } | null = null;
+    try {
+      const sync = await syncBptoptrackerToChartEntries();
+      const metricsUpdated = await refreshArtistMetrics();
+      const scoresUpdated = await refreshLeadScoresV2();
+      syncResult = {
+        chartEntriesInserted: sync.chartEntriesInserted,
+        artistsMatched: sync.artistsMatched,
+        metricsUpdated,
+        scoresUpdated,
+        errors: sync.errors.length > 0 ? sync.errors : undefined,
+      };
+    } catch (syncErr) {
+      syncResult = {
+        chartEntriesInserted: 0,
+        artistsMatched: 0,
+        metricsUpdated: 0,
+        scoresUpdated: 0,
+        errors: [syncErr instanceof Error ? syncErr.message : String(syncErr)],
+      };
+    }
+
     return NextResponse.json({
       ok: true,
       genreSlug: allGenres ? "__all__" : genreSlugParam,
@@ -138,6 +210,7 @@ export async function POST(request: Request) {
       totalSkipped,
       errors: errors.length > 0 ? errors : undefined,
       hint: hint || undefined,
+      sync: syncResult,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

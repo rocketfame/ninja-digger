@@ -5,6 +5,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { syncBptoptrackerToChartEntries } from "@/lib/bptoptrackerSync";
 import { refreshArtistMetrics } from "@/segment/normalize";
 import { refreshLeadScoresV2 } from "@/segment/score";
@@ -14,6 +15,7 @@ export async function POST() {
     const sync = await syncBptoptrackerToChartEntries();
     const metricsUpdated = await refreshArtistMetrics();
     const scoresUpdated = await refreshLeadScoresV2();
+    revalidateTag("leads");
 
     return NextResponse.json({
       ok: true,

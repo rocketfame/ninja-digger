@@ -28,28 +28,79 @@ export async function runBptoptrackerDailyUpdate(): Promise<{
   let skipped = 0;
   const errors: string[] = [];
 
+  const hasArtistIdColumn = await pool.query(
+    `SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'bptoptracker_daily' AND column_name = 'artist_beatport_id' LIMIT 1`
+  );
+  const hasLinkPathColumn = await pool.query(
+    `SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'bptoptracker_daily' AND column_name = 'artist_link_path' LIMIT 1`
+  );
+  const withArtistId = hasArtistIdColumn.rows.length > 0;
+  const withLinkPath = hasLinkPathColumn.rows.length > 0;
+
   for (const genreSlug of genres) {
     for (const date of dates) {
       try {
         await new Promise((r) => setTimeout(r, DELAY_MS));
         const rows = await fetchChartForDate(genreSlug, date);
         for (const row of rows) {
-          const result = await pool.query(
-            `INSERT INTO bptoptracker_daily (snapshot_date, genre_slug, position, track_title, artist_name, artists_full, label_name, released, movement)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-             ON CONFLICT (snapshot_date, genre_slug, position) DO NOTHING`,
-            [
-              row.snapshot_date,
-              row.genre_slug,
-              row.position,
-              row.track_title,
-              row.artist_name,
-              row.artists_full,
-              row.label_name,
-              row.released,
-              row.movement,
-            ]
-          );
+          let result;
+          if (withArtistId && withLinkPath) {
+            result = await pool.query(
+              `INSERT INTO bptoptracker_daily (snapshot_date, genre_slug, position, track_title, artist_name, artists_full, label_name, released, movement, artist_beatport_id, artist_link_path)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+               ON CONFLICT (snapshot_date, genre_slug, position) DO UPDATE SET
+                 artist_beatport_id = COALESCE(EXCLUDED.artist_beatport_id, bptoptracker_daily.artist_beatport_id),
+                 artist_link_path = COALESCE(EXCLUDED.artist_link_path, bptoptracker_daily.artist_link_path)`,
+              [
+                row.snapshot_date,
+                row.genre_slug,
+                row.position,
+                row.track_title,
+                row.artist_name,
+                row.artists_full,
+                row.label_name,
+                row.released,
+                row.movement,
+                row.artist_beatport_id ?? null,
+                row.artist_link_path ?? null,
+              ]
+            );
+          } else if (withArtistId) {
+            result = await pool.query(
+              `INSERT INTO bptoptracker_daily (snapshot_date, genre_slug, position, track_title, artist_name, artists_full, label_name, released, movement, artist_beatport_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+               ON CONFLICT (snapshot_date, genre_slug, position) DO UPDATE SET artist_beatport_id = COALESCE(EXCLUDED.artist_beatport_id, bptoptracker_daily.artist_beatport_id)`,
+              [
+                row.snapshot_date,
+                row.genre_slug,
+                row.position,
+                row.track_title,
+                row.artist_name,
+                row.artists_full,
+                row.label_name,
+                row.released,
+                row.movement,
+                row.artist_beatport_id ?? null,
+              ]
+            );
+          } else {
+            result = await pool.query(
+              `INSERT INTO bptoptracker_daily (snapshot_date, genre_slug, position, track_title, artist_name, artists_full, label_name, released, movement)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+               ON CONFLICT (snapshot_date, genre_slug, position) DO NOTHING`,
+              [
+                row.snapshot_date,
+                row.genre_slug,
+                row.position,
+                row.track_title,
+                row.artist_name,
+                row.artists_full,
+                row.label_name,
+                row.released,
+                row.movement,
+              ]
+            );
+          }
           if ((result.rowCount ?? 0) > 0) inserted++;
           else skipped++;
         }

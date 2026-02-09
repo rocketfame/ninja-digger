@@ -29,17 +29,19 @@ export default async function BptoptrackerLinkPage({
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 text-stone-900">
-      <header className="border-b border-stone-200 bg-white px-4 py-3">
-        <nav className="flex items-center gap-4">
-          <Link href="/bptoptracker" className="text-stone-600 hover:text-stone-900">← Артисти з BP Top Tracker</Link>
+    <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
+      <header className="border-b border-[var(--border)] bg-[var(--bg-header)] px-4 py-3">
+        <nav className="flex items-center gap-6">
+          <Link href="/" className="text-[var(--accent)] font-semibold tracking-tight hover:text-[var(--accent-hover)]">Ninja Digger</Link>
+          <span className="text-[var(--text-muted)]">|</span>
+          <Link href="/bptoptracker" className="text-[var(--text-muted)] hover:text-[var(--text)]">← BP Top Tracker</Link>
         </nav>
       </header>
 
       <main className="mx-auto max-w-xl px-4 py-6">
-        <h1 className="mb-2 text-xl font-semibold">Привʼязати до ліда</h1>
-        <p className="mb-4 text-sm text-stone-600">
-          Артист з BP Top Tracker: <strong>{artistName}</strong>
+        <h1 className="mb-2 text-xl font-semibold text-[var(--text)]">Привʼязати до ліда</h1>
+        <p className="mb-4 text-sm text-[var(--text-muted)]">
+          Артист з BP Top Tracker: <strong className="text-[var(--text)]">{artistName}</strong>
         </p>
         <LinkToLeadForm
           artistName={artistName}

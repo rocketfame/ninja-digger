@@ -65,7 +65,7 @@ export default async function SegmentPage({
       </header>
 
       <main className="mx-auto max-w-4xl px-4 py-6">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="mb-6">
           <div>
             <h1 className="text-xl font-semibold">{segment.name}</h1>
             <p className="text-sm text-stone-500">
@@ -88,7 +88,11 @@ export default async function SegmentPage({
               <p className="mt-2 text-sm text-stone-600">{segment.notes}</p>
             )}
           </div>
-          <RunEnrichmentButton segmentId={id} />
+
+          <section id="enrich" className="mt-6 rounded-xl border-2 border-amber-200 bg-amber-50/80 p-4">
+            <h2 className="mb-3 text-base font-semibold text-stone-800">Пошук контактів (енрічмент)</h2>
+            <RunEnrichmentButton segmentId={id} />
+          </section>
         </div>
 
         <div className="rounded border border-stone-200 bg-white overflow-hidden">
@@ -107,7 +111,7 @@ export default async function SegmentPage({
                   <td className="px-3 py-2">
                     {row.artist_beatport_id ? (
                       <Link
-                        href={`/artist/bp/${row.artist_beatport_id}`}
+                        href={`/artist/${row.artist_beatport_id.startsWith("bptoptracker:") ? row.artist_beatport_id.replace(/^bptoptracker:/, "") : row.artist_beatport_id}`}
                         className="font-medium text-stone-900 underline hover:no-underline"
                       >
                         {row.artist_name}

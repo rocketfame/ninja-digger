@@ -1,3 +1,28 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Dark theme — референси: BP Top Tracker, Beatstats, Ableton */
+:root {
+  --bg-page: #1a1a1a;
+  --bg-card: #242424;
+  --bg-header: #1e1e1e;
+  --bg-table-header: #2a2a2a;
+  --bg-hover: #2e2e2e;
+  --accent: #22c55e;
+  --accent-hover: #16a34a;
+  --accent-muted: #15803d;
+  --text: #f5f5f5;
+  --text-muted: #a3a3a3;
+  --border: #3f3f3f;
+  --danger: #ef4444;
+  --danger-muted: #b91c1c;
+}
+
+@layer base {
+  body {
+    @apply antialiased;
+    background-color: var(--bg-page);
+    color: var(--text);
+  }
+}

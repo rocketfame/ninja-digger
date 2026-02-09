@@ -99,36 +99,36 @@ export function DiscoveryControl() {
 
   const statusBadge = {
     Idle: (
-      <span className="inline-flex items-center gap-1 rounded-full bg-stone-200 px-2 py-0.5 text-xs font-medium text-stone-700">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Очікує
+      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--bg-hover)] px-2 py-0.5 text-xs font-medium text-[var(--text-muted)]">
+        <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" /> Очікує
       </span>
     ),
     Running: (
-      <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+      <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/20 px-2 py-0.5 text-xs font-medium text-blue-300">
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" /> Виконується… (до 10 хв)
       </span>
     ),
     Completed: (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Завершено
+      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--accent)]/20 px-2 py-0.5 text-xs font-medium text-[var(--accent)]">
+        <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" /> Завершено
       </span>
     ),
     Error: (
-      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
-        <span className="h-1.5 w-1.5 rounded-full bg-red-500" /> Помилка
+      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--danger)]/20 px-2 py-0.5 text-xs font-medium text-red-400">
+        <span className="h-1.5 w-1.5 rounded-full bg-[var(--danger)]" /> Помилка
       </span>
     ),
   };
 
   return (
-    <section className="mb-6 rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+    <section className="mb-6 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={handleRun}
             disabled={isRunning}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-stone-800 px-4 py-2 text-sm font-medium text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isRunning && <ButtonSpinner />}
             {isRunning ? "Виконується… (до 10 хв)" : "Запустити Discovery"}
@@ -136,7 +136,7 @@ export function DiscoveryControl() {
           <button
             type="button"
             onClick={() => setOracleOpen(true)}
-            className="rounded-lg border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-stone-50"
+            className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-4 py-2 text-sm font-medium text-[var(--text)] transition hover:bg-[var(--bg-hover)]"
           >
             Режим Oracle
           </button>
@@ -147,13 +147,13 @@ export function DiscoveryControl() {
           />
           {statusBadge[statusLabel as keyof typeof statusBadge]}
           {lastRun && (
-            <span className="text-xs text-stone-500">
+            <span className="text-xs text-[var(--text-muted)]">
               Останній запуск: {formatTime(lastRun)}
             </span>
           )}
         </div>
         {(run?.charts_count != null || run?.artists_count != null || run?.leads_count != null) && (
-          <div className="flex flex-wrap gap-4 text-xs text-stone-500">
+          <div className="flex flex-wrap gap-4 text-xs text-[var(--text-muted)]">
             {run.charts_count != null && (
               <span>{run.charts_count} чартів</span>
             )}
@@ -167,17 +167,17 @@ export function DiscoveryControl() {
         )}
       </div>
       {run?.status === "running" && run.progress && (
-        <p className="mt-2 text-sm text-stone-600">{run.progress}</p>
+        <p className="mt-2 text-sm text-[var(--text-muted)]">{run.progress}</p>
       )}
       {run?.status === "completed" && (
-        <p className="mt-2 text-sm text-emerald-700">
+        <p className="mt-2 text-sm text-[var(--accent)]">
           ✔ Discovery завершено
           {run.artists_count != null && ` · ${run.artists_count} артистів`}
           {run.leads_count != null && ` · ${run.leads_count} лідів`}
         </p>
       )}
       {run?.status === "error" && run.error_message && (
-        <p className="mt-2 text-sm text-red-600">{run.error_message}</p>
+        <p className="mt-2 text-sm text-red-400">{run.error_message}</p>
       )}
     </section>
   );

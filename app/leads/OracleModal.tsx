@@ -132,46 +132,48 @@ export function OracleModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       onClick={(e) => e.target === e.currentTarget && handleCancel()}
     >
       <div
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-stone-200 bg-white shadow-xl"
+        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="border-b border-stone-200 px-4 py-3">
-          <h2 className="text-lg font-semibold text-stone-900">Режим Oracle</h2>
-          <p className="mt-0.5 text-sm text-stone-500">
+        <div className="border-b border-[var(--border)] px-4 py-3">
+          <h2 className="text-lg font-semibold text-[var(--text)]">Режим Oracle</h2>
+          <p className="mt-0.5 text-sm text-[var(--text-muted)]">
             Вставте URL чарту або джерела, щоб відсканувати та переглянути артистів/треки.
           </p>
         </div>
 
         <div className="p-4 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">
+            <label className="block text-sm font-medium text-[var(--text)] mb-1">
               URL чарту або джерела
             </label>
-            <div className="flex gap-2">
-              <input
-                type="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="Beatport, bptoptracker.com/top/track/…, beatstats.com/artists/…"
-                className="flex-1 rounded border border-stone-300 px-3 py-2 text-sm focus:border-stone-500 focus:outline-none"
-                disabled={loading}
-              />
-              <p className="mt-1 text-xs text-stone-500">
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="Beatport, bptoptracker.com/top/track/…, beatstats.com/artists/…"
+                  className="flex-1 rounded border border-[var(--border)] bg-[var(--bg-hover)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                  disabled={loading}
+                />
+                <button
+                  type="button"
+                  onClick={handleScan}
+                  disabled={loading || !url.trim()}
+                  className="inline-flex items-center justify-center gap-2 rounded bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
+                >
+                  {loading && <ButtonSpinner />}
+                  {loading ? "Сканування… (до 30 с)" : "Сканувати"}
+                </button>
+              </div>
+              <p className="text-xs text-[var(--text-muted)]">
                 Beatport · BP Top Tracker (ретро по днях) · Beatstats (тренди за період)
               </p>
-              <button
-                type="button"
-                onClick={handleScan}
-                disabled={loading || !url.trim()}
-                className="inline-flex items-center justify-center gap-2 rounded bg-stone-800 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
-              >
-                {loading && <ButtonSpinner />}
-                {loading ? "Сканування… (до 30 с)" : "Сканувати та переглянути"}
-              </button>
             </div>
           </div>
 
@@ -180,7 +182,7 @@ export function OracleModal({
             <button
               type="button"
               onClick={() => setOptionsOpen((o) => !o)}
-              className="text-sm font-medium text-stone-600 hover:text-stone-900"
+              className="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text)]"
             >
               {optionsOpen ? "−" : "+"} Опційно: назва сегменту, нотатки
             </button>
@@ -191,44 +193,44 @@ export function OracleModal({
                   value={segmentName}
                   onChange={(e) => setSegmentName(e.target.value)}
                   placeholder="Назва сегменту"
-                  className="w-full rounded border border-stone-300 px-3 py-2 text-sm"
+                  className="w-full rounded border border-[var(--border)] bg-[var(--bg-hover)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-muted)]"
                 />
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Нотатки"
                   rows={2}
-                  className="w-full rounded border border-stone-300 px-3 py-2 text-sm"
+                  className="w-full rounded border border-[var(--border)] bg-[var(--bg-hover)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-muted)]"
                 />
               </div>
             )}
           </div>
 
           {error && (
-            <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>
+            <p className="rounded bg-[var(--danger)]/20 px-3 py-2 text-sm text-red-400">{error}</p>
           )}
 
           {/* After save: toast + CTAs */}
           {savedSegmentId && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 space-y-3">
-              <p className="font-medium text-emerald-800">Сегмент створено</p>
+            <div className="rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/10 p-4 space-y-3">
+              <p className="font-medium text-[var(--accent)]">Сегмент створено</p>
               <div className="flex flex-wrap gap-2">
                 <Link
                   href={`/segments/${savedSegmentId}`}
-                  className="rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-700"
+                  className="rounded bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)]"
                 >
                   Відкрити сегмент
                 </Link>
                 <Link
                   href={`/segments/${savedSegmentId}#enrich`}
-                  className="rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+                  className="rounded border border-[var(--border)] bg-[var(--bg-hover)] px-3 py-1.5 text-sm font-medium text-[var(--text)] hover:bg-[var(--bg-table-header)]"
                 >
                   Запустити Enrichment
                 </Link>
                 <button
                   type="button"
                   onClick={handleCancel}
-                  className="rounded border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
+                  className="rounded border border-[var(--border)] bg-[var(--bg-hover)] px-3 py-1.5 text-sm font-medium text-[var(--text)] hover:bg-[var(--bg-table-header)]"
                 >
                   Закрити
                 </button>
@@ -238,35 +240,35 @@ export function OracleModal({
 
           {/* Preview: source, chartMeta, counts, table (top 20), Save / Cancel */}
           {result && !savedSegmentId && (
-            <div className="rounded-lg border border-stone-200 bg-stone-50 p-4 space-y-4">
-              <div className="flex flex-wrap gap-4 text-sm">
-                <span><strong>Джерело:</strong> {result.source}</span>
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-header)] p-4 space-y-4">
+              <div className="flex flex-wrap gap-4 text-sm text-[var(--text-muted)]">
+                <span><strong className="text-[var(--text)]">Джерело:</strong> {result.source}</span>
                 {result.chartMeta.genre && (
-                  <span><strong>Жанр:</strong> {result.chartMeta.genre}</span>
+                  <span><strong className="text-[var(--text)]">Жанр:</strong> {result.chartMeta.genre}</span>
                 )}
-                <span><strong>Тип чарту:</strong> {result.chartMeta.chartType}</span>
-                <span><strong>Чартів:</strong> {result.counts.charts} · <strong>Треків:</strong> {result.counts.tracks} · <strong>Артистів:</strong> {result.counts.artists}</span>
+                <span><strong className="text-[var(--text)]">Тип чарту:</strong> {result.chartMeta.chartType}</span>
+                <span><strong className="text-[var(--text)]">Чартів:</strong> {result.counts.charts} · <strong className="text-[var(--text)]">Треків:</strong> {result.counts.tracks} · <strong className="text-[var(--text)]">Артистів:</strong> {result.counts.artists}</span>
               </div>
 
-              <div className="overflow-x-auto rounded border border-stone-200 bg-white">
+              <div className="overflow-x-auto rounded border border-[var(--border)] bg-[var(--bg-card)]">
                 <table className="w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b border-stone-200 bg-stone-100">
-                      <th className="px-3 py-2 font-medium">Позиція</th>
-                      <th className="px-3 py-2 font-medium">Артист</th>
-                      <th className="px-3 py-2 font-medium">Трек</th>
-                      <th className="px-3 py-2 font-medium">URL артиста</th>
+                    <tr className="border-b border-[var(--border)] bg-[var(--bg-table-header)]">
+                      <th className="px-3 py-2 font-medium text-[var(--text)]">Позиція</th>
+                      <th className="px-3 py-2 font-medium text-[var(--text)]">Артист</th>
+                      <th className="px-3 py-2 font-medium text-[var(--text)]">Трек</th>
+                      <th className="px-3 py-2 font-medium text-[var(--text)]">URL артиста</th>
                     </tr>
                   </thead>
                   <tbody>
                     {previewItems.map((row, i) => (
-                      <tr key={i} className="border-b border-stone-100">
-                        <td className="px-3 py-2">{row.rank}</td>
-                        <td className="px-3 py-2">{row.artist_name}</td>
-                        <td className="px-3 py-2">{row.track_name || "—"}</td>
+                      <tr key={i} className="border-b border-[var(--border)] hover:bg-[var(--bg-hover)]">
+                        <td className="px-3 py-2 text-[var(--text)]">{row.rank}</td>
+                        <td className="px-3 py-2 text-[var(--text)]">{row.artist_name}</td>
+                        <td className="px-3 py-2 text-[var(--text)]">{row.track_name || "—"}</td>
                         <td className="px-3 py-2">
                           {row.artist_url ? (
-                            <a href={row.artist_url} target="_blank" rel="noopener noreferrer" className="text-stone-600 underline truncate block max-w-[180px]">
+                            <a href={row.artist_url} target="_blank" rel="noopener noreferrer" className="text-[var(--accent)] hover:underline truncate block max-w-[180px]">
                               {row.artist_url.replace(/^https?:\/\//, "")}
                             </a>
                           ) : "—"}
@@ -276,7 +278,7 @@ export function OracleModal({
                   </tbody>
                 </table>
                 {result.items.length > PREVIEW_TOP && (
-                  <p className="px-3 py-2 text-xs text-stone-500">
+                  <p className="px-3 py-2 text-xs text-[var(--text-muted)]">
                     Показано перші {PREVIEW_TOP} з {result.items.length} записів.
                   </p>
                 )}
@@ -287,7 +289,7 @@ export function OracleModal({
                   type="button"
                   onClick={handleSaveSegment}
                   disabled={saveLoading}
-                  className="inline-flex items-center justify-center gap-2 rounded bg-stone-800 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
+                  className="inline-flex items-center justify-center gap-2 rounded bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
                 >
                   {saveLoading && <ButtonSpinner />}
                   {saveLoading ? "Збереження… (до 10 с)" : "Зберегти сегмент"}
@@ -295,7 +297,7 @@ export function OracleModal({
                 <button
                   type="button"
                   onClick={handleCancel}
-                  className="rounded border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
+                  className="rounded border border-[var(--border)] bg-[var(--bg-hover)] px-4 py-2 text-sm font-medium text-[var(--text)] hover:bg-[var(--bg-table-header)]"
                 >
                   Скасувати
                 </button>

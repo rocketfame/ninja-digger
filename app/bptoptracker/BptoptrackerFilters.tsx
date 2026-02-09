@@ -29,13 +29,13 @@ export function BptoptrackerFilters({
   );
 
   return (
-    <div className="flex flex-wrap items-end gap-3 rounded-lg border border-stone-200 bg-white p-3">
+    <div className="flex flex-wrap items-end gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-3">
       <div>
-        <label className="block text-xs text-stone-500">Жанр</label>
+        <label className="block text-xs text-[var(--text-muted)]">Жанр</label>
         <select
           value={currentGenre}
           onChange={(e) => apply({ genre: e.target.value })}
-          className="mt-0.5 rounded border border-stone-300 px-2 py-1.5 text-sm"
+          className="mt-0.5 rounded border border-[var(--border)] bg-[var(--bg-hover)] px-2 py-1.5 text-sm text-[var(--text)]"
         >
           <option value="">Усі</option>
           {genres.map((g) => (
@@ -44,21 +44,21 @@ export function BptoptrackerFilters({
         </select>
       </div>
       <div>
-        <label className="block text-xs text-stone-500">З дати</label>
+        <label className="block text-xs text-[var(--text-muted)]">З дати</label>
         <input
           type="date"
           value={currentDateFrom}
           onChange={(e) => apply({ dateFrom: e.target.value })}
-          className="mt-0.5 rounded border border-stone-300 px-2 py-1.5 text-sm"
+          className="mt-0.5 rounded border border-[var(--border)] bg-[var(--bg-hover)] px-2 py-1.5 text-sm text-[var(--text)]"
         />
       </div>
       <div>
-        <label className="block text-xs text-stone-500">По дату</label>
+        <label className="block text-xs text-[var(--text-muted)]">По дату</label>
         <input
           type="date"
           value={currentDateTo}
           onChange={(e) => apply({ dateTo: e.target.value })}
-          className="mt-0.5 rounded border border-stone-300 px-2 py-1.5 text-sm"
+          className="mt-0.5 rounded border border-[var(--border)] bg-[var(--bg-hover)] px-2 py-1.5 text-sm text-[var(--text)]"
         />
       </div>
     </div>

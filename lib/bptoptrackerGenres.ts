@@ -33,7 +33,7 @@ export const BPTOPTRACKER_GENRES: { value: string; label: string }[] = [
   { value: "jackin-house", label: "Jackin House" },
   { value: "latin", label: "Latin" },
   { value: "mainstage", label: "Mainstage" },
-  { value: "melodic-house-and-techno", label: "Melodic House & Techno" },
+  { value: "melodic-house-techno", label: "Melodic House & Techno" },
   { value: "minimal-deep-tech", label: "Minimal / Deep Tech" },
   { value: "nu-disco-disco", label: "Nu Disco / Disco" },
   { value: "organic-house", label: "Organic House" },

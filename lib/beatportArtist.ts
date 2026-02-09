@@ -23,6 +23,35 @@ export function isNumericBeatportId(id: string): boolean {
 }
 
 /**
+ * Resolve Beatport artist URL by slug: GET /artist/{slug}, follow redirect to /artist/{slug}/{id}.
+ * Returns { url, numericId } or null. Use when BPTT resolve returns 404 (BPTT often 404s on slug-only server-side).
+ */
+export async function resolveBeatportArtistUrl(slug: string): Promise<{ url: string; numericId: string } | null> {
+  if (!slug?.trim()) return null;
+  const cleanSlug = slug.trim().replace(/^\/+|\/+$/g, "").replace(/\s+/g, "-").toLowerCase();
+  if (!cleanSlug) return null;
+  try {
+    const url = `${BEATPORT_ORIGIN}/artist/${encodeURIComponent(cleanSlug)}`;
+    const res = await fetch(url, {
+      redirect: "follow",
+      headers: {
+        "User-Agent": USER_AGENT,
+        "Accept-Language": "en-US,en;q=0.9",
+        Accept: "text/html,application/xhtml+xml",
+      },
+    });
+    if (!res.ok) return null;
+    const final = res.url;
+    if (!final) return null;
+    const match = final.match(/\/artist\/[^/]+\/(\d+)(?:\?|$)/i);
+    if (!match) return null;
+    return { url: final, numericId: match[1] };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fetch artist page and parse name + image. Uses slug if provided, else tries /artist/artist/{id}.
  * Updates artist_metrics.artist_name when name differs (caller can pass pool to persist).
  */

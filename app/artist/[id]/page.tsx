@@ -2,7 +2,9 @@ import Link from "next/link";
 import { query } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { getEnrichment } from "@/enrich/bio";
+import { formatDateDDMMYYYY } from "@/lib/formatDate";
 import { getOutreach } from "@/lib/outreach";
+import { ArtistBPContent } from "../ArtistBPContent";
 import { AddNoteForm } from "./AddNoteForm";
 import { EnrichmentForm } from "./EnrichmentForm";
 import { OutreachForm } from "./OutreachForm";
@@ -41,9 +43,11 @@ export default async function ArtistPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const isNumeric = /^\d+$/.test(id);
+  if (!isNumeric) {
+    return <ArtistBPContent id={id} />;
+  }
   const artistId = parseInt(id, 10);
-  if (Number.isNaN(artistId)) notFound();
-
   let artist: ArtistInfo | null = null;
   let chartHistory: ChartRow[] = [];
   let notes: NoteRow[] = [];
@@ -133,7 +137,7 @@ export default async function ArtistPage({
             <dd>{artist.appearances ?? 0}</dd>
             <dt className="text-stone-500">First / Last seen</dt>
             <dd>
-              {artist.first_seen ?? "—"} / {artist.last_seen ?? "—"}
+              {formatDateDDMMYYYY(artist.first_seen)} / {formatDateDDMMYYYY(artist.last_seen)}
             </dd>
           </dl>
         </section>
@@ -161,7 +165,7 @@ export default async function ArtistPage({
                       key={`${row.chart_date}-${row.position}-${i}`}
                       className="border-b border-stone-100"
                     >
-                      <td className="px-3 py-2">{row.chart_date}</td>
+                      <td className="px-3 py-2">{formatDateDDMMYYYY(row.chart_date)}</td>
                       <td className="px-3 py-2">{row.source_slug}</td>
                       <td className="px-3 py-2">{row.position}</td>
                       <td className="px-3 py-2">{row.chart_type ?? "—"}</td>
@@ -212,7 +216,7 @@ export default async function ArtistPage({
                 className="rounded bg-stone-50 px-3 py-2 text-sm text-stone-800"
               >
                 <p className="whitespace-pre-wrap">{n.content}</p>
-                <p className="mt-1 text-xs text-stone-400">{n.created_at}</p>
+                <p className="mt-1 text-xs text-stone-400">{formatDateDDMMYYYY(n.created_at)}</p>
               </li>
             ))}
           </ul>

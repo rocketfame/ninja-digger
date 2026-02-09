@@ -2,7 +2,7 @@ import { Pool } from "pg";
 
 let _pool: Pool | null = null;
 
-/** Normalize DATABASE_URL so pg does not emit SSL mode warning (require/prefer/verify-ca → verify-full). */
+/** Normalize DATABASE_URL: SSL mode. (statement_timeout не підтримується Neon pooled — не додаємо.) */
 function normalizeConnectionString(url: string): string {
   return url
     .replace(/([?&])sslmode=require\b/gi, "$1sslmode=verify-full")

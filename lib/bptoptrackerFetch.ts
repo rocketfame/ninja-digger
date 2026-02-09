@@ -1,5 +1,6 @@
 /**
  * Fetch and parse BP Top Tracker chart page; return rows for bptoptracker_daily.
+ * BP Top Tracker uses Beatport API — artist IDs are Beatport artist IDs (one catalog).
  * Uses getBptoptrackerCookie() for auth. Rejects UI text (blocklist) and login page.
  */
 
@@ -13,6 +14,30 @@ import {
 
 const ORIGIN = "https://www.bptoptracker.com";
 
+/** Extract Beatport artist ID from href like /artist/slug/123456 */
+function artistIdFromHref(href: string | undefined): string | null {
+  if (!href) return null;
+  const m = href.match(/\/artist\/[^/]+\/(\d+)/i);
+  return m ? m[1] : null;
+}
+
+/** Нормалізувати href посилання на артиста до шляху /artist/slug/id (як на BPTT). Так само на Beatport. */
+function normalizeArtistLinkPath(href: string | undefined): string | null {
+  if (!href || !href.includes("/artist/")) return null;
+  const trimmed = href.trim();
+  try {
+    if (trimmed.startsWith("http")) {
+      const u = new URL(trimmed);
+      const path = u.pathname.replace(/\/+$/, "") || "/";
+      return /\/artist\/[^/]+\/\d+/.test(path) ? path : null;
+    }
+    const path = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+    return /\/artist\/[^/]+\/\d+/.test(path) ? path : null;
+  } catch {
+    return null;
+  }
+}
+
 export type BptoptrackerDailyRow = {
   snapshot_date: string;
   genre_slug: string;
@@ -23,6 +48,10 @@ export type BptoptrackerDailyRow = {
   label_name: string | null;
   released: string | null;
   movement: string | null;
+  /** Beatport artist ID from chart link (/artist/slug/id); BP Top Tracker = Beatport catalog */
+  artist_beatport_id?: string | null;
+  /** Повний шлях посилання з парсингу: /artist/slug/id — використовувати як є для BPTT і Beatport */
+  artist_link_path?: string | null;
 };
 
 function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
@@ -66,8 +95,11 @@ function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
       label = texts[7] ?? "";
       released = texts[8] ?? "";
     }
-    const primaryArtist = artists.split(",").map((a) => a.trim()).filter(Boolean)[0]?.trim() || "";
+    const primaryArtist = artists.split(",").map((a: string) => a.trim()).filter(Boolean)[0]?.trim() || "";
     if (isBlockedArtist(primaryArtist) || isBlockedTrack(title)) return;
+    const artistLinkHref = $row.find('td.artists a[href*="/artist/"], a[href*="/artist/"]').first().attr("href");
+    const artist_beatport_id = artistIdFromHref(artistLinkHref) ?? null;
+    const artist_link_path = normalizeArtistLinkPath(artistLinkHref) ?? undefined;
     const key = `${date}-${genre}-${rankNum}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -81,6 +113,8 @@ function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
       label_name: label || null,
       released: released || null,
       movement: movement || null,
+      artist_beatport_id: artist_beatport_id ?? undefined,
+      artist_link_path: artist_link_path ?? undefined,
     });
   }
 
