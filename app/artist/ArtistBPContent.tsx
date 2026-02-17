@@ -229,6 +229,15 @@ export async function ArtistBPContent({ id: rawId }: { id: string }) {
     // ignore
   }
 
+  let artistChartTypes: string[] = [];
+  try {
+    const ctRows = await query<{ chart_type: string }>(
+      `SELECT DISTINCT cc.chart_type FROM chart_entries ce JOIN charts_catalog cc ON cc.id = ce.chart_id WHERE ce.artist_beatport_id = $1 AND cc.chart_type IS NOT NULL`,
+      [artist.artist_beatport_id]
+    );
+    artistChartTypes = ctRows.map((r) => r.chart_type);
+  } catch { /* ignore */ }
+
   let displayName = artist.artist_name ?? artist.artist_beatport_id;
   const isSynthetic = !isNumericBeatportId(artist.artist_beatport_id);
   const bptoptrackerSlug = isSynthetic && artist.artist_beatport_id.startsWith("bptoptracker:")
@@ -380,6 +389,7 @@ export async function ArtistBPContent({ id: rawId }: { id: string }) {
           links={links}
           contacts={contacts}
           genreStats={genreStats}
+          chartTypes={artistChartTypes}
         />
       </main>
     </div>

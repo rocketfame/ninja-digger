@@ -8,8 +8,9 @@ import { pool, query } from "@/lib/db";
 
 const BATCH_SIZE = 200;
 
-async function getOrCreateBptoptrackerChartId(genreSlug: string): Promise<string> {
-  const url = `https://bptoptracker.com/top/track/${genreSlug}`;
+async function getOrCreateBptoptrackerChartId(genreSlug: string, chartType: "track" | "hype" = "track"): Promise<string> {
+  const url = `https://bptoptracker.com/top/${chartType}/${genreSlug}`;
+  const catalogType = chartType === "hype" ? "hype_tracks" : "top_tracks";
   const existing = await query<{ id: string }>(
     `SELECT id FROM charts_catalog WHERE platform = 'bptoptracker' AND url = $1`,
     [url]
@@ -17,9 +18,9 @@ async function getOrCreateBptoptrackerChartId(genreSlug: string): Promise<string
   if (existing.length > 0) return existing[0].id;
   const ins = await pool.query<{ id: string }>(
     `INSERT INTO charts_catalog (platform, chart_type, genre_slug, url, is_active, discovered_at, last_checked_at)
-     VALUES ('bptoptracker', 'top_tracks', $1, $2, true, CURRENT_DATE, CURRENT_DATE)
+     VALUES ('bptoptracker', $1, $2, $3, true, CURRENT_DATE, CURRENT_DATE)
      RETURNING id`,
-    [genreSlug, url]
+    [catalogType, genreSlug, url]
   );
   const id = ins.rows[0]?.id;
   if (!id) throw new Error("Failed to create bptoptracker chart");
@@ -27,12 +28,12 @@ async function getOrCreateBptoptrackerChartId(genreSlug: string): Promise<string
 }
 
 /** Preload chart_id for all genres that appear in rows. */
-async function preloadChartIds(genreSlugs: string[]): Promise<Map<string, string>> {
+async function preloadChartIds(genreSlugs: string[], chartType: "track" | "hype" = "track"): Promise<Map<string, string>> {
   const uniq = [...new Set(genreSlugs)];
   const map = new Map<string, string>();
   for (const slug of uniq) {
     try {
-      map.set(slug, await getOrCreateBptoptrackerChartId(slug));
+      map.set(slug, await getOrCreateBptoptrackerChartId(slug, chartType));
     } catch {
       // skip failed genre
     }
@@ -128,7 +129,13 @@ export async function syncBptoptrackerToChartEntries(): Promise<{
   }
 
   const genreSlugs = rows.map((r) => r.genre_slug);
-  const genreChartIds = await preloadChartIds(genreSlugs);
+  const regularSlugs = genreSlugs.filter((s) => !s.startsWith("hype:"));
+  const hypeSlugs = genreSlugs.filter((s) => s.startsWith("hype:")).map((s) => s.replace(/^hype:/, ""));
+  const regularChartIds = await preloadChartIds([...new Set(regularSlugs)], "track");
+  const hypeChartIds = await preloadChartIds([...new Set(hypeSlugs)], "hype");
+  const genreChartIds = new Map<string, string>();
+  for (const [k, v] of regularChartIds) genreChartIds.set(k, v);
+  for (const [k, v] of hypeChartIds) genreChartIds.set(`hype:${k}`, v);
 
   const uniqueArtistNames = [...new Set(rows.map((r) => r.artist_name.trim()).filter(Boolean))];
   const artistIdMap = await resolveArtistBeatportIdsBulk(uniqueArtistNames);

@@ -51,9 +51,10 @@ export async function runBptoptrackerForDateRange(
 
   for (const genreSlug of genreSlugs) {
     for (const date of dates) {
+      const chartType: "track" | "hype" = "track";
       try {
         await new Promise((r) => setTimeout(r, DELAY_MS));
-        const rows = await fetchChartForDate(genreSlug, date);
+        const rows = await fetchChartForDate(genreSlug, date, chartType);
         for (const row of rows) {
           let result;
           if (withArtistId && withLinkPath) {
@@ -117,7 +118,7 @@ export async function runBptoptrackerForDateRange(
           else skipped++;
         }
       } catch (e) {
-        errors.push(`${genreSlug} ${date}: ${e instanceof Error ? e.message : String(e)}`);
+        errors.push(`${genreSlug} ${chartType} ${date}: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
   }

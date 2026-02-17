@@ -60,9 +60,11 @@ function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
       "BP Top Tracker повернув сторінку логіну або головну, не чарт. Перевір BPTOPTRACKER_EMAIL та BPTOPTRACKER_PASSWORD у .env і спробуй знову."
     );
   }
-  const genreMatch = pageUrl.match(/\/top\/track\/([^/]+)\/(\d{4}-\d{2}-\d{2})/i);
-  const genre = genreMatch ? genreMatch[1] : "unknown";
-  const date = genreMatch ? genreMatch[2] : "";
+  const genreMatch = pageUrl.match(/\/top\/(track|hype)\/([^/]+)\/(\d{4}-\d{2}-\d{2})/i);
+  const chartType = genreMatch ? genreMatch[1].toLowerCase() : "track";
+  const rawGenre = genreMatch ? genreMatch[2] : "unknown";
+  const genre = chartType === "hype" ? `hype:${rawGenre}` : rawGenre;
+  const date = genreMatch ? genreMatch[3] : "";
 
   const rows: BptoptrackerDailyRow[] = [];
   const $ = cheerio.load(html);
@@ -163,11 +165,12 @@ function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
 
 /**
  * Fetch one chart page (genre + date) and return parsed rows.
- * Expects already logged-in session (getBptoptrackerCookie). URL pattern: /top/track/{genreSlug}/{date}.
+ * Expects already logged-in session (getBptoptrackerCookie).
+ * URL pattern: /top/{chartType}/{genreSlug}/{date} — chartType is "track" (default) or "hype".
  */
-export async function fetchChartForDate(genreSlug: string, date: string): Promise<BptoptrackerDailyRow[]> {
+export async function fetchChartForDate(genreSlug: string, date: string, chartType: "track" | "hype" = "track"): Promise<BptoptrackerDailyRow[]> {
   const cookie = await getBptoptrackerCookie();
-  const url = `${ORIGIN}/top/track/${genreSlug}/${date}`;
+  const url = `${ORIGIN}/top/${chartType}/${genreSlug}/${date}`;
   const res = await fetch(url, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",

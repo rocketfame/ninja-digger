@@ -28,6 +28,12 @@ const SEGMENT_STYLES: Record<string, { bg: string; text: string; label: string }
   TOP_PERFORMER: { bg: "rgba(250,204,21,0.15)",  text: "#fbbf24", label: "Топ-перформер" },
 };
 
+const CHART_TYPE_LABELS: Record<string, { label: string; color: string; bg: string }> = {
+  top_tracks:    { label: "Top",      color: "#4ade80", bg: "rgba(34,197,94,0.12)" },
+  hype_tracks:   { label: "Hype",     color: "#f59e0b", bg: "rgba(245,158,11,0.15)" },
+  top_releases:  { label: "Releases", color: "#60a5fa", bg: "rgba(59,130,246,0.12)" },
+};
+
 const GENRE_COLORS = [
   { bg: "rgba(59,130,246,0.12)",  text: "#60a5fa" },
   { bg: "rgba(168,85,247,0.12)",  text: "#c084fc" },
@@ -97,6 +103,7 @@ export function ArtistLeadCard({
   links = [],
   contacts = [],
   genreStats = [],
+  chartTypes = [],
 }: {
   artist: Artist;
   beatportUrl?: string | null;
@@ -106,6 +113,7 @@ export function ArtistLeadCard({
   links?: LinkRow[];
   contacts?: ContactRow[];
   genreStats?: GenreStat[];
+  chartTypes?: string[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -253,6 +261,20 @@ export function ArtistLeadCard({
                   {segStyle.label}
                 </span>
               )}
+              {chartTypes.map((ct) => {
+                const style = CHART_TYPE_LABELS[ct];
+                if (!style) return null;
+                return (
+                  <span
+                    key={ct}
+                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                    style={{ backgroundColor: style.bg, color: style.color }}
+                  >
+                    {ct === "hype_tracks" && <span className="text-[11px]">🔥</span>}
+                    {style.label}
+                  </span>
+                );
+              })}
               {genres.map((g, i) => (
                 <span
                   key={g}

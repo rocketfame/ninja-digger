@@ -52,12 +52,23 @@ export function LeadPositionCell({
   const latestDate = points.length > 0 ? points[points.length - 1].date : null;
 
   const trend = useMemo(() => {
-    if (points.length < 2) return { delta: 0, direction: "flat" as const };
-    const prev = points[points.length - 2].position;
-    const curr = points[points.length - 1].position;
-    const delta = prev - curr;
-    if (delta > 0) return { delta, direction: "up" as const };
-    if (delta < 0) return { delta: Math.abs(delta), direction: "down" as const };
+    if (points.length < 4) {
+      if (points.length < 2) return { delta: 0, direction: "flat" as const };
+      const prev = points[points.length - 2].position;
+      const curr = points[points.length - 1].position;
+      const delta = prev - curr;
+      if (delta > 0) return { delta, direction: "up" as const };
+      if (delta < 0) return { delta: Math.abs(delta), direction: "down" as const };
+      return { delta: 0, direction: "flat" as const };
+    }
+    const window = Math.min(3, Math.floor(points.length / 2));
+    const recent = points.slice(-window);
+    const previous = points.slice(-window * 2, -window);
+    const avgRecent = recent.reduce((s, p) => s + p.position, 0) / recent.length;
+    const avgPrevious = previous.reduce((s, p) => s + p.position, 0) / previous.length;
+    const delta = Math.round(Math.abs(avgPrevious - avgRecent));
+    if (avgRecent < avgPrevious - 0.5) return { delta, direction: "up" as const };
+    if (avgRecent > avgPrevious + 0.5) return { delta, direction: "down" as const };
     return { delta: 0, direction: "flat" as const };
   }, [points]);
 

@@ -59,8 +59,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const tasks: { genreSlug: string; date: string }[] = [];
-    for (const genreSlug of genreSlugs) for (const date of dates) tasks.push({ genreSlug, date });
+    const tasks: { genreSlug: string; date: string; chartType: "track" | "hype" }[] = [];
+    for (const genreSlug of genreSlugs)
+      for (const date of dates)
+        tasks.push({ genreSlug, date, chartType: "track" });
 
     const errors: string[] = [];
     const allRows: BptoptrackerDailyRow[] = [];
@@ -71,15 +73,15 @@ export async function POST(request: Request) {
       const results = await Promise.all(
         chunk.map(async (t) => {
           try {
-            const rows = await fetchChartForDate(t.genreSlug, t.date);
-            return { genreSlug: t.genreSlug, date: t.date, rows };
+            const rows = await fetchChartForDate(t.genreSlug, t.date, t.chartType);
+            return { genreSlug: t.genreSlug, date: t.date, chartType: t.chartType, rows };
           } catch (e) {
-            return { genreSlug: t.genreSlug, date: t.date, error: e instanceof Error ? e.message : String(e) };
+            return { genreSlug: t.genreSlug, date: t.date, chartType: t.chartType, error: e instanceof Error ? e.message : String(e) };
           }
         })
       );
       for (const r of results) {
-        if ("error" in r && r.error) errors.push(`${r.genreSlug}/${r.date}: ${r.error}`);
+        if ("error" in r && r.error) errors.push(`${r.genreSlug}/${r.chartType}/${r.date}: ${r.error}`);
         if ("rows" in r && r.rows?.length) allRows.push(...r.rows);
       }
     }

@@ -74,9 +74,10 @@ function parseDateParam(value: string | undefined): string | null {
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ segment?: string; page?: string; genre?: string; dateFrom?: string; dateTo?: string; sort?: string; order?: string }>;
+  searchParams: Promise<{ segment?: string; page?: string; genre?: string; dateFrom?: string; dateTo?: string; sort?: string; order?: string; withContacts?: string }>;
 }) {
   const resolved = await searchParams;
+  const withContacts = resolved.withContacts === "1";
   const segmentFilter = resolved.segment;
   const segment =
     segmentFilter && SEGMENTS_V2.includes(segmentFilter as (typeof SEGMENTS_V2)[number])
@@ -99,6 +100,7 @@ export default async function LeadsPage({
   let error: string | null = null;
   let distinctGenres: string[] = [];
   let positionHistory: Record<string, { date: string; position: number }[]> = {};
+  let chartTypes: Record<string, string[]> = {};
   let kpi = { totalLeads: 0, newToday: 0, withContacts: 0, avgPosition: 0, dataFrom: "", dataTo: "" };
   const blocklist = getBlocklistValuesForSql();
 
@@ -131,10 +133,16 @@ export default async function LeadsPage({
   const genreConditionAll =
     ` AND ($2::text IS NULL OR ((am.genres IS NOT NULL AND ($2 = ANY(am.genres) OR EXISTS (SELECT 1 FROM unnest(am.genres) AS g WHERE ${toSlug("g::text")} = ${toSlug("$2::text")}))) OR EXISTS (SELECT 1 FROM chart_entries ce JOIN charts_catalog cc ON cc.id = ce.chart_id WHERE ce.artist_beatport_id = ls.artist_beatport_id AND cc.genre_slug IS NOT NULL AND (cc.genre_slug = $2 OR cc.genre_slug = ${toSlug("$2::text")}))))`;
 
+  const useFirstSeen = segment === "NEWCOMER" || segment === "NEW_ENTRY";
+  const dateColSeg = useFirstSeen ? "am.first_seen" : "am.last_seen";
+  const dateColAll = "am.last_seen";
   const dateConditionSeg =
-    " AND (($4::date IS NULL AND $5::date IS NULL) OR (am.first_seen IS NOT NULL AND am.first_seen >= $4::date AND am.first_seen <= $5::date))";
+    ` AND (($4::date IS NULL AND $5::date IS NULL) OR (${dateColSeg} IS NOT NULL AND ${dateColSeg} >= $4::date AND ${dateColSeg} <= $5::date))`;
   const dateConditionAll =
-    " AND (($3::date IS NULL AND $4::date IS NULL) OR (am.first_seen IS NOT NULL AND am.first_seen >= $3::date AND am.first_seen <= $4::date))";
+    ` AND (($3::date IS NULL AND $4::date IS NULL) OR (${dateColAll} IS NOT NULL AND ${dateColAll} >= $3::date AND ${dateColAll} <= $4::date))`;
+  const contactsCondition = withContacts
+    ? " AND EXISTS (SELECT 1 FROM artist_contacts ac_f WHERE ac_f.artist_beatport_id = ls.artist_beatport_id)"
+    : "";
 
   const getCachedLeads = unstable_cache(
     async () => {
@@ -147,7 +155,7 @@ export default async function LeadsPage({
                   COUNT(*) OVER()::int AS _total
            FROM lead_scores ls
            LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
-           WHERE ls.segment = $1 AND ${blocklistCondition}${genreConditionSeg}${dateConditionSeg}
+           WHERE ls.segment = $1 AND ${blocklistCondition}${genreConditionSeg}${dateConditionSeg}${contactsCondition}
            ORDER BY ${orderByClause}
            LIMIT ${LEADS_PAGE_SIZE} OFFSET ${offset}`,
           params
@@ -162,14 +170,14 @@ export default async function LeadsPage({
                 COUNT(*) OVER()::int AS _total
          FROM lead_scores ls
          LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
-         WHERE ${blocklistCondition.replace(/\$2/g, "$1")}${genreConditionAll}${dateConditionAll}
+         WHERE ${blocklistCondition.replace(/\$2/g, "$1")}${genreConditionAll}${dateConditionAll}${contactsCondition}
          ORDER BY ${orderByClause}
          LIMIT ${LEADS_PAGE_SIZE} OFFSET ${offset}`,
         params
       );
       return { rows, totalCount: rows[0]?._total ?? 0 };
     },
-    ["leads", segment ?? "all", genreParam ?? "", dateFromParam ?? "", dateToParam ?? "", sort, order, String(pageNum)],
+    ["leads", segment ?? "all", genreParam ?? "", dateFromParam ?? "", dateToParam ?? "", sort, order, String(pageNum), withContacts ? "wc" : ""],
     { revalidate: LEADS_CACHE_REVALIDATE_SEC, tags: ["leads"] }
   );
 
@@ -225,6 +233,20 @@ export default async function LeadsPage({
         if (!positionHistory[row.artist_beatport_id]) positionHistory[row.artist_beatport_id] = [];
         positionHistory[row.artist_beatport_id].push({ date: row.snapshot_date, position: row.position });
       }
+
+      const ctRows = await query<{ artist_beatport_id: string; chart_type: string }>(
+        `SELECT DISTINCT ce.artist_beatport_id, cc.chart_type
+         FROM chart_entries ce
+         JOIN charts_catalog cc ON cc.id = ce.chart_id
+         WHERE ce.artist_beatport_id = ANY($1::text[]) AND cc.chart_type IS NOT NULL`,
+        [artistIds]
+      );
+      for (const row of ctRows) {
+        if (!chartTypes[row.artist_beatport_id]) chartTypes[row.artist_beatport_id] = [];
+        if (!chartTypes[row.artist_beatport_id].includes(row.chart_type)) {
+          chartTypes[row.artist_beatport_id].push(row.chart_type);
+        }
+      }
     }
   } catch (e) {
     error = e instanceof Error ? e.message : "Помилка завантаження.";
@@ -251,10 +273,13 @@ export default async function LeadsPage({
               <div className="text-2xl font-bold tabular-nums text-[var(--accent)]">{kpi.newToday}</div>
               <div className="mt-0.5 text-xs text-[var(--text-muted)]">Нових сьогодні</div>
             </div>
-            <div className="kpi-card rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
+            <Link
+              href={withContacts ? "/leads" : "/leads?withContacts=1"}
+              className={`kpi-card rounded-lg border px-4 py-3 transition-colors ${withContacts ? "border-[var(--accent)]/50 bg-[var(--accent)]/10" : "border-[var(--border)] bg-[var(--bg-card)] hover:border-[var(--accent)]/30"}`}
+            >
               <div className="text-2xl font-bold tabular-nums text-[var(--text)]">{kpi.withContacts}</div>
               <div className="mt-0.5 text-xs text-[var(--text-muted)]">З контактами</div>
-            </div>
+            </Link>
             <div className="kpi-card rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
               <div className="text-2xl font-bold tabular-nums text-[var(--text)]">{kpi.avgPosition > 0 ? `#${kpi.avgPosition}` : "—"}</div>
               <div className="mt-0.5 text-xs text-[var(--text-muted)]">Сер. позиція (7д)</div>
@@ -302,17 +327,6 @@ export default async function LeadsPage({
             sort={sort}
             order={order}
           />
-          {!error && leads.length > 0 && (
-            <a
-              href={`/api/leads/export${buildQuery({ segment: segment ?? undefined, genre: genreParam ?? undefined, dateFrom: dateFromParam ?? undefined, dateTo: dateToParam ?? undefined, sort, order })}`}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-1.5 text-sm font-medium text-[var(--text)] shadow-sm hover:bg-[var(--bg-hover)]"
-            >
-              <svg className="h-4 w-4 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Експорт CSV
-            </a>
-          )}
           {!error && (
             <RunEnrichmentOnLeadsButton
               segment={segment ?? null}
@@ -339,6 +353,7 @@ export default async function LeadsPage({
           <LeadsTable
             leads={leads}
             positionHistory={positionHistory}
+            chartTypes={chartTypes}
             segmentLabels={SEGMENT_LABELS}
             totalCount={totalCount}
             offset={offset}
