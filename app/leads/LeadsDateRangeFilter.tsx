@@ -31,48 +31,22 @@ function buildQuery(params: {
   return s ? `?${s}` : "";
 }
 
+function daysAgo(n: number): { from: string; to: string } {
+  const to = new Date();
+  const from = new Date(to);
+  from.setDate(from.getDate() - n);
+  return { from: toYYYYMMDD(from), to: toYYYYMMDD(to) };
+}
+
 const PRESETS: { key: string; label: string; getRange: () => { from: string; to: string } }[] = [
   { key: "all", label: "Усі дати", getRange: () => ({ from: "", to: "" }) },
-  {
-    key: "7d",
-    label: "Останні 7 днів",
-    getRange: () => {
-      const to = new Date();
-      const from = new Date(to);
-      from.setDate(from.getDate() - 6);
-      return { from: toYYYYMMDD(from), to: toYYYYMMDD(to) };
-    },
-  },
-  {
-    key: "30d",
-    label: "Останні 30 днів",
-    getRange: () => {
-      const to = new Date();
-      const from = new Date(to);
-      from.setDate(from.getDate() - 29);
-      return { from: toYYYYMMDD(from), to: toYYYYMMDD(to) };
-    },
-  },
-  {
-    key: "90d",
-    label: "Останні 90 днів",
-    getRange: () => {
-      const to = new Date();
-      const from = new Date(to);
-      from.setDate(from.getDate() - 89);
-      return { from: toYYYYMMDD(from), to: toYYYYMMDD(to) };
-    },
-  },
-  {
-    key: "12m",
-    label: "Останні 12 міс",
-    getRange: () => {
-      const to = new Date();
-      const from = new Date(to);
-      from.setMonth(from.getMonth() - 11);
-      return { from: toYYYYMMDD(from), to: toYYYYMMDD(to) };
-    },
-  },
+  { key: "today", label: "Сьогодні", getRange: () => ({ from: toYYYYMMDD(new Date()), to: toYYYYMMDD(new Date()) }) },
+  { key: "yesterday", label: "Вчора", getRange: () => { const d = new Date(); d.setDate(d.getDate() - 1); return { from: toYYYYMMDD(d), to: toYYYYMMDD(d) }; } },
+  { key: "2d", label: "Останні 2 дні", getRange: () => daysAgo(1) },
+  { key: "3d", label: "Останні 3 дні", getRange: () => daysAgo(2) },
+  { key: "4d", label: "Останні 4 дні", getRange: () => daysAgo(3) },
+  { key: "7d", label: "Останні 7 днів", getRange: () => daysAgo(6) },
+  { key: "30d", label: "Останні 30 днів", getRange: () => daysAgo(29) },
 ];
 
 export function LeadsDateRangeFilter({

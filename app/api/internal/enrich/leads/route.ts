@@ -9,7 +9,9 @@ import { query, pool } from "@/lib/db";
 import { getBlocklistValuesForSql } from "@/lib/bptoptrackerBlocklist";
 import { runEnrichmentForArtist } from "@/lib/enrichV1";
 
-const MAX_ARTISTS_PER_RUN = 10;
+/** 2 in parallel ≈ 52s per request (under 60s). Same as segment. */
+const PARALLEL_ARTISTS = 2;
+const MAX_ARTISTS_PER_RUN = PARALLEL_ARTISTS;
 const SEGMENTS_V2 = ["NEWCOMER", "NEW_ENTRY", "CONSISTENT", "FAST_GROWING", "DECLINING", "TOP_PERFORMER"] as const;
 
 function parseDateParam(value: string | null | undefined): string | null {
@@ -135,8 +137,10 @@ export async function POST(request: Request) {
     let linksAdded = 0;
     let contactsAdded = 0;
     let lastError: string | null = null;
-    for (const { artist_beatport_id } of artists) {
-      const result = await runEnrichmentForArtist(artist_beatport_id);
+    const results = await Promise.all(
+      artists.map(({ artist_beatport_id }) => runEnrichmentForArtist(artist_beatport_id))
+    );
+    for (const result of results) {
       linksAdded += result.linksAdded;
       contactsAdded += result.contactsAdded;
       if (result.error) lastError = result.error;

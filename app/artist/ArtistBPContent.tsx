@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { query, pool } from "@/lib/db";
 import { notFound } from "next/navigation";
+import { NavBar } from "@/app/components/NavBar";
 import { ArtistLeadCard } from "./bp/[id]/ArtistLeadCard";
 import {
   fetchBeatportArtistInfo,
@@ -47,7 +47,7 @@ export async function ArtistBPContent({ id: rawId }: { id: string }) {
       : `bptoptracker:${rawId}`;
 
   /** Phase 1: display links in strategy priority order (Beatport/BPTT rendered first in card). */
-  const LINK_DISPLAY_ORDER = ["linktree", "resident_advisor", "soundcloud", "bandcamp", "mixcloud", "reverbnation", "instagram", "website"];
+  const LINK_DISPLAY_ORDER = ["linktree", "resident_advisor", "soundcloud", "bandcamp", "mixcloud", "reverbnation", "instagram", "facebook", "twitter", "website"];
 
   let artist: ArtistV2 | null = null;
   let profile: { status: string; notes: string | null } | null = null;
@@ -368,17 +368,7 @@ export async function ArtistBPContent({ id: rawId }: { id: string }) {
 
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
-      <header className="border-b border-[var(--border)] bg-[var(--bg-header)] px-4 py-3">
-        <nav className="flex items-center gap-6">
-          <Link href="/" className="text-[var(--accent)] font-semibold tracking-tight hover:text-[var(--accent-hover)]">
-            Ninja Digger
-          </Link>
-          <span className="text-[var(--text-muted)]">|</span>
-          <Link href="/" className="text-[var(--text-muted)] hover:text-[var(--text)]">Головна</Link>
-          <Link href="/leads" className="text-[var(--text-muted)] hover:text-[var(--text)]">Ліди</Link>
-          <span className="font-medium text-[var(--text)] truncate max-w-[12rem]" title={displayName ?? undefined}>{displayName}</span>
-        </nav>
-      </header>
+      <NavBar />
 
       <main className="mx-auto max-w-2xl px-4 py-6">
         <ArtistLeadCard

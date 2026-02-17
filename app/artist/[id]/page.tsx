@@ -64,6 +64,10 @@ export default async function ArtistPage({
     );
     artist = artistRows[0] ?? null;
 
+    if (!artist) {
+      return <ArtistBPContent id={id} />;
+    }
+
     if (artist) {
       chartHistory = await query<ChartRow>(
         `SELECT s.slug AS source_slug, ce.chart_date::text AS chart_date, ce.position,

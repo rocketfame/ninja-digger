@@ -23,7 +23,7 @@ export default function Error({
       <div className="flex gap-3">
         <button
           type="button"
-          onClick={reset}
+          onClick={() => typeof reset === "function" && reset()}
           className="rounded bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-hover)]"
         >
           Спробувати знову

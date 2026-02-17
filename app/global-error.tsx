@@ -22,7 +22,7 @@ export default function GlobalError({
         </p>
         <button
           type="button"
-          onClick={reset}
+          onClick={() => typeof reset === "function" && reset()}
           style={{ padding: "0.5rem 1rem", fontSize: "0.875rem", fontWeight: 500, background: "#22c55e", color: "white", border: "none", borderRadius: "0.25rem", cursor: "pointer" }}
         >
           Оновити сторінку

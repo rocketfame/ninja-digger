@@ -1,6 +1,7 @@
 /**
  * POST /api/internal/enrich/segment?segmentId=...&force=1
- * Run enrichment for artists in segment (rate-limited; up to 10 per run).
+ * Run enrichment for artists in segment. Processes PARALLEL_ARTISTS at a time (default 2)
+ * so one request stays ~50s (under 60s serverless limit). One click = loop until remaining 0.
  * By default skips artists who already have at least one link or contact; use force=1 to re-run for all.
  */
 
@@ -8,7 +9,9 @@ import { NextResponse } from "next/server";
 import { query, pool } from "@/lib/db";
 import { runEnrichmentForArtist } from "@/lib/enrichV1";
 
-const MAX_ARTISTS_PER_RUN = 10;
+/** 2 artists in parallel ≈ 52s per request (under 60s). 90 artists → 45 requests ≈ 39 min total. */
+const PARALLEL_ARTISTS = 2;
+const MAX_ARTISTS_PER_RUN = PARALLEL_ARTISTS;
 
 /** Артисти без жодного запису в artist_links і artist_contacts вважаються «без даних». */
 const WHERE_NOT_ENRICHED = `
@@ -63,8 +66,10 @@ export async function POST(request: Request) {
     let linksAdded = 0;
     let contactsAdded = 0;
     let lastError: string | null = null;
-    for (const { artist_beatport_id } of artists) {
-      const result = await runEnrichmentForArtist(artist_beatport_id);
+    const results = await Promise.all(
+      artists.map(({ artist_beatport_id }) => runEnrichmentForArtist(artist_beatport_id))
+    );
+    for (const result of results) {
       linksAdded += result.linksAdded;
       contactsAdded += result.contactsAdded;
       if (result.error) lastError = result.error;

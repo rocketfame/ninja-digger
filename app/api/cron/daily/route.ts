@@ -1,6 +1,7 @@
 /**
- * Один щоденний cron: discovery (раз на тиждень) + ingest + normalize + score.
- * Нічого не потрібно викликати вручну — Vercel Cron викликає цей URL за розкладом.
+ * Щоденний cron (двічі на добу: 06:00 та 18:00 UTC).
+ * Discovery (неділя) + ingest + BPTT daily (вчора+сьогодні) → sync BPTT→chart_entries → normalize + score.
+ * Синхронізацію ретро з лідами та перерахунок сегментів не потрібно викликати вручну.
  */
 
 import { NextResponse } from "next/server";
@@ -9,6 +10,7 @@ import { runIngest } from "@/ingest/run";
 import { refreshArtistMetrics } from "@/segment/normalize";
 import { refreshLeadScoresV2 } from "@/segment/score";
 import { runBptoptrackerDailyUpdate } from "@/lib/bptoptrackerDaily";
+import { syncBptoptrackerToChartEntries } from "@/lib/bptoptrackerSync";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 min — discovery може тривати
@@ -61,6 +63,7 @@ export async function GET(request: Request) {
         skipped: bpt.skipped,
         errors: bpt.errors,
       };
+      await syncBptoptrackerToChartEntries();
     }
 
     const metricsUpdated = await refreshArtistMetrics();

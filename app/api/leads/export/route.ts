@@ -51,10 +51,11 @@ export async function GET(request: Request) {
   const orderParam = searchParams.get("order")?.trim();
   const order = orderParam && ORDER_FIELDS.includes(orderParam as (typeof ORDER_FIELDS)[number]) ? orderParam : "desc";
 
+  /* Період = фільтр по даті "Вперше" (first_seen). */
   const dateConditionSeg =
-    " AND (($3::date IS NULL AND $4::date IS NULL) OR EXISTS (SELECT 1 FROM chart_entries ce WHERE ce.artist_beatport_id = ls.artist_beatport_id AND ce.snapshot_date >= $3::date AND ce.snapshot_date <= $4::date))";
+    " AND (($3::date IS NULL AND $4::date IS NULL) OR (am.first_seen IS NOT NULL AND am.first_seen >= $3::date AND am.first_seen <= $4::date))";
   const dateConditionAll =
-    " AND (($2::date IS NULL AND $3::date IS NULL) OR EXISTS (SELECT 1 FROM chart_entries ce WHERE ce.artist_beatport_id = ls.artist_beatport_id AND ce.snapshot_date >= $2::date AND ce.snapshot_date <= $3::date))";
+    " AND (($2::date IS NULL AND $3::date IS NULL) OR (am.first_seen IS NOT NULL AND am.first_seen >= $2::date AND am.first_seen <= $3::date))";
 
   const orderByClause =
     sort === "entries"
@@ -67,11 +68,13 @@ export async function GET(request: Request) {
             ? `am.artist_name ${order.toUpperCase()} NULLS LAST, ls.score DESC NULLS LAST`
             : `ls.score ${order.toUpperCase()} NULLS LAST, am.artist_name ASC NULLS LAST`;
 
+  const toSlug = (ref: string) =>
+    `LOWER(REGEXP_REPLACE(REGEXP_REPLACE(TRIM(${ref}), '[^a-zA-Z0-9]+', '-', 'g'), '^-|-$', '', 'g'))`;
   const genreConditionSeg = genreParam
-    ? " AND am.genres IS NOT NULL AND $2 = ANY(am.genres)"
+    ? ` AND am.genres IS NOT NULL AND ($2 = ANY(am.genres) OR EXISTS (SELECT 1 FROM unnest(am.genres) AS g WHERE ${toSlug("g::text")} = ${toSlug("$2::text")}))`
     : " AND $2::text IS NULL";
   const genreConditionAll =
-    " AND ($1::text IS NULL OR (am.genres IS NOT NULL AND $1 = ANY(am.genres)))";
+    ` AND ($1::text IS NULL OR (am.genres IS NOT NULL AND ($1 = ANY(am.genres) OR EXISTS (SELECT 1 FROM unnest(am.genres) AS g WHERE ${toSlug("g::text")} = ${toSlug("$1::text")}))))`;
 
   let rows: ExportRowV2[] = [];
   try {

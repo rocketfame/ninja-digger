@@ -2,6 +2,7 @@ import Link from "next/link";
 import { query } from "@/lib/db";
 import { getBlocklistValuesForSql } from "@/lib/bptoptrackerBlocklist";
 import { formatDateDDMMYYYY } from "@/lib/formatDate";
+import { NavBar } from "@/app/components/NavBar";
 import { BptoptrackerFilters } from "./BptoptrackerFilters";
 
 type AggRow = {
@@ -106,17 +107,7 @@ export default async function BptoptrackerArtistsPage({
 
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
-      <header className="border-b border-[var(--border)] bg-[var(--bg-header)] px-4 py-3">
-        <nav className="flex items-center gap-6">
-          <Link href="/" className="text-[var(--accent)] font-semibold tracking-tight hover:text-[var(--accent-hover)]">
-            Ninja Digger
-          </Link>
-          <span className="text-[var(--text-muted)]">|</span>
-          <Link href="/" className="text-[var(--text-muted)] hover:text-[var(--text)]">Головна</Link>
-          <Link href="/leads" className="text-[var(--text-muted)] hover:text-[var(--text)]">Ліди</Link>
-          <span className="font-medium text-[var(--text)]">BP Top Tracker</span>
-        </nav>
-      </header>
+      <NavBar />
 
       <main className="mx-auto max-w-6xl px-4 py-6">
         <h1 className="mb-4 text-xl font-semibold text-[var(--text)]">Артисти з BP Top Tracker</h1>

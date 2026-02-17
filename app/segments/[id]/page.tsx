@@ -53,13 +53,13 @@ export default async function SegmentPage({
   if (!segment) notFound();
 
   return (
-    <div className="min-h-screen bg-stone-50 text-stone-900">
-      <header className="border-b border-stone-200 bg-white px-4 py-3">
+    <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
+      <header className="border-b border-[var(--border)] bg-[var(--bg-header)] px-4 py-3">
         <nav className="flex items-center gap-4">
-          <Link href="/" className="text-stone-600 hover:text-stone-900">Головна</Link>
-          <span className="text-stone-400">|</span>
-          <Link href="/leads" className="text-stone-600 hover:text-stone-900">Ліди</Link>
-          <span className="text-stone-400">|</span>
+          <Link href="/" className="text-[var(--text-muted)] hover:text-[var(--text)]">Головна</Link>
+          <span className="text-[var(--text-muted)]">|</span>
+          <Link href="/leads" className="text-[var(--text-muted)] hover:text-[var(--text)]">Ліди</Link>
+          <span className="text-[var(--text-muted)]">|</span>
           <span className="font-medium">{segment.name}</span>
         </nav>
       </header>
@@ -68,7 +68,7 @@ export default async function SegmentPage({
         <div className="mb-6">
           <div>
             <h1 className="text-xl font-semibold">{segment.name}</h1>
-            <p className="text-sm text-stone-500">
+            <p className="text-sm text-[var(--text-muted)]">
               {segment.source_type} · {items.length} записів
               {segment.source_url && (
                 <>
@@ -77,7 +77,7 @@ export default async function SegmentPage({
                     href={segment.source_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-stone-600 underline hover:text-stone-800"
+                    className="text-[var(--accent)] underline hover:no-underline"
                   >
                     Джерело
                   </a>
@@ -85,20 +85,20 @@ export default async function SegmentPage({
               )}
             </p>
             {segment.notes && (
-              <p className="mt-2 text-sm text-stone-600">{segment.notes}</p>
+              <p className="mt-2 text-sm text-[var(--text-muted)]">{segment.notes}</p>
             )}
           </div>
 
-          <section id="enrich" className="mt-6 rounded-xl border-2 border-amber-200 bg-amber-50/80 p-4">
-            <h2 className="mb-3 text-base font-semibold text-stone-800">Пошук контактів (енрічмент)</h2>
+          <section id="enrich" className="mt-6 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4">
+            <h2 className="mb-3 text-base font-semibold text-[var(--text)]">Пошук контактів (енрічмент)</h2>
             <RunEnrichmentButton segmentId={id} />
           </section>
         </div>
 
-        <div className="rounded border border-stone-200 bg-white overflow-hidden">
+        <div className="rounded border border-[var(--border)] bg-[var(--bg-card)] overflow-hidden">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-stone-200 bg-stone-100">
+              <tr className="border-b border-[var(--border)] bg-[var(--bg-table-header)]">
                 <th className="px-3 py-2 font-medium">#</th>
                 <th className="px-3 py-2 font-medium">Артист</th>
                 <th className="px-3 py-2 font-medium">Трек</th>
@@ -106,13 +106,13 @@ export default async function SegmentPage({
             </thead>
             <tbody>
               {items.map((row, i) => (
-                <tr key={i} className="border-b border-stone-100 hover:bg-stone-50">
-                  <td className="px-3 py-2 text-stone-500">{row.rank ?? "—"}</td>
+                <tr key={i} className="border-b border-[var(--border)] hover:bg-[var(--bg-hover)]">
+                  <td className="px-3 py-2 text-[var(--text-muted)]">{row.rank ?? "—"}</td>
                   <td className="px-3 py-2">
                     {row.artist_beatport_id ? (
                       <Link
                         href={`/artist/${row.artist_beatport_id.startsWith("bptoptracker:") ? row.artist_beatport_id.replace(/^bptoptracker:/, "") : row.artist_beatport_id}`}
-                        className="font-medium text-stone-900 underline hover:no-underline"
+                        className="font-medium text-[var(--accent)] underline hover:no-underline"
                       >
                         {row.artist_name}
                       </Link>
@@ -121,7 +121,7 @@ export default async function SegmentPage({
                         href={row.artist_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-stone-700 underline hover:no-underline"
+                        className="text-[var(--text)] underline hover:no-underline"
                       >
                         {row.artist_name}
                       </a>
@@ -129,7 +129,7 @@ export default async function SegmentPage({
                       row.artist_name
                     )}
                   </td>
-                  <td className="px-3 py-2 text-stone-600">{row.track_name ?? "—"}</td>
+                  <td className="px-3 py-2 text-[var(--text-muted)]">{row.track_name ?? "—"}</td>
                 </tr>
               ))}
             </tbody>

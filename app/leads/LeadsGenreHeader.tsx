@@ -3,6 +3,11 @@
 import Link from "next/link";
 import { useRef, useState, useEffect } from "react";
 
+function prettifyGenre(g: string): string {
+  if (g !== g.toLowerCase() || !g.includes("-")) return g;
+  return g.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function buildQuery(params: { segment?: string; genre?: string; dateFrom?: string; dateTo?: string; sort?: string; order?: string; page?: number }) {
   const q = new URLSearchParams();
   if (params.segment) q.set("segment", params.segment);
@@ -52,7 +57,7 @@ export function LeadsGenreHeader({
         onClick={() => setOpen((v) => !v)}
         className="inline-flex items-center gap-1 font-medium text-[var(--text)] hover:text-[var(--accent)]"
       >
-        Жанр
+        {genre ? prettifyGenre(genre) : "Жанр"}
         <span className="text-[var(--text-muted)]">{open ? " ▲" : " ▼"}</span>
       </button>
       {open && (
@@ -71,7 +76,7 @@ export function LeadsGenreHeader({
               onClick={() => setOpen(false)}
               className={`block px-3 py-1.5 text-sm hover:bg-[var(--bg-hover)] ${genre === g ? "bg-[var(--accent)]/20 text-[var(--accent)]" : "text-[var(--text)]"}`}
             >
-              {g}
+              {prettifyGenre(g)}
             </Link>
           ))}
         </div>

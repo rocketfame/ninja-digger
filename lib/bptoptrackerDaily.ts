@@ -24,6 +24,18 @@ export async function runBptoptrackerDailyUpdate(): Promise<{
   const yesterday = new Date(Date.now() - 86400 * 1000).toISOString().slice(0, 10);
   const dates = [yesterday, today];
 
+  return runBptoptrackerForDateRange(genres, dates);
+}
+
+/** Fetch BPTT for given genres and dates; insert into bptoptracker_daily. Used by refresh-now (fill missing days). */
+export async function runBptoptrackerForDateRange(
+  genreSlugs: string[],
+  dates: string[]
+): Promise<{ genres: string[]; dates: string[]; inserted: number; skipped: number; errors: string[] }> {
+  if (genreSlugs.length === 0 || dates.length === 0) {
+    return { genres: genreSlugs, dates, inserted: 0, skipped: 0, errors: [] };
+  }
+
   let inserted = 0;
   let skipped = 0;
   const errors: string[] = [];
@@ -37,7 +49,7 @@ export async function runBptoptrackerDailyUpdate(): Promise<{
   const withArtistId = hasArtistIdColumn.rows.length > 0;
   const withLinkPath = hasLinkPathColumn.rows.length > 0;
 
-  for (const genreSlug of genres) {
+  for (const genreSlug of genreSlugs) {
     for (const date of dates) {
       try {
         await new Promise((r) => setTimeout(r, DELAY_MS));
@@ -110,5 +122,5 @@ export async function runBptoptrackerDailyUpdate(): Promise<{
     }
   }
 
-  return { genres, dates, inserted, skipped, errors };
+  return { genres: genreSlugs, dates, inserted, skipped, errors };
 }

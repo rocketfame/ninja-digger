@@ -58,7 +58,7 @@ export async function PATCH(
     const status = typeof body?.status === "string" ? body.status.trim() : undefined;
     const notes = body?.notes !== undefined ? (typeof body.notes === "string" ? body.notes : null) : undefined;
 
-    const allowed = ["New", "Contacted", "In Progress", "Won", "Lost"];
+    const allowed = ["New", "Attempt 1", "Attempt 2", "Responded", "In Progress", "Won", "No Response", "Blacklist", "Contacted", "Lost"];
     if (status !== undefined && !allowed.includes(status)) {
       return NextResponse.json({ error: "Invalid status" }, { status: 400 });
     }

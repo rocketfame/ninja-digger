@@ -7,7 +7,7 @@
 import "dotenv/config";
 import { discoverLinks, getSearchResultUrls } from "../lib/enrichV1";
 
-const TEST_ARTISTS = ["Lunaro", "Bedouin"];
+const TEST_ARTISTS = ["Stephan Bodzin", "Recondite"];
 
 async function main() {
   console.log("=== Тест enrichment (пошук посилань і контактів) ===\n");
