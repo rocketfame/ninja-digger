@@ -2,6 +2,7 @@ import { query, pool } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { NavBar } from "@/app/components/NavBar";
 import { ArtistLeadCard } from "./bp/[id]/ArtistLeadCard";
+import { ArtistChartHistory } from "./bp/[id]/ArtistChartHistory";
 import {
   fetchBeatportArtistInfo,
   isNumericBeatportId,
@@ -90,34 +91,30 @@ export async function ArtistBPContent({ id: rawId }: { id: string }) {
   }
 
   if (!artist) {
+    const isNumeric = /^\d+$/.test(id);
     const syntheticMatch = id.match(/^bptoptracker:(.+)$/);
+
+    const idsToTry: string[] = [id];
     if (syntheticMatch) {
       const slugFromUrl = syntheticMatch[1];
       const normalizedSlug = slugFromUrl.replace(/-+/g, "-").replace(/^-|-$/g, "");
-      const idsToTry = [id];
       if (normalizedSlug !== slugFromUrl) idsToTry.push(`bptoptracker:${normalizedSlug}`);
+    }
 
-      let row: {
-        artist_beatport_id: string;
-        artist_name: string;
-        first_seen: string;
-        last_seen: string;
-        total_chart_entries: string;
-        avg_position: string;
-        best_position: string;
-        genres: string[];
-      } | null = null;
+    let row: {
+      artist_beatport_id: string;
+      artist_name: string;
+      first_seen: string;
+      last_seen: string;
+      total_chart_entries: string;
+      avg_position: string;
+      best_position: string;
+      genres: string[];
+    } | null = null;
+
+    if (isNumeric || syntheticMatch) {
       for (const tryId of idsToTry) {
-        const fromChart = await query<{
-          artist_beatport_id: string;
-          artist_name: string;
-          first_seen: string;
-          last_seen: string;
-          total_chart_entries: string;
-          avg_position: string;
-          best_position: string;
-          genres: string[];
-        }>(
+        const fromChart = await query<typeof row & {}>(
           `SELECT ce.artist_beatport_id,
                   MAX(ce.artist_name) AS artist_name,
                   MIN(ce.snapshot_date)::text AS first_seen,
@@ -135,39 +132,40 @@ export async function ArtistBPContent({ id: rawId }: { id: string }) {
         row = fromChart[0] ?? null;
         if (row) break;
       }
-
-      if (row) {
-        const resolvedId = row.artist_beatport_id;
-        artist = {
-          artist_beatport_id: resolvedId,
-          artist_name: row.artist_name,
-          artist_slug: null,
-          first_seen: row.first_seen,
-          last_seen: row.last_seen,
-          total_days_in_charts: null,
-          total_chart_entries: Number(row.total_chart_entries) || null,
-          avg_position: row.avg_position,
-          best_position: Number(row.best_position) || null,
-          genres: Array.isArray(row.genres) ? row.genres.filter(Boolean) : null,
-          segment: null,
-          score: null,
-          signals: null,
-        };
-        const [profRows, linkRows, contactRows] = await Promise.all([
-          query<{ status: string; notes: string | null }>(`SELECT status, notes FROM lead_profiles WHERE artist_beatport_id = $1`, [resolvedId]),
-          query<{ type: string; url: string }>(`SELECT type, url FROM artist_links WHERE artist_beatport_id = $1`, [resolvedId]),
-          query<{ type: string; value: string; source_url: string | null; confidence: number }>(
-            `SELECT type, value, source_url, COALESCE(confidence, 0) AS confidence FROM artist_contacts WHERE artist_beatport_id = $1`,
-            [resolvedId]
-          ),
-        ]);
-        profile = profRows[0] ?? null;
-        links = linkRows.sort(
-          (a, b) => LINK_DISPLAY_ORDER.indexOf(a.type) - LINK_DISPLAY_ORDER.indexOf(b.type) || a.type.localeCompare(b.type)
-        );
-        contacts = contactRows.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
-      }
     }
+
+    if (row) {
+      const resolvedId = row.artist_beatport_id;
+      artist = {
+        artist_beatport_id: resolvedId,
+        artist_name: row.artist_name,
+        artist_slug: null,
+        first_seen: row.first_seen,
+        last_seen: row.last_seen,
+        total_days_in_charts: null,
+        total_chart_entries: Number(row.total_chart_entries) || null,
+        avg_position: row.avg_position,
+        best_position: Number(row.best_position) || null,
+        genres: Array.isArray(row.genres) ? row.genres.filter(Boolean) : null,
+        segment: null,
+        score: null,
+        signals: null,
+      };
+      const [profRows, linkRows, contactRows] = await Promise.all([
+        query<{ status: string; notes: string | null }>(`SELECT status, notes FROM lead_profiles WHERE artist_beatport_id = $1`, [resolvedId]),
+        query<{ type: string; url: string }>(`SELECT type, url FROM artist_links WHERE artist_beatport_id = $1`, [resolvedId]),
+        query<{ type: string; value: string; source_url: string | null; confidence: number }>(
+          `SELECT type, value, source_url, COALESCE(confidence, 0) AS confidence FROM artist_contacts WHERE artist_beatport_id = $1`,
+          [resolvedId]
+        ),
+      ]);
+      profile = profRows[0] ?? null;
+      links = linkRows.sort(
+        (a, b) => LINK_DISPLAY_ORDER.indexOf(a.type) - LINK_DISPLAY_ORDER.indexOf(b.type) || a.type.localeCompare(b.type)
+      );
+      contacts = contactRows.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+    }
+
     if (!artist) notFound();
   }
 
@@ -229,14 +227,26 @@ export async function ArtistBPContent({ id: rawId }: { id: string }) {
     // ignore
   }
 
-  let artistChartTypes: string[] = [];
+  type ChartHistoryPoint = { date: string; position: number; track: string; genre: string };
+  let chartHistory: ChartHistoryPoint[] = [];
   try {
-    const ctRows = await query<{ chart_type: string }>(
-      `SELECT DISTINCT cc.chart_type FROM chart_entries ce JOIN charts_catalog cc ON cc.id = ce.chart_id WHERE ce.artist_beatport_id = $1 AND cc.chart_type IS NOT NULL`,
+    const rows = await query<{ snapshot_date: string; position: number; track_title: string; genre_slug: string }>(
+      `SELECT ce.snapshot_date::text AS snapshot_date, ce.position, ce.track_title, cc.genre_slug
+       FROM chart_entries ce
+       JOIN charts_catalog cc ON cc.id = ce.chart_id
+       WHERE ce.artist_beatport_id = $1 AND ce.track_title IS NOT NULL
+       ORDER BY ce.snapshot_date, ce.position`,
       [artist.artist_beatport_id]
     );
-    artistChartTypes = ctRows.map((r) => r.chart_type);
-  } catch { /* ignore */ }
+    chartHistory = rows.map((r) => ({
+      date: r.snapshot_date,
+      position: r.position,
+      track: r.track_title,
+      genre: r.genre_slug ?? "",
+    }));
+  } catch {
+    // ignore
+  }
 
   let displayName = artist.artist_name ?? artist.artist_beatport_id;
   const isSynthetic = !isNumericBeatportId(artist.artist_beatport_id);
@@ -379,7 +389,7 @@ export async function ArtistBPContent({ id: rawId }: { id: string }) {
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
       <NavBar />
 
-      <main className="mx-auto max-w-2xl px-4 py-6">
+      <main className="mx-auto max-w-2xl px-4 py-6 space-y-4">
         <ArtistLeadCard
           artist={{ ...artist, artist_name: displayName }}
           beatportUrl={beatportUrl}
@@ -389,8 +399,12 @@ export async function ArtistBPContent({ id: rawId }: { id: string }) {
           links={links}
           contacts={contacts}
           genreStats={genreStats}
-          chartTypes={artistChartTypes}
         />
+        {chartHistory.length > 0 && (
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] overflow-hidden">
+            <ArtistChartHistory data={chartHistory} artistName={displayName} />
+          </div>
+        )}
       </main>
     </div>
   );

@@ -74,10 +74,13 @@ function parseDateParam(value: string | undefined): string | null {
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ segment?: string; page?: string; genre?: string; dateFrom?: string; dateTo?: string; sort?: string; order?: string; withContacts?: string }>;
+  searchParams: Promise<{ segment?: string; page?: string; genre?: string; dateFrom?: string; dateTo?: string; sort?: string; order?: string; withContacts?: string; withEmails?: string; withSocials?: string; inWork?: string }>;
 }) {
   const resolved = await searchParams;
   const withContacts = resolved.withContacts === "1";
+  const withEmails = resolved.withEmails === "1";
+  const withSocials = resolved.withSocials === "1";
+  const inWork = resolved.inWork === "1";
   const segmentFilter = resolved.segment;
   const segment =
     segmentFilter && SEGMENTS_V2.includes(segmentFilter as (typeof SEGMENTS_V2)[number])
@@ -100,8 +103,8 @@ export default async function LeadsPage({
   let error: string | null = null;
   let distinctGenres: string[] = [];
   let positionHistory: Record<string, { date: string; position: number }[]> = {};
-  let chartTypes: Record<string, string[]> = {};
-  let kpi = { totalLeads: 0, newToday: 0, withContacts: 0, avgPosition: 0, dataFrom: "", dataTo: "" };
+  let leadStatuses: Record<string, string> = {};
+  let kpi = { totalLeads: 0, newToday: 0, withContacts: 0, withEmails: 0, withSocials: 0, inWork: 0, avgPosition: 0, dataFrom: "", dataTo: "" };
   const blocklist = getBlocklistValuesForSql();
 
   const blocklistCondition = `(array_length($2::text[], 1) IS NULL OR (
@@ -134,14 +137,20 @@ export default async function LeadsPage({
     ` AND ($2::text IS NULL OR ((am.genres IS NOT NULL AND ($2 = ANY(am.genres) OR EXISTS (SELECT 1 FROM unnest(am.genres) AS g WHERE ${toSlug("g::text")} = ${toSlug("$2::text")}))) OR EXISTS (SELECT 1 FROM chart_entries ce JOIN charts_catalog cc ON cc.id = ce.chart_id WHERE ce.artist_beatport_id = ls.artist_beatport_id AND cc.genre_slug IS NOT NULL AND (cc.genre_slug = $2 OR cc.genre_slug = ${toSlug("$2::text")}))))`;
 
   const useFirstSeen = segment === "NEWCOMER" || segment === "NEW_ENTRY";
-  const dateColSeg = useFirstSeen ? "am.first_seen" : "am.last_seen";
-  const dateColAll = "am.last_seen";
-  const dateConditionSeg =
-    ` AND (($4::date IS NULL AND $5::date IS NULL) OR (${dateColSeg} IS NOT NULL AND ${dateColSeg} >= $4::date AND ${dateColSeg} <= $5::date))`;
+  const dateConditionSeg = useFirstSeen
+    ? ` AND (($4::date IS NULL AND $5::date IS NULL) OR (am.first_seen IS NOT NULL AND am.first_seen >= $4::date AND am.first_seen <= $5::date))`
+    : ` AND (($4::date IS NULL AND $5::date IS NULL) OR EXISTS (SELECT 1 FROM chart_entries ce_d WHERE ce_d.artist_beatport_id = ls.artist_beatport_id AND ce_d.snapshot_date >= $4::date AND ce_d.snapshot_date <= $5::date))`;
   const dateConditionAll =
-    ` AND (($3::date IS NULL AND $4::date IS NULL) OR (${dateColAll} IS NOT NULL AND ${dateColAll} >= $3::date AND ${dateColAll} <= $4::date))`;
-  const contactsCondition = withContacts
+    ` AND (($3::date IS NULL AND $4::date IS NULL) OR EXISTS (SELECT 1 FROM chart_entries ce_d WHERE ce_d.artist_beatport_id = ls.artist_beatport_id AND ce_d.snapshot_date >= $3::date AND ce_d.snapshot_date <= $4::date))`;
+  const contactsCondition = withEmails
+    ? " AND EXISTS (SELECT 1 FROM artist_contacts ac_f WHERE ac_f.artist_beatport_id = ls.artist_beatport_id AND ac_f.type = 'email')"
+    : withSocials
+    ? " AND EXISTS (SELECT 1 FROM artist_links al_f WHERE al_f.artist_beatport_id = ls.artist_beatport_id)"
+    : withContacts
     ? " AND EXISTS (SELECT 1 FROM artist_contacts ac_f WHERE ac_f.artist_beatport_id = ls.artist_beatport_id)"
+    : "";
+  const inWorkCondition = inWork
+    ? " AND EXISTS (SELECT 1 FROM lead_profiles lp_w WHERE lp_w.artist_beatport_id = ls.artist_beatport_id AND lp_w.status IS NOT NULL AND lp_w.status <> 'New')"
     : "";
 
   const getCachedLeads = unstable_cache(
@@ -155,7 +164,7 @@ export default async function LeadsPage({
                   COUNT(*) OVER()::int AS _total
            FROM lead_scores ls
            LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
-           WHERE ls.segment = $1 AND ${blocklistCondition}${genreConditionSeg}${dateConditionSeg}${contactsCondition}
+           WHERE ls.segment = $1 AND ${blocklistCondition}${genreConditionSeg}${dateConditionSeg}${contactsCondition}${inWorkCondition}
            ORDER BY ${orderByClause}
            LIMIT ${LEADS_PAGE_SIZE} OFFSET ${offset}`,
           params
@@ -170,30 +179,44 @@ export default async function LeadsPage({
                 COUNT(*) OVER()::int AS _total
          FROM lead_scores ls
          LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
-         WHERE ${blocklistCondition.replace(/\$2/g, "$1")}${genreConditionAll}${dateConditionAll}${contactsCondition}
+         WHERE ${blocklistCondition.replace(/\$2/g, "$1")}${genreConditionAll}${dateConditionAll}${contactsCondition}${inWorkCondition}
          ORDER BY ${orderByClause}
          LIMIT ${LEADS_PAGE_SIZE} OFFSET ${offset}`,
         params
       );
       return { rows, totalCount: rows[0]?._total ?? 0 };
     },
-    ["leads", segment ?? "all", genreParam ?? "", dateFromParam ?? "", dateToParam ?? "", sort, order, String(pageNum), withContacts ? "wc" : ""],
+    ["leads", segment ?? "all", genreParam ?? "", dateFromParam ?? "", dateToParam ?? "", sort, order, String(pageNum), withContacts ? "wc" : withEmails ? "we" : withSocials ? "ws" : inWork ? "iw" : ""],
     { revalidate: LEADS_CACHE_REVALIDATE_SEC, tags: ["leads"] }
   );
 
   try {
-    const [leadsResult, genresResult, kpiResult] = await Promise.all([
+    const [leadsResult, genresResult, kpiRow] = await Promise.all([
       getCachedLeads(),
       query<{ g: string }>(
         `SELECT DISTINCT unnest(genres) AS g FROM artist_metrics WHERE genres IS NOT NULL AND array_length(genres, 1) > 0 ORDER BY g LIMIT 800`
       ),
-      Promise.all([
-        query<{ cnt: number }>(`SELECT COUNT(*)::int AS cnt FROM lead_scores`),
-        query<{ cnt: number }>(`SELECT COUNT(DISTINCT ls.artist_beatport_id)::int AS cnt FROM lead_scores ls JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id WHERE am.first_seen = CURRENT_DATE`),
-        query<{ cnt: number }>(`SELECT COUNT(DISTINCT ac.artist_beatport_id)::int AS cnt FROM artist_contacts ac JOIN lead_scores ls ON ls.artist_beatport_id = ac.artist_beatport_id`),
-        query<{ avg_pos: number | null }>(`SELECT ROUND(AVG(sub.best_pos))::int AS avg_pos FROM (SELECT MIN(ce.position) AS best_pos FROM chart_entries ce JOIN lead_scores ls ON ls.artist_beatport_id = ce.artist_beatport_id WHERE ce.snapshot_date >= CURRENT_DATE - 7 GROUP BY ce.artist_beatport_id) sub`),
-        query<{ earliest: string | null; latest: string | null }>(`SELECT MIN(snapshot_date)::text AS earliest, MAX(snapshot_date)::text AS latest FROM chart_entries`),
-      ]),
+      query<{
+        total_leads: number;
+        new_today: number;
+        with_contacts: number;
+        avg_pos: number | null;
+        earliest: string | null;
+        latest: string | null;
+        with_emails: number;
+        with_socials: number;
+        in_work: number;
+      }>(`SELECT
+            (SELECT COUNT(*)::int FROM lead_scores) AS total_leads,
+            (SELECT COUNT(DISTINCT ls.artist_beatport_id)::int FROM lead_scores ls JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id WHERE am.first_seen = CURRENT_DATE) AS new_today,
+            (SELECT COUNT(DISTINCT ac.artist_beatport_id)::int FROM artist_contacts ac JOIN lead_scores ls ON ls.artist_beatport_id = ac.artist_beatport_id) AS with_contacts,
+            (SELECT ROUND(AVG(sub.best_pos))::int FROM (SELECT MIN(ce.position) AS best_pos FROM chart_entries ce JOIN lead_scores ls ON ls.artist_beatport_id = ce.artist_beatport_id WHERE ce.snapshot_date >= CURRENT_DATE - 7 GROUP BY ce.artist_beatport_id) sub) AS avg_pos,
+            (SELECT MIN(snapshot_date)::text FROM chart_entries) AS earliest,
+            (SELECT MAX(snapshot_date)::text FROM chart_entries) AS latest,
+            (SELECT COUNT(DISTINCT ac.artist_beatport_id)::int FROM artist_contacts ac JOIN lead_scores ls ON ls.artist_beatport_id = ac.artist_beatport_id WHERE ac.type = 'email') AS with_emails,
+            (SELECT COUNT(DISTINCT al.artist_beatport_id)::int FROM artist_links al JOIN lead_scores ls ON ls.artist_beatport_id = al.artist_beatport_id) AS with_socials,
+            (SELECT COUNT(*)::int FROM lead_profiles WHERE status IS NOT NULL AND status <> 'New') AS in_work
+         `),
     ]);
     const { rows, totalCount: total } = leadsResult;
     leads = rows;
@@ -210,42 +233,42 @@ export default async function LeadsPage({
       }
       distinctGenres = [...slugMap.values()].sort((a, b) => a.localeCompare(b));
     }
+    const k = kpiRow[0];
     kpi = {
-      totalLeads: kpiResult[0][0]?.cnt ?? 0,
-      newToday: kpiResult[1][0]?.cnt ?? 0,
-      withContacts: kpiResult[2][0]?.cnt ?? 0,
-      avgPosition: kpiResult[3][0]?.avg_pos ?? 0,
-      dataFrom: kpiResult[4][0]?.earliest ?? "",
-      dataTo: kpiResult[4][0]?.latest ?? "",
+      totalLeads: k?.total_leads ?? 0,
+      newToday: k?.new_today ?? 0,
+      withContacts: k?.with_contacts ?? 0,
+      avgPosition: k?.avg_pos ?? 0,
+      dataFrom: k?.earliest ?? "",
+      dataTo: k?.latest ?? "",
+      withEmails: k?.with_emails ?? 0,
+      withSocials: k?.with_socials ?? 0,
+      inWork: k?.in_work ?? 0,
     };
 
     if (leads.length > 0) {
       const artistIds = leads.map((r) => r.artist_beatport_id);
-      const posRows = await query<{ artist_beatport_id: string; snapshot_date: string; position: number }>(
-        `SELECT artist_beatport_id, snapshot_date::text AS snapshot_date, MIN(position)::int AS position
-         FROM chart_entries
-         WHERE artist_beatport_id = ANY($1::text[]) AND snapshot_date >= CURRENT_DATE - 90
-         GROUP BY artist_beatport_id, snapshot_date
-         ORDER BY artist_beatport_id, snapshot_date`,
-        [artistIds]
-      );
+      const [posRows, profileRows] = await Promise.all([
+        query<{ artist_beatport_id: string; snapshot_date: string; position: number }>(
+          `SELECT artist_beatport_id, snapshot_date::text AS snapshot_date, MIN(position)::int AS position
+           FROM chart_entries
+           WHERE artist_beatport_id = ANY($1::text[]) AND snapshot_date >= CURRENT_DATE - 90
+           GROUP BY artist_beatport_id, snapshot_date
+           ORDER BY artist_beatport_id, snapshot_date`,
+          [artistIds]
+        ),
+        query<{ artist_beatport_id: string; status: string }>(
+          `SELECT artist_beatport_id, status FROM lead_profiles
+           WHERE artist_beatport_id = ANY($1::text[]) AND status IS NOT NULL AND status <> 'New'`,
+          [artistIds]
+        ),
+      ]);
       for (const row of posRows) {
         if (!positionHistory[row.artist_beatport_id]) positionHistory[row.artist_beatport_id] = [];
         positionHistory[row.artist_beatport_id].push({ date: row.snapshot_date, position: row.position });
       }
-
-      const ctRows = await query<{ artist_beatport_id: string; chart_type: string }>(
-        `SELECT DISTINCT ce.artist_beatport_id, cc.chart_type
-         FROM chart_entries ce
-         JOIN charts_catalog cc ON cc.id = ce.chart_id
-         WHERE ce.artist_beatport_id = ANY($1::text[]) AND cc.chart_type IS NOT NULL`,
-        [artistIds]
-      );
-      for (const row of ctRows) {
-        if (!chartTypes[row.artist_beatport_id]) chartTypes[row.artist_beatport_id] = [];
-        if (!chartTypes[row.artist_beatport_id].includes(row.chart_type)) {
-          chartTypes[row.artist_beatport_id].push(row.chart_type);
-        }
+      for (const row of profileRows) {
+        leadStatuses[row.artist_beatport_id] = row.status;
       }
     }
   } catch (e) {
@@ -264,7 +287,7 @@ export default async function LeadsPage({
 
         {/* KPI cards */}
         {!error && (
-          <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mb-5 grid grid-cols-3 gap-3 sm:grid-cols-6">
             <div className="kpi-card rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
               <div className="text-2xl font-bold tabular-nums text-[var(--text)]">{kpi.totalLeads.toLocaleString()}</div>
               <div className="mt-0.5 text-xs text-[var(--text-muted)]">Всього лідів</div>
@@ -274,11 +297,34 @@ export default async function LeadsPage({
               <div className="mt-0.5 text-xs text-[var(--text-muted)]">Нових сьогодні</div>
             </div>
             <Link
-              href={withContacts ? "/leads" : "/leads?withContacts=1"}
-              className={`kpi-card rounded-lg border px-4 py-3 transition-colors ${withContacts ? "border-[var(--accent)]/50 bg-[var(--accent)]/10" : "border-[var(--border)] bg-[var(--bg-card)] hover:border-[var(--accent)]/30"}`}
+              href={inWork ? "/leads" : "/leads?inWork=1"}
+              className={`kpi-card rounded-lg border px-4 py-3 transition-colors ${inWork ? "border-[#fbbf24]/50 bg-[#fbbf24]/10" : "border-[var(--border)] bg-[var(--bg-card)] hover:border-[#fbbf24]/30"}`}
             >
-              <div className="text-2xl font-bold tabular-nums text-[var(--text)]">{kpi.withContacts}</div>
-              <div className="mt-0.5 text-xs text-[var(--text-muted)]">З контактами</div>
+              <div className="flex items-center gap-2">
+                <svg className="h-4 w-4 shrink-0 text-[#fbbf24]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                <div className="text-2xl font-bold tabular-nums text-[var(--text)]">{kpi.inWork}</div>
+              </div>
+              <div className="mt-0.5 text-xs text-[var(--text-muted)]">В роботі</div>
+            </Link>
+            <Link
+              href={withEmails ? "/leads" : "/leads?withEmails=1"}
+              className={`kpi-card rounded-lg border px-4 py-3 transition-colors ${withEmails ? "border-[#60a5fa]/50 bg-[#60a5fa]/10" : "border-[var(--border)] bg-[var(--bg-card)] hover:border-[#60a5fa]/30"}`}
+            >
+              <div className="flex items-center gap-2">
+                <svg className="h-4 w-4 shrink-0 text-[#60a5fa]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                <div className="text-2xl font-bold tabular-nums text-[var(--text)]">{kpi.withEmails}</div>
+              </div>
+              <div className="mt-0.5 text-xs text-[var(--text-muted)]">З email</div>
+            </Link>
+            <Link
+              href={withSocials ? "/leads" : "/leads?withSocials=1"}
+              className={`kpi-card rounded-lg border px-4 py-3 transition-colors ${withSocials ? "border-[#c084fc]/50 bg-[#c084fc]/10" : "border-[var(--border)] bg-[var(--bg-card)] hover:border-[#c084fc]/30"}`}
+            >
+              <div className="flex items-center gap-2">
+                <svg className="h-4 w-4 shrink-0 text-[#c084fc]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                <div className="text-2xl font-bold tabular-nums text-[var(--text)]">{kpi.withSocials}</div>
+              </div>
+              <div className="mt-0.5 text-xs text-[var(--text-muted)]">З соцмережами</div>
             </Link>
             <div className="kpi-card rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
               <div className="text-2xl font-bold tabular-nums text-[var(--text)]">{kpi.avgPosition > 0 ? `#${kpi.avgPosition}` : "—"}</div>
@@ -353,7 +399,7 @@ export default async function LeadsPage({
           <LeadsTable
             leads={leads}
             positionHistory={positionHistory}
-            chartTypes={chartTypes}
+            leadStatuses={leadStatuses}
             segmentLabels={SEGMENT_LABELS}
             totalCount={totalCount}
             offset={offset}

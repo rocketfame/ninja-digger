@@ -7,10 +7,8 @@ export const metadata: Metadata = {
   title: "Ninja Digger",
   description: "Дослідження даних Beatport для ручного outreach",
   icons: {
-    icon: [
-      { url: "/favicon.ico", sizes: "32x32", type: "image/png" },
-      { url: "/icon.svg", type: "image/svg+xml" },
-    ],
+    icon: { url: "/icon.svg", type: "image/svg+xml" },
+    apple: "/apple-touch-icon.png",
   },
 };
 
@@ -25,7 +23,6 @@ export default function RootLayout({
   return (
     <html lang="uk" suppressHydrationWarning className="dark" style={{ backgroundColor: FALLBACK_BG, color: FALLBACK_TEXT }}>
       <head>
-        <link rel="icon" href="/favicon.ico" sizes="32x32" />
         <link rel="icon" href="/icon.svg" type="image/svg+xml" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
       </head>

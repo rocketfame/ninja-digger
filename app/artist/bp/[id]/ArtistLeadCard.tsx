@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ButtonSpinner } from "@/app/components/ButtonSpinner";
 import { useToast } from "@/app/components/Toast";
@@ -26,12 +26,6 @@ const SEGMENT_STYLES: Record<string, { bg: string; text: string; label: string }
   FAST_GROWING:  { bg: "rgba(168,85,247,0.15)",  text: "#c084fc", label: "Швидке зростання" },
   DECLINING:     { bg: "rgba(239,68,68,0.15)",   text: "#f87171", label: "Спад" },
   TOP_PERFORMER: { bg: "rgba(250,204,21,0.15)",  text: "#fbbf24", label: "Топ-перформер" },
-};
-
-const CHART_TYPE_LABELS: Record<string, { label: string; color: string; bg: string }> = {
-  top_tracks:    { label: "Top",      color: "#4ade80", bg: "rgba(34,197,94,0.12)" },
-  hype_tracks:   { label: "Hype",     color: "#f59e0b", bg: "rgba(245,158,11,0.15)" },
-  top_releases:  { label: "Releases", color: "#60a5fa", bg: "rgba(59,130,246,0.12)" },
 };
 
 const GENRE_COLORS = [
@@ -103,7 +97,6 @@ export function ArtistLeadCard({
   links = [],
   contacts = [],
   genreStats = [],
-  chartTypes = [],
 }: {
   artist: Artist;
   beatportUrl?: string | null;
@@ -113,11 +106,9 @@ export function ArtistLeadCard({
   links?: LinkRow[];
   contacts?: ContactRow[];
   genreStats?: GenreStat[];
-  chartTypes?: string[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [copied, setCopied] = useState(false);
   const [status, setStatus] = useState(initialProfile?.status ?? "New");
   const [notes, setNotes] = useState(initialProfile?.notes ?? "");
   const [profileSaving, setProfileSaving] = useState(false);
@@ -135,12 +126,47 @@ export function ArtistLeadCard({
   const primaryUrl = bptoptrackerUrl ?? beatportUrl ?? null;
   const hasExternalLinks = !!(beatportUrl || bptoptrackerUrl);
 
-  const outreachNote = [
-    `Hi,`, ``,
-    `I came across your music on Beatport${artist.segment ? ` (${artist.segment})` : ""} and wanted to reach out.`, ``,
-    `Would you be open to a short chat about potential collaboration or licensing?`, ``,
-    `Best,`,
-  ].join("\n");
+  const [outreachChannel, setOutreachChannel] = useState<"email" | "social">("social");
+
+  const emailTemplates = useMemo(() => [
+    {
+      touch: 1, label: "Touch 1", hint: "М'який старт", statusValue: "Attempt 1",
+      subject: "Congrats on your recent chart entry",
+      body: `Hi ${displayName},\n\nSaw your recent appearance in the Beatport charts — great move.\n\nI'm Max from PromoSound. We work with electronic artists right when momentum starts building, helping extend that visibility across platforms in a structured way.\n\nIf you're planning to push this release further, I'd be happy to share a few ideas tailored to your current stage.\n\nBest,\nMax`,
+      color: "#60a5fa", bg: "rgba(59,130,246,0.08)", borderColor: "rgba(59,130,246,0.25)",
+    },
+    {
+      touch: 2, label: "Touch 2", hint: "Follow-up — через 3–4 дні", statusValue: "Attempt 2",
+      subject: "Re: chart momentum",
+      body: `Hi ${displayName},\n\nJust wanted to briefly follow up in case my previous message got buried.\n\nWhen a track starts moving in the charts, there's usually a short window where additional exposure can significantly amplify results.\n\nIf you're open to it, I can outline how we typically approach this stage for electronic releases.\n\nBest,\nMax`,
+      color: "#818cf8", bg: "rgba(129,140,248,0.08)", borderColor: "rgba(129,140,248,0.25)",
+    },
+    {
+      touch: 3, label: "Touch 3", hint: "Закриття — ще через 4–5 днів", statusValue: "No Response",
+      subject: "Should I close the loop?",
+      body: `Hi ${displayName},\n\nI'll keep this short — just wanted to check once more before I step back.\n\nIf building on your recent chart momentum is something you'd like to explore, I'd be glad to connect.\n\nIf now isn't the right time, no worries at all — wishing you continued success with the release.\n\nBest,\nMax`,
+      color: "#f97316", bg: "rgba(249,115,22,0.08)", borderColor: "rgba(249,115,22,0.25)",
+    },
+  ], [displayName]);
+
+  const socialTemplate = useMemo(() => ({
+    touch: 1, label: "DM", hint: "Одне повідомлення", statusValue: "Contacted",
+    subject: "",
+    body: `Hey ${displayName} 👋\n\nSaw your track hit the Beatport charts — congrats, that's big.\n\nQuick one: we run a Daily Push product made specifically for tracks that are already charting. It helps you hold the position longer and can move the track higher while the chart window is still active.\n\nIf you want, send me the link + which chart you're in, and I'll tell you what plan makes sense. No pressure.`,
+    color: "#a78bfa", bg: "rgba(167,139,250,0.08)", borderColor: "rgba(167,139,250,0.25)",
+  }), [displayName]);
+
+  const touchTemplates = outreachChannel === "email" ? emailTemplates : [socialTemplate];
+
+  const activeTouchIndex = outreachChannel === "social"
+    ? (["New", "Contacted"].includes(status) ? 0 : -1)
+    : status === "New" ? 0
+      : status === "Attempt 1" ? 1
+      : status === "Attempt 2" ? 2
+      : -1;
+
+  const [copiedTouch, setCopiedTouch] = useState<number | null>(null);
+  const [expandedTouch, setExpandedTouch] = useState<number | null>(0);
 
   const saveProfile = useCallback(async (updates: { status?: string; notes?: string }) => {
     setProfileSaving(true);
@@ -160,55 +186,90 @@ export function ArtistLeadCard({
     saveProfile({ notes });
   }, [notes, saveProfile]);
 
-  const markContacted = useCallback(() => {
-    const next = status === "New" ? "Attempt 1" : status === "Attempt 1" ? "Attempt 2" : status;
-    setStatus(next);
-    saveProfile({ status: next });
-  }, [status, saveProfile]);
+  const copyTouch = useCallback(async (touchIdx: number) => {
+    const t = touchTemplates[touchIdx];
+    if (!t) return;
+    const full = t.subject ? `Subject: ${t.subject}\n\n${t.body}` : t.body;
+    try {
+      await navigator.clipboard.writeText(full);
+      setCopiedTouch(touchIdx);
+      toast(`Touch ${touchIdx + 1} скопійовано`, "success");
+      setTimeout(() => setCopiedTouch(null), 2000);
+    } catch { /* ignore */ }
+  }, [touchTemplates, toast]);
 
-  const runEnrichment = useCallback(async () => {
+  const markTouchSent = useCallback((touchIdx: number) => {
+    const t = touchTemplates[touchIdx];
+    if (!t) return;
+    setStatus(t.statusValue);
+    saveProfile({ status: t.statusValue });
+    toast(`Статус → ${t.statusValue}`, "success");
+  }, [touchTemplates, saveProfile, toast]);
+
+  const runEnrichment = useCallback(() => {
     setEnrichLoading(true);
-    try {
-      const res = await fetch(`/api/internal/enrich/artist?artistId=${encodeURIComponent(artist.artist_beatport_id)}`, {
-        method: "POST",
-      });
-      const data = await res.json().catch(() => ({}));
-      if (data?.ok ?? res.ok) {
-        playSuccessSound();
-        toast("Enrichment завершено", "success");
-        router.refresh();
+    toast("Пошук контактів запущено у фоні…", "success");
+
+    fetch(`/api/internal/enrich/artist?artistId=${encodeURIComponent(artist.artist_beatport_id)}`, {
+      method: "POST",
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (data?.ok ?? res.ok) {
+          playSuccessSound();
+          toast(`✅ Контакти для ${displayName} знайдено!`, "success", { long: true });
+          router.refresh();
+        } else {
+          toast(data?.error ?? `Помилка enrichment ${res.status}`, "error", { long: true });
+        }
+      })
+      .catch((e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        toast(msg === "Failed to fetch" ? "Не вдалося виконати запит." : msg, "error", { long: true });
+      })
+      .finally(() => setEnrichLoading(false));
+  }, [artist.artist_beatport_id, displayName, router, toast]);
+
+  const sentViaList = useMemo(() => {
+    const match = notes.match(/\[via:([^\]]+)\]/);
+    return match ? match[1].split(",").filter(Boolean) : [];
+  }, [notes]);
+
+  const toggleSocialSent = useCallback((network: string) => {
+    const current = [...sentViaList];
+    const idx = current.indexOf(network);
+    if (idx >= 0) {
+      current.splice(idx, 1);
+    } else {
+      current.push(network);
+    }
+    const cleanNotes = notes.replace(/\[via:[^\]]+\]\s*/g, "").trim();
+    const tag = current.length > 0 ? `[via:${current.join(",")}]` : "";
+    const updatedNotes = tag ? (cleanNotes ? `${tag} ${cleanNotes}` : tag) : cleanNotes;
+    setNotes(updatedNotes);
+
+    const isFirstMark = sentViaList.length === 0 && current.length > 0;
+    const sentStatuses = ["Attempt 1", "Attempt 2", "No Response", "Responded", "In Progress", "Won", "Contacted"];
+    const alreadySent = sentStatuses.includes(status);
+
+    if (isFirstMark && !alreadySent) {
+      const t = touchTemplates[0];
+      if (t) {
+        setStatus(t.statusValue);
+        saveProfile({ status: t.statusValue, notes: updatedNotes });
       } else {
-        toast(data?.error ?? `Помилка ${res.status}`, "error");
+        saveProfile({ notes: updatedNotes });
       }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      toast(msg === "Failed to fetch" ? "Не вдалося виконати запит." : msg, "error");
-    } finally {
-      setEnrichLoading(false);
+    } else {
+      saveProfile({ notes: updatedNotes });
     }
-  }, [artist.artist_beatport_id, router, toast]);
 
-  const copyOutreach = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(outreachNote);
-      setCopied(true);
-      toast("Outreach скопійовано", "success");
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // ignore
+    if (idx >= 0) {
+      toast(`${linkTypeLabel(network)} знято`, "info");
+    } else {
+      toast(`${linkTypeLabel(network)} відмічено`, "success");
     }
-  }, [outreachNote, toast]);
-
-  const exportContact = useCallback(() => {
-    const line = [displayName, artist.artist_beatport_id, beatportUrl ?? "", segment ?? "", artist.score ?? ""].join(",");
-    const blob = new Blob([line + "\n"], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `lead-${artist.artist_beatport_id}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [displayName, artist.artist_beatport_id, artist.score, beatportUrl, segment]);
+  }, [sentViaList, notes, status, touchTemplates, saveProfile, toast]);
 
   const allLinks = [
     ...(beatportUrl ? [{ type: "beatport", url: beatportUrl }] : []),
@@ -261,20 +322,6 @@ export function ArtistLeadCard({
                   {segStyle.label}
                 </span>
               )}
-              {chartTypes.map((ct) => {
-                const style = CHART_TYPE_LABELS[ct];
-                if (!style) return null;
-                return (
-                  <span
-                    key={ct}
-                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-                    style={{ backgroundColor: style.bg, color: style.color }}
-                  >
-                    {ct === "hype_tracks" && <span className="text-[11px]">🔥</span>}
-                    {style.label}
-                  </span>
-                );
-              })}
               {genres.map((g, i) => (
                 <span
                   key={g}
@@ -289,30 +336,45 @@ export function ArtistLeadCard({
         </div>
       </div>
 
-      {/* CRM Pipeline */}
+      {/* CRM Pipeline + Enrichment */}
       <div className="border-b border-[var(--border)] px-4 py-3">
-        <div className="flex flex-wrap gap-1.5">
-          {PROFILE_STATUSES.map((s) => {
-            const isActive = status === s.value;
-            return (
-              <button
-                key={s.value}
-                onClick={() => { setStatus(s.value); saveProfile({ status: s.value }); }}
-                disabled={profileSaving}
-                className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-all duration-150 border cursor-pointer"
-                style={{
-                  backgroundColor: isActive ? s.bg : "transparent",
-                  color: isActive ? s.color : "var(--text-muted)",
-                  borderColor: isActive ? s.color + "40" : "var(--border)",
-                  opacity: profileSaving ? 0.5 : 1,
-                  boxShadow: isActive ? `0 0 8px ${s.color}20` : "none",
-                }}
-              >
-                <span className="text-[10px]">{s.icon}</span>
-                {s.label}
-              </button>
-            );
-          })}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-1.5">
+            {PROFILE_STATUSES.map((s) => {
+              const isActive = status === s.value;
+              return (
+                <button
+                  key={s.value}
+                  onClick={() => { setStatus(s.value); saveProfile({ status: s.value }); }}
+                  disabled={profileSaving}
+                  className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-all duration-150 border cursor-pointer"
+                  style={{
+                    backgroundColor: isActive ? s.bg : "transparent",
+                    color: isActive ? s.color : "var(--text-muted)",
+                    borderColor: isActive ? s.color + "40" : "var(--border)",
+                    opacity: profileSaving ? 0.5 : 1,
+                    boxShadow: isActive ? `0 0 8px ${s.color}20` : "none",
+                  }}
+                >
+                  <span className="text-[10px]">{s.icon}</span>
+                  {s.label}
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={runEnrichment}
+            disabled={enrichLoading}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[var(--accent-hover)] disabled:opacity-50 transition-opacity"
+          >
+            {enrichLoading ? <ButtonSpinner /> : (
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            )}
+            {enrichLoading ? "Шукаю…" : "Пошук контактів"}
+          </button>
         </div>
       </div>
 
@@ -375,30 +437,58 @@ export function ArtistLeadCard({
       {(allLinks.length > 0 || emails.length > 0) && (
         <section className="px-4 py-3 border-b border-[var(--border)]">
           <div className="flex flex-wrap gap-2">
-            {allLinks.map((l) => (
-              <a
-                key={l.type}
-                href={l.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-card)] px-3 py-1.5 text-xs font-medium text-[var(--text)] transition-colors hover:border-[var(--accent)] hover:bg-[var(--bg-hover)]"
-              >
-                <LinkIcon type={l.type} />
-                {linkTypeLabel(l.type)}
-              </a>
-            ))}
-            {emails.map((c, i) => {
-              const src = contactSourceLabel(c.source_url);
+            {allLinks.map((l) => {
+              const isSentViaThis = sentViaList.includes(l.type);
               return (
                 <a
-                  key={`${c.value}-${i}`}
-                  href={`mailto:${c.value}`}
-                  title={c.value}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--accent)]/30 bg-[var(--accent)]/5 px-3 py-1.5 text-xs font-medium text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/10"
+                  key={l.type}
+                  href={l.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors hover:border-[var(--accent)] hover:bg-[var(--bg-hover)]"
+                  style={{
+                    borderColor: isSentViaThis ? "rgba(52,211,153,0.4)" : "var(--border)",
+                    backgroundColor: isSentViaThis ? "rgba(52,211,153,0.1)" : "var(--bg-card)",
+                    color: "var(--text)",
+                  }}
                 >
-                  <LinkIcon type="email" />
-                  {emails.length > 1 ? c.value : "Email"}{src ? ` · ${src}` : ""}
+                  <LinkIcon type={l.type} brandColor />
+                  {linkTypeLabel(l.type)}
+                  {isSentViaThis && (
+                    <svg className="h-3.5 w-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                  )}
                 </a>
+              );
+            })}
+            {emails.map((c, i) => {
+              const src = contactSourceLabel(c.source_url);
+              const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(c.value)}`;
+              return (
+                <span key={`${c.value}-${i}`} className="inline-flex items-center gap-0 rounded-full border border-[var(--accent)]/30 bg-[var(--accent)]/5 text-xs font-medium text-[var(--accent)]">
+                  <a
+                    href={gmailUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={`Відкрити Gmail для ${c.value}`}
+                    className="inline-flex items-center gap-1.5 pl-3 py-1.5 pr-1.5 transition-colors hover:bg-[var(--accent)]/10 rounded-l-full"
+                  >
+                    <LinkIcon type="email" brandColor />
+                    {c.value}{src ? ` · ${src}` : ""}
+                  </a>
+                  <button
+                    type="button"
+                    title="Копіювати email"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(c.value);
+                        toast("Email скопійовано", "success");
+                      } catch { /* ignore */ }
+                    }}
+                    className="inline-flex items-center px-2 py-1.5 transition-colors hover:bg-[var(--accent)]/10 rounded-r-full"
+                  >
+                    <svg className="h-3.5 w-3.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                  </button>
+                </span>
               );
             })}
           </div>
@@ -419,11 +509,202 @@ export function ArtistLeadCard({
         </section>
       )}
 
+      {/* Outreach */}
+      <section className="border-b border-[var(--border)]">
+        {/* Channel toggle */}
+        <div className="px-4 pt-3 pb-2 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { setOutreachChannel("social"); setExpandedTouch(0); }}
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all border"
+            style={{
+              backgroundColor: outreachChannel === "social" ? "rgba(167,139,250,0.15)" : "transparent",
+              color: outreachChannel === "social" ? "#a78bfa" : "var(--text-muted)",
+              borderColor: outreachChannel === "social" ? "rgba(167,139,250,0.4)" : "var(--border)",
+            }}
+          >
+            💬 Social DM
+          </button>
+          <button
+            type="button"
+            onClick={() => { setOutreachChannel("email"); setExpandedTouch(0); }}
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all border"
+            style={{
+              backgroundColor: outreachChannel === "email" ? "rgba(96,165,250,0.15)" : "transparent",
+              color: outreachChannel === "email" ? "#60a5fa" : "var(--text-muted)",
+              borderColor: outreachChannel === "email" ? "rgba(96,165,250,0.4)" : "var(--border)",
+            }}
+          >
+            ✉ Email · 3 touches
+          </button>
+        </div>
+
+        {outreachChannel === "email" && (
+          <div className="px-4 pb-2 flex items-center gap-1">
+            {emailTemplates.map((t, i) => {
+              const isSent = (i === 0 && ["Attempt 1", "Attempt 2", "No Response", "Responded", "In Progress", "Won", "Contacted"].includes(status))
+                || (i === 1 && ["Attempt 2", "No Response", "Responded", "In Progress", "Won"].includes(status))
+                || (i === 2 && ["No Response", "Responded", "In Progress", "Won"].includes(status));
+              const isActive = expandedTouch === i;
+              return (
+                <button
+                  key={t.touch}
+                  onClick={() => setExpandedTouch(isActive ? null : i)}
+                  className="flex-1 rounded-md py-1 text-[10px] font-semibold transition-all"
+                  style={{
+                    backgroundColor: isActive ? t.bg : "transparent",
+                    color: isSent ? t.color : isActive ? t.color : "var(--text-muted)",
+                    border: isActive ? `1px solid ${t.borderColor}` : "1px solid transparent",
+                  }}
+                >
+                  {isSent && <span className="mr-0.5">✓</span>}{t.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Template body */}
+        {expandedTouch != null && touchTemplates[expandedTouch] && (() => {
+          const t = touchTemplates[expandedTouch];
+          const sentStatuses = ["Attempt 1", "Attempt 2", "No Response", "Responded", "In Progress", "Won", "Contacted"];
+          const isSent = outreachChannel === "social"
+            ? sentStatuses.includes(status)
+            : (expandedTouch === 0 && sentStatuses.includes(status))
+              || (expandedTouch === 1 && ["Attempt 2", "No Response", "Responded", "In Progress", "Won"].includes(status))
+              || (expandedTouch === 2 && ["No Response", "Responded", "In Progress", "Won"].includes(status));
+          const socialLinks = links.filter((l) => ["instagram", "facebook", "twitter", "soundcloud", "mixcloud"].includes(l.type));
+          return (
+            <div className="mx-4 mb-3 rounded-lg border overflow-hidden" style={{ borderColor: t.borderColor, backgroundColor: t.bg }}>
+              {/* Subject — email only */}
+              {outreachChannel === "email" && t.subject && (
+                <div className="px-4 py-2 border-b flex items-center gap-2" style={{ borderColor: t.borderColor + "80" }}>
+                  <span className="text-[10px] uppercase tracking-wider font-semibold text-[var(--text-muted)] shrink-0">Subject:</span>
+                  <span className="text-sm text-[var(--text)] font-medium">{t.subject}</span>
+                </div>
+              )}
+
+              <div className="px-4 py-3">
+                <pre className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-[var(--text)]" style={{ fontFamily: "inherit" }}>
+                  {t.body}
+                </pre>
+              </div>
+
+              <div className="px-4 py-2 flex flex-wrap items-center gap-2 border-t" style={{ borderColor: t.borderColor }}>
+                <button
+                  type="button"
+                  onClick={() => copyTouch(expandedTouch)}
+                  className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all border"
+                  style={{
+                    borderColor: t.borderColor,
+                    color: copiedTouch === expandedTouch ? t.color : "var(--text)",
+                    backgroundColor: copiedTouch === expandedTouch ? t.color + "15" : "transparent",
+                  }}
+                >
+                  {copiedTouch === expandedTouch ? (
+                    <><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> Скопійовано</>
+                  ) : (
+                    <><svg className="h-3.5 w-3.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg> Копіювати</>
+                  )}
+                </button>
+                {outreachChannel === "email" && (
+                  <>
+                    {!isSent && (
+                      <button
+                        type="button"
+                        onClick={() => markTouchSent(expandedTouch)}
+                        disabled={profileSaving}
+                        className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold text-white transition-all"
+                        style={{ backgroundColor: t.color, opacity: profileSaving ? 0.5 : 1 }}
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        Надіслано
+                      </button>
+                    )}
+                    {isSent && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold" style={{ color: t.color }}>
+                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                        Надіслано
+                      </span>
+                    )}
+                    {emails.length > 0 && (
+                      <a
+                        href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(emails[0].value)}&su=${encodeURIComponent(t.subject)}&body=${encodeURIComponent(t.body)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-[var(--text)] transition-colors hover:bg-[var(--bg-hover)]"
+                        style={{ borderColor: t.borderColor }}
+                      >
+                        <svg className="h-3.5 w-3.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                        Gmail
+                      </a>
+                    )}
+                  </>
+                )}
+                {outreachChannel === "social" && socialLinks.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-wider font-semibold text-[var(--text-muted)] mr-0.5">
+                      {sentViaList.length > 0 ? "Надіслано:" : "Надіслати через:"}
+                    </span>
+                    {socialLinks.map((sl) => {
+                      const isChecked = sentViaList.includes(sl.type);
+                      return (
+                        <button
+                          key={sl.url}
+                          type="button"
+                          onClick={() => toggleSocialSent(sl.type)}
+                          disabled={profileSaving}
+                          className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-all cursor-pointer"
+                          style={{
+                            borderColor: isChecked ? "rgba(52,211,153,0.4)" : t.borderColor,
+                            color: isChecked ? "#34d399" : "var(--text)",
+                            backgroundColor: isChecked ? "rgba(52,211,153,0.1)" : "transparent",
+                          }}
+                        >
+                          {isChecked && (
+                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                          )}
+                          <LinkIcon type={sl.type} brandColor />
+                          {linkTypeLabel(sl.type)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {outreachChannel === "social" && socialLinks.length === 0 && (
+                  !isSent ? (
+                    <button
+                      type="button"
+                      onClick={() => markTouchSent(expandedTouch)}
+                      disabled={profileSaving}
+                      className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold text-white transition-all"
+                      style={{ backgroundColor: t.color, opacity: profileSaving ? 0.5 : 1 }}
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                      Надіслано
+                    </button>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 px-3 py-1.5 text-xs font-bold text-emerald-400">
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                      Надіслано
+                    </span>
+                  )
+                )}
+              </div>
+            </div>
+          );
+        })()}
+      </section>
+
       {/* Notes */}
       <section className="px-4 py-3 border-b border-[var(--border)]">
         <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
+          value={notes.replace(/\[via:[^\]]+\]\s*/g, "")}
+          onChange={(e) => {
+            const viaTag = notes.match(/\[via:[^\]]+\]/)?.[0] ?? "";
+            const clean = e.target.value;
+            setNotes(viaTag ? `${viaTag} ${clean}`.trim() : clean);
+          }}
           onBlur={saveNotes}
           placeholder="Нотатки…"
           rows={2}
@@ -431,52 +712,6 @@ export function ArtistLeadCard({
         />
       </section>
 
-      {/* Actions */}
-      <section className="px-4 py-3 flex flex-wrap gap-2 items-center">
-        <button
-          type="button"
-          onClick={runEnrichment}
-          disabled={enrichLoading}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
-        >
-          {enrichLoading ? <ButtonSpinner /> : (
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-          )}
-          {enrichLoading ? "Пошук…" : "Enrichment"}
-        </button>
-        <button
-          type="button"
-          onClick={copyOutreach}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-4 py-2 text-sm font-medium text-[var(--text)] hover:bg-[var(--bg-hover)]"
-        >
-          <svg className="h-4 w-4 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-          </svg>
-          {copied ? "✓" : "Outreach"}
-        </button>
-        <button
-          type="button"
-          onClick={exportContact}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-4 py-2 text-sm font-medium text-[var(--text)] hover:bg-[var(--bg-hover)]"
-        >
-          <svg className="h-4 w-4 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-          </svg>
-          CSV
-        </button>
-        <button
-          type="button"
-          onClick={markContacted}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-4 py-2 text-sm font-medium text-[var(--text)] hover:bg-[var(--bg-hover)]"
-        >
-          <svg className="h-4 w-4 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-          {status === "New" ? "Написав" : status === "Attempt 1" ? "Написав вдруге" : "На контакті"}
-        </button>
-      </section>
     </article>
   );
 }

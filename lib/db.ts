@@ -21,9 +21,9 @@ function getPool(): Pool {
     connectionString = normalizeConnectionString(connectionString);
     _pool = new Pool({
       connectionString,
-      max: 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000,
+      max: 15,
+      idleTimeoutMillis: 20000,
+      connectionTimeoutMillis: 8000,
     });
   }
   return _pool;

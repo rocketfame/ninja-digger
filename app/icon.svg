@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="6" fill="#1a1a1a"/>
-  <!-- Equalizer bars -->
-  <rect x="6" y="18" width="3" height="8" rx="1" fill="#22c55e"/>
-  <rect x="11" y="14" width="3" height="12" rx="1" fill="#22c55e"/>
-  <rect x="16" y="8" width="3" height="18" rx="1" fill="#22c55e"/>
-  <rect x="21" y="12" width="3" height="14" rx="1" fill="#22c55e"/>
-  <rect x="26" y="16" width="3" height="10" rx="1" fill="#22c55e"/>
-</svg>

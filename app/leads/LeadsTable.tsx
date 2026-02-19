@@ -26,16 +26,22 @@ const SEGMENT_COLORS: Record<string, { bg: string; text: string }> = {
   TOP_PERFORMER: { bg: "rgba(250,204,21,0.15)",  text: "#fbbf24" },
 };
 
-const CHART_TYPE_LABELS: Record<string, { label: string; color: string; bg: string }> = {
-  top_tracks:    { label: "Top",      color: "#4ade80", bg: "rgba(34,197,94,0.12)" },
-  hype_tracks:   { label: "Hype",     color: "#f59e0b", bg: "rgba(245,158,11,0.15)" },
-  top_releases:  { label: "Releases", color: "#60a5fa", bg: "rgba(59,130,246,0.12)" },
+const STATUS_ICONS: Record<string, { icon: string; color: string }> = {
+  "Attempt 1":   { icon: "→",  color: "#60a5fa" },
+  "Attempt 2":   { icon: "→→", color: "#818cf8" },
+  "Contacted":   { icon: "✓",  color: "#a78bfa" },
+  "Responded":   { icon: "←",  color: "#34d399" },
+  "In Progress": { icon: "⇄",  color: "#fbbf24" },
+  "Won":         { icon: "★",  color: "#22c55e" },
+  "No Response": { icon: "✕",  color: "#f97316" },
+  "Blacklist":   { icon: "⊘",  color: "#ef4444" },
+  "Lost":        { icon: "—",  color: "#6b7280" },
 };
 
 type Props = {
   leads: Lead[];
   positionHistory: Record<string, { date: string; position: number }[]>;
-  chartTypes: Record<string, string[]>;
+  leadStatuses: Record<string, string>;
   segmentLabels: Record<string, string>;
   totalCount: number;
   offset: number;
@@ -74,7 +80,7 @@ function buildQuery(params: {
 export function LeadsTable({
   leads,
   positionHistory,
-  chartTypes,
+  leadStatuses,
   segmentLabels,
   totalCount,
   offset,
@@ -255,12 +261,26 @@ export function LeadsTable({
                   className="group transition-colors duration-100 hover:bg-[var(--bg-hover)]"
                 >
                   <td className="px-3 py-2">
-                    <Link
-                      href={`/artist/${row.artist_beatport_id.startsWith("bptoptracker:") ? row.artist_beatport_id.replace(/^bptoptracker:/, "") : row.artist_beatport_id}`}
-                      className="font-medium text-[var(--accent)] hover:underline"
-                    >
-                      {(row.artist_name ?? row.artist_beatport_id) || "—"}
-                    </Link>
+                    <div className="flex items-center gap-1.5">
+                      <Link
+                        href={`/artist/${row.artist_beatport_id.startsWith("bptoptracker:") ? row.artist_beatport_id.replace(/^bptoptracker:/, "") : row.artist_beatport_id}`}
+                        className="font-medium text-[var(--accent)] hover:underline"
+                      >
+                        {(row.artist_name ?? row.artist_beatport_id) || "—"}
+                      </Link>
+                      {leadStatuses[row.artist_beatport_id] && (() => {
+                        const s = STATUS_ICONS[leadStatuses[row.artist_beatport_id]];
+                        return s ? (
+                          <span
+                            className="inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold leading-none"
+                            style={{ backgroundColor: s.color + "20", color: s.color }}
+                            title={leadStatuses[row.artist_beatport_id]}
+                          >
+                            {s.icon}
+                          </span>
+                        ) : null;
+                      })()}
+                    </div>
                   </td>
                   <td className="px-3 py-2">
                     <span
@@ -282,27 +302,10 @@ export function LeadsTable({
                   <td className="whitespace-nowrap px-3 py-2 tabular-nums text-[var(--text-muted)]">
                     {formatDateDDMMYYYY(row.last_seen)}
                   </td>
-                  <td className="min-w-[8rem] px-3 py-2">
-                    <div className="flex flex-wrap items-center gap-1">
-                      {(chartTypes[row.artist_beatport_id] ?? []).map((ct) => {
-                        const style = CHART_TYPE_LABELS[ct];
-                        if (!style) return null;
-                        return (
-                          <span
-                            key={ct}
-                            className="inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none"
-                            style={{ backgroundColor: style.bg, color: style.color }}
-                          >
-                            {style.label}
-                          </span>
-                        );
-                      })}
-                    </div>
-                    <span className="text-xs text-[var(--text-muted)]">
-                      {Array.isArray(row.genres) && row.genres.length > 0
-                        ? row.genres.slice(0, 3).join(", ")
-                        : "—"}
-                    </span>
+                  <td className="min-w-[8rem] px-3 py-2 text-[var(--text-muted)]">
+                    {Array.isArray(row.genres) && row.genres.length > 0
+                      ? row.genres.slice(0, 3).join(", ")
+                      : "—"}
                   </td>
                   <LeadPositionCell
                     points={positionHistory[row.artist_beatport_id] ?? []}

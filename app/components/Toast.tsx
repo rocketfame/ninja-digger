@@ -5,24 +5,26 @@ import { createContext, useCallback, useContext, useState } from "react";
 type ToastType = "success" | "error" | "info";
 type ToastItem = { id: number; message: string; type: ToastType };
 
+const TOAST_DURATION_MS = 4000;
+const TOAST_DURATION_LONG_MS = 8000;
+
 const ToastContext = createContext<{
-  toast: (message: string, type?: ToastType) => void;
+  toast: (message: string, type?: ToastType, opts?: { long?: boolean }) => void;
 }>({ toast: () => {} });
 
 export const useToast = () => useContext(ToastContext);
 
 let nextId = 0;
-const TOAST_DURATION_MS = 4000;
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const toast = useCallback((message: string, type: ToastType = "info") => {
+  const toast = useCallback((message: string, type: ToastType = "info", opts?: { long?: boolean }) => {
     const id = ++nextId;
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, TOAST_DURATION_MS);
+    }, opts?.long ? TOAST_DURATION_LONG_MS : TOAST_DURATION_MS);
   }, []);
 
   const dismiss = useCallback((id: number) => {
