@@ -42,6 +42,7 @@ type Props = {
   leads: Lead[];
   positionHistory: Record<string, { date: string; position: number }[]>;
   leadStatuses: Record<string, string>;
+  flaggedArtistIds?: string[];
   segmentLabels: Record<string, string>;
   totalCount: number;
   offset: number;

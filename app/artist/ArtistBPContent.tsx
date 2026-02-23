@@ -73,15 +73,15 @@ export async function ArtistBPContent({ id: rawId }: { id: string }) {
         [id]
       );
       profile = profRows[0] ?? null;
-      const linkRows = await query<{ type: string; url: string }>(
-        `SELECT type, url FROM artist_links WHERE artist_beatport_id = $1`,
+      const linkRows = await query<{ id: string; type: string; url: string; status: string }>(
+        `SELECT id, type, url, COALESCE(status, 'ok') AS status FROM artist_links WHERE artist_beatport_id = $1`,
         [id]
       );
       links = linkRows.sort(
         (a, b) => LINK_DISPLAY_ORDER.indexOf(a.type) - LINK_DISPLAY_ORDER.indexOf(b.type) || a.type.localeCompare(b.type)
       );
-      const contactRows = await query<{ type: string; value: string; source_url: string | null; confidence: number }>(
-        `SELECT type, value, source_url, COALESCE(confidence, 0) AS confidence FROM artist_contacts WHERE artist_beatport_id = $1`,
+      const contactRows = await query<{ id: string; type: string; value: string; source_url: string | null; confidence: number; status: string }>(
+        `SELECT id, type, value, source_url, COALESCE(confidence, 0) AS confidence, COALESCE(status, 'ok') AS status FROM artist_contacts WHERE artist_beatport_id = $1`,
         [id]
       );
       contacts = contactRows.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));

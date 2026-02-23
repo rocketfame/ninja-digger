@@ -23,7 +23,7 @@ function getPool(): Pool {
       connectionString,
       max: 15,
       idleTimeoutMillis: 20000,
-      connectionTimeoutMillis: 8000,
+      connectionTimeoutMillis: 15000,
     });
   }
   return _pool;

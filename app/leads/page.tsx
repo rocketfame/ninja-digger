@@ -8,6 +8,7 @@ import { BptoptrackerBackfill } from "./BptoptrackerBackfill";
 import { LeadsDateRangeFilter } from "./LeadsDateRangeFilter";
 import { RunEnrichmentOnLeadsButton } from "./RunEnrichmentOnLeadsButton";
 import { LeadsTable } from "./LeadsTable";
+import { BatchRescanButton } from "./BatchRescanButton";
 
 const SEGMENTS_V2 = ["NEWCOMER", "NEW_ENTRY", "CONSISTENT", "FAST_GROWING", "DECLINING", "TOP_PERFORMER"] as const;
 const LEADS_PAGE_SIZE = 100;
@@ -74,13 +75,14 @@ function parseDateParam(value: string | undefined): string | null {
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ segment?: string; page?: string; genre?: string; dateFrom?: string; dateTo?: string; sort?: string; order?: string; withContacts?: string; withEmails?: string; withSocials?: string; inWork?: string }>;
+  searchParams: Promise<{ segment?: string; page?: string; genre?: string; dateFrom?: string; dateTo?: string; sort?: string; order?: string; withContacts?: string; withEmails?: string; withSocials?: string; inWork?: string; withFlagged?: string }>;
 }) {
   const resolved = await searchParams;
   const withContacts = resolved.withContacts === "1";
   const withEmails = resolved.withEmails === "1";
   const withSocials = resolved.withSocials === "1";
   const inWork = resolved.inWork === "1";
+  const withFlagged = resolved.withFlagged === "1";
   const segmentFilter = resolved.segment;
   const segment =
     segmentFilter && SEGMENTS_V2.includes(segmentFilter as (typeof SEGMENTS_V2)[number])
@@ -104,7 +106,8 @@ export default async function LeadsPage({
   let distinctGenres: string[] = [];
   let positionHistory: Record<string, { date: string; position: number }[]> = {};
   let leadStatuses: Record<string, string> = {};
-  let kpi = { totalLeads: 0, newToday: 0, withContacts: 0, withEmails: 0, withSocials: 0, inWork: 0, avgPosition: 0, dataFrom: "", dataTo: "" };
+  let flaggedArtistIds: Set<string> = new Set();
+  let kpi = { totalLeads: 0, newToday: 0, withContacts: 0, withEmails: 0, withSocials: 0, inWork: 0, withFlagged: 0, avgPosition: 0, dataFrom: "", dataTo: "" };
   const blocklist = getBlocklistValuesForSql();
 
   const blocklistCondition = `(array_length($2::text[], 1) IS NULL OR (
@@ -152,6 +155,9 @@ export default async function LeadsPage({
   const inWorkCondition = inWork
     ? " AND EXISTS (SELECT 1 FROM lead_profiles lp_w WHERE lp_w.artist_beatport_id = ls.artist_beatport_id AND lp_w.status IS NOT NULL AND lp_w.status <> 'New')"
     : "";
+  const flaggedCondition = withFlagged
+    ? " AND (EXISTS (SELECT 1 FROM artist_links al_fl WHERE al_fl.artist_beatport_id = ls.artist_beatport_id AND al_fl.status = 'flagged') OR EXISTS (SELECT 1 FROM artist_contacts ac_fl WHERE ac_fl.artist_beatport_id = ls.artist_beatport_id AND ac_fl.status = 'flagged'))"
+    : "";
 
   const getCachedLeads = unstable_cache(
     async () => {
@@ -164,7 +170,7 @@ export default async function LeadsPage({
                   COUNT(*) OVER()::int AS _total
            FROM lead_scores ls
            LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
-           WHERE ls.segment = $1 AND ${blocklistCondition}${genreConditionSeg}${dateConditionSeg}${contactsCondition}${inWorkCondition}
+           WHERE ls.segment = $1 AND ${blocklistCondition}${genreConditionSeg}${dateConditionSeg}${contactsCondition}${inWorkCondition}${flaggedCondition}
            ORDER BY ${orderByClause}
            LIMIT ${LEADS_PAGE_SIZE} OFFSET ${offset}`,
           params
@@ -179,14 +185,14 @@ export default async function LeadsPage({
                 COUNT(*) OVER()::int AS _total
          FROM lead_scores ls
          LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
-         WHERE ${blocklistCondition.replace(/\$2/g, "$1")}${genreConditionAll}${dateConditionAll}${contactsCondition}${inWorkCondition}
+         WHERE ${blocklistCondition.replace(/\$2/g, "$1")}${genreConditionAll}${dateConditionAll}${contactsCondition}${inWorkCondition}${flaggedCondition}
          ORDER BY ${orderByClause}
          LIMIT ${LEADS_PAGE_SIZE} OFFSET ${offset}`,
         params
       );
       return { rows, totalCount: rows[0]?._total ?? 0 };
     },
-    ["leads", segment ?? "all", genreParam ?? "", dateFromParam ?? "", dateToParam ?? "", sort, order, String(pageNum), withContacts ? "wc" : withEmails ? "we" : withSocials ? "ws" : inWork ? "iw" : ""],
+    ["leads", segment ?? "all", genreParam ?? "", dateFromParam ?? "", dateToParam ?? "", sort, order, String(pageNum), withContacts ? "wc" : withEmails ? "we" : withSocials ? "ws" : inWork ? "iw" : withFlagged ? "fl" : ""],
     { revalidate: LEADS_CACHE_REVALIDATE_SEC, tags: ["leads"] }
   );
 
@@ -206,6 +212,7 @@ export default async function LeadsPage({
         with_emails: number;
         with_socials: number;
         in_work: number;
+        with_flagged: number;
       }>(`SELECT
             (SELECT COUNT(*)::int FROM lead_scores) AS total_leads,
             (SELECT COUNT(DISTINCT ls.artist_beatport_id)::int FROM lead_scores ls JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id WHERE am.first_seen = CURRENT_DATE) AS new_today,
@@ -215,7 +222,12 @@ export default async function LeadsPage({
             (SELECT MAX(snapshot_date)::text FROM chart_entries) AS latest,
             (SELECT COUNT(DISTINCT ac.artist_beatport_id)::int FROM artist_contacts ac JOIN lead_scores ls ON ls.artist_beatport_id = ac.artist_beatport_id WHERE ac.type = 'email') AS with_emails,
             (SELECT COUNT(DISTINCT al.artist_beatport_id)::int FROM artist_links al JOIN lead_scores ls ON ls.artist_beatport_id = al.artist_beatport_id) AS with_socials,
-            (SELECT COUNT(*)::int FROM lead_profiles WHERE status IS NOT NULL AND status <> 'New') AS in_work
+            (SELECT COUNT(*)::int FROM lead_profiles WHERE status IS NOT NULL AND status <> 'New') AS in_work,
+            (SELECT COUNT(DISTINCT x.aid)::int FROM (
+              SELECT al_fl.artist_beatport_id AS aid FROM artist_links al_fl WHERE al_fl.status = 'flagged'
+              UNION
+              SELECT ac_fl.artist_beatport_id AS aid FROM artist_contacts ac_fl WHERE ac_fl.status = 'flagged'
+            ) x JOIN lead_scores ls_fl ON ls_fl.artist_beatport_id = x.aid) AS with_flagged
          `),
     ]);
     const { rows, totalCount: total } = leadsResult;
@@ -244,11 +256,12 @@ export default async function LeadsPage({
       withEmails: k?.with_emails ?? 0,
       withSocials: k?.with_socials ?? 0,
       inWork: k?.in_work ?? 0,
+      withFlagged: k?.with_flagged ?? 0,
     };
 
     if (leads.length > 0) {
       const artistIds = leads.map((r) => r.artist_beatport_id);
-      const [posRows, profileRows] = await Promise.all([
+      const [posRows, profileRows, flaggedRows] = await Promise.all([
         query<{ artist_beatport_id: string; snapshot_date: string; position: number }>(
           `SELECT artist_beatport_id, snapshot_date::text AS snapshot_date, MIN(position)::int AS position
            FROM chart_entries
@@ -262,6 +275,14 @@ export default async function LeadsPage({
            WHERE artist_beatport_id = ANY($1::text[]) AND status IS NOT NULL AND status <> 'New'`,
           [artistIds]
         ),
+        query<{ aid: string }>(
+          `SELECT DISTINCT x.aid FROM (
+             SELECT artist_beatport_id AS aid FROM artist_links WHERE artist_beatport_id = ANY($1::text[]) AND status = 'flagged'
+             UNION
+             SELECT artist_beatport_id AS aid FROM artist_contacts WHERE artist_beatport_id = ANY($1::text[]) AND status = 'flagged'
+           ) x`,
+          [artistIds]
+        ),
       ]);
       for (const row of posRows) {
         if (!positionHistory[row.artist_beatport_id]) positionHistory[row.artist_beatport_id] = [];
@@ -270,6 +291,7 @@ export default async function LeadsPage({
       for (const row of profileRows) {
         leadStatuses[row.artist_beatport_id] = row.status;
       }
+      flaggedArtistIds = new Set(flaggedRows.map(r => r.aid));
     }
   } catch (e) {
     error = e instanceof Error ? e.message : "Помилка завантаження.";
@@ -330,6 +352,18 @@ export default async function LeadsPage({
               <div className="text-2xl font-bold tabular-nums text-[var(--text)]">{kpi.avgPosition > 0 ? `#${kpi.avgPosition}` : "—"}</div>
               <div className="mt-0.5 text-xs text-[var(--text-muted)]">Сер. позиція (7д)</div>
             </div>
+          </div>
+        )}
+        {!error && kpi.withFlagged > 0 && (
+          <div className="mb-5 flex items-center gap-3">
+            <Link
+              href={withFlagged ? "/leads" : "/leads?withFlagged=1"}
+              className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${withFlagged ? "border-red-500/50 bg-red-500/15 text-red-400" : "border-red-500/30 bg-red-500/5 text-red-400 hover:bg-red-500/10"}`}
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <span className="font-bold tabular-nums">{kpi.withFlagged}</span> {kpi.withFlagged === 1 ? "артист" : "артистів"} з помилковими контактами
+            </Link>
+            {withFlagged && <BatchRescanButton />}
           </div>
         )}
 
@@ -400,6 +434,7 @@ export default async function LeadsPage({
             leads={leads}
             positionHistory={positionHistory}
             leadStatuses={leadStatuses}
+            flaggedArtistIds={[...flaggedArtistIds]}
             segmentLabels={SEGMENT_LABELS}
             totalCount={totalCount}
             offset={offset}
