@@ -52,7 +52,7 @@ export async function ArtistBPContent({ id: rawId }: { id: string }) {
 
   let artist: ArtistV2 | null = null;
   let profile: { status: string; notes: string | null } | null = null;
-  let links: { type: string; url: string }[] = [];
+  let links: { id?: string; type: string; url: string; status?: string; validation_note?: string | null }[] = [];
   let contacts: { type: string; value: string; source_url?: string | null; confidence?: number }[] = [];
   try {
     const rows = await query<ArtistV2>(
@@ -73,8 +73,8 @@ export async function ArtistBPContent({ id: rawId }: { id: string }) {
         [id]
       );
       profile = profRows[0] ?? null;
-      const linkRows = await query<{ id: string; type: string; url: string; status: string }>(
-        `SELECT id, type, url, COALESCE(status, 'ok') AS status FROM artist_links WHERE artist_beatport_id = $1`,
+      const linkRows = await query<{ id: string; type: string; url: string; status: string; validation_note: string | null }>(
+        `SELECT id, type, url, COALESCE(status, 'ok') AS status, validation_note FROM artist_links WHERE artist_beatport_id = $1`,
         [id]
       );
       links = linkRows.sort(
@@ -153,7 +153,10 @@ export async function ArtistBPContent({ id: rawId }: { id: string }) {
       };
       const [profRows, linkRows, contactRows] = await Promise.all([
         query<{ status: string; notes: string | null }>(`SELECT status, notes FROM lead_profiles WHERE artist_beatport_id = $1`, [resolvedId]),
-        query<{ type: string; url: string }>(`SELECT type, url FROM artist_links WHERE artist_beatport_id = $1`, [resolvedId]),
+        query<{ id: string; type: string; url: string; status: string; validation_note: string | null }>(
+          `SELECT id, type, url, COALESCE(status, 'ok') AS status, validation_note FROM artist_links WHERE artist_beatport_id = $1`,
+          [resolvedId]
+        ),
         query<{ type: string; value: string; source_url: string | null; confidence: number }>(
           `SELECT type, value, source_url, COALESCE(confidence, 0) AS confidence FROM artist_contacts WHERE artist_beatport_id = $1`,
           [resolvedId]

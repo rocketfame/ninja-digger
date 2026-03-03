@@ -18,6 +18,7 @@
 import * as cheerio from "cheerio";
 import { ProxyAgent } from "undici";
 import { query, pool } from "@/lib/db";
+import { computeConfidence, validateInstagramHandle } from "./enrichClassify";
 
 /** Пул реалістичних User-Agent рядків — щоб кожен запит виглядав як інший браузер. */
 const USER_AGENTS = [
@@ -80,6 +81,8 @@ export type DiscoveredLink = {
   url: string;
   confidence: number;
   source: string;
+  quality_score?: number;
+  validation_note?: string;
 };
 
 export type DiscoveredContact = {
@@ -87,6 +90,8 @@ export type DiscoveredContact = {
   value: string;
   source_url: string | null;
   confidence: number;
+  email_type?: string;
+  source_context?: string;
 };
 
 /** Повний набір заголовків сучасного Chrome — включно з sec-ch-ua для проходження bot-detection. */
@@ -639,19 +644,28 @@ function collectContactsFromPages(
   contacts: DiscoveredContact[],
   sourceUrl: string,
   html: string,
-  options: { confidenceMailto: number; confidencePlain: number; maxPerPage: number }
+  options: { confidenceMailto: number; confidencePlain: number; maxPerPage: number; artistName: string }
 ): void {
   const extracted = extractEmails(html).slice(0, options.maxPerPage);
   const seen = new Set(contacts.map((c) => c.value.toLowerCase()));
-  for (const { value, fromMailto } of extracted) {
+  for (const { value } of extracted) {
     if (seen.has(value)) continue;
+    const { confidence, emailType, sourceContext, reason } = computeConfidence(
+      sourceUrl,
+      value,
+      options.artistName
+    );
+    if (confidence < 30) continue;
     seen.add(value);
     contacts.push({
       type: "email",
       value,
       source_url: sourceUrl,
-      confidence: fromMailto ? options.confidenceMailto : options.confidencePlain,
+      confidence,
+      email_type: emailType,
+      source_context: sourceContext,
     });
+    console.log(`[enrich] email ${value} → type:${emailType} confidence:${confidence}`);
   }
 }
 
@@ -931,6 +945,7 @@ export async function discoverLinks(
         confidenceMailto: 0.95,
         confidencePlain: 0.95,
         maxPerPage: EMAIL_MAX_PER_PAGE,
+        artistName: name,
       });
       log(`[RA] Email з RA сторінки: ${contacts.length}`);
       for (const link of links) {
@@ -944,6 +959,7 @@ export async function discoverLinks(
               confidenceMailto: conf.mailto,
               confidencePlain: conf.plain,
               maxPerPage: EMAIL_MAX_PER_PAGE,
+              artistName: name,
             });
             log(`[RA] SoundCloud API email -> contacts=${contacts.length}`);
           }
@@ -959,6 +975,7 @@ export async function discoverLinks(
           confidenceMailto: conf.mailto,
           confidencePlain: conf.plain,
           maxPerPage: EMAIL_MAX_PER_PAGE,
+          artistName: name,
         });
       }
       log(`[RA] Всього contacts після обходу посилань: ${contacts.length}`);
@@ -1024,6 +1041,7 @@ export async function discoverLinks(
             confidenceMailto: conf.mailto,
             confidencePlain: conf.plain,
             maxPerPage: EMAIL_MAX_PER_PAGE,
+            artistName: name,
           });
           log(`[fallback] SoundCloud API email -> contacts=${contacts.length}`);
         }
@@ -1033,6 +1051,7 @@ export async function discoverLinks(
           confidenceMailto: conf.mailto,
           confidencePlain: conf.plain,
           maxPerPage: EMAIL_MAX_PER_PAGE,
+          artistName: name,
         });
       }
       if (type === "soundcloud" || type === "resident_advisor" || type === "linktree") {
@@ -1117,6 +1136,7 @@ export async function discoverLinks(
               confidenceMailto: conf.mailto,
               confidencePlain: conf.plain,
               maxPerPage: EMAIL_MAX_PER_PAGE,
+              artistName: name,
             });
             log(`[direct] SoundCloud API email -> contacts=${contacts.length}`);
           }
@@ -1127,6 +1147,7 @@ export async function discoverLinks(
             confidenceMailto: conf.mailto,
             confidencePlain: conf.plain,
             maxPerPage: EMAIL_MAX_PER_PAGE,
+            artistName: name,
           });
         }
         found = true;
@@ -1185,22 +1206,65 @@ export async function runEnrichmentForArtist(
   let contactsAdded = 0;
   try {
     for (const link of links) {
+      if (link.type === "instagram") {
+        await jitteredDelay(3000);
+        const handle = link.url.replace(/^https?:\/\/(www\.)?instagram\.com\//i, "").replace(/\/$/, "").trim();
+        if (handle) {
+          try {
+            const validation = await validateInstagramHandle(handle, artistName, fetchWithCache);
+            link.quality_score = validation.confidence;
+            link.validation_note = validation.confidence < 40 ? "low_confidence" : validation.note;
+          } catch (e) {
+            log(`[enrich] Instagram validation error: ${e instanceof Error ? e.message : String(e)}`);
+            link.quality_score = 30;
+            link.validation_note = "unverified";
+          }
+        }
+      }
+      const validatedAt = link.type === "instagram" && link.quality_score != null ? new Date() : null;
       await pool.query(
-        `INSERT INTO artist_links (artist_beatport_id, type, url, confidence, source)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (artist_beatport_id, type) DO UPDATE SET url = EXCLUDED.url, confidence = EXCLUDED.confidence, source = EXCLUDED.source`,
-        [artistBeatportId, link.type, link.url, link.confidence, link.source]
+        `INSERT INTO artist_links (artist_beatport_id, type, url, confidence, source, quality_score, validation_note, validated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (artist_beatport_id, type) DO UPDATE SET
+           url = EXCLUDED.url,
+           confidence = EXCLUDED.confidence,
+           source = EXCLUDED.source,
+           quality_score = COALESCE(EXCLUDED.quality_score, artist_links.quality_score),
+           validation_note = COALESCE(EXCLUDED.validation_note, artist_links.validation_note),
+           validated_at = CASE WHEN EXCLUDED.validated_at IS NOT NULL THEN EXCLUDED.validated_at ELSE artist_links.validated_at END`,
+        [
+          artistBeatportId,
+          link.type,
+          link.url,
+          link.confidence,
+          link.source,
+          link.quality_score ?? null,
+          link.validation_note ?? null,
+          validatedAt,
+        ]
       );
       linksAdded++;
     }
     for (const c of contacts) {
       await pool.query(
-        `INSERT INTO artist_contacts (artist_beatport_id, type, value, source_url, confidence)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO artist_contacts (artist_beatport_id, type, value, source_url, confidence, status, email_type, quality_score, source_context)
+         VALUES ($1, $2, $3, $4, $5, 'ok', $6, $7, $8)
          ON CONFLICT (artist_beatport_id, type, value) DO UPDATE SET
            source_url = COALESCE(EXCLUDED.source_url, artist_contacts.source_url),
-           confidence = GREATEST(artist_contacts.confidence, EXCLUDED.confidence)`,
-        [artistBeatportId, c.type, c.value, c.source_url, c.confidence]
+           confidence = GREATEST(artist_contacts.confidence, EXCLUDED.confidence),
+           email_type = EXCLUDED.email_type,
+           quality_score = EXCLUDED.quality_score,
+           source_context = EXCLUDED.source_context`,
+        [
+          artistBeatportId,
+          c.type,
+          c.value,
+          c.source_url,
+          c.confidence / 100,
+          c.email_type ?? "unknown",
+          c.confidence,
+          c.source_context ?? "unknown",
+        ]
       );
       contactsAdded++;
     }

@@ -51,7 +51,7 @@ type Artist = {
 };
 
 type Profile = { status: string; notes: string | null };
-type LinkRow = { id?: string; type: string; url: string; status?: string };
+type LinkRow = { id?: string; type: string; url: string; status?: string; validation_note?: string | null };
 type ContactRow = { id?: string; type: string; value: string; source_url?: string | null; confidence?: number; status?: string };
 
 function contactSourceLabel(sourceUrl: string | null | undefined): string {
@@ -67,6 +67,23 @@ function contactSourceLabel(sourceUrl: string | null | undefined): string {
   } catch {
     return "";
   }
+}
+
+function confidenceBadge(confidence: number | undefined): { label: string; dot: string; text: string } | null {
+  if (confidence == null) return null;
+  const num = confidence <= 1 ? confidence * 100 : confidence;
+  if (num >= 80) return { label: "High", dot: "bg-emerald-500", text: "text-emerald-400" };
+  if (num >= 50) return { label: "Medium", dot: "bg-amber-500", text: "text-amber-400" };
+  return { label: "Low", dot: "bg-red-500", text: "text-red-400" };
+}
+
+function instagramValidationLabel(note: string | null | undefined): { label: string; cls: string } | null {
+  if (!note) return null;
+  const n = note.toLowerCase();
+  if (n.includes("name_in_display") || n.includes("name_in_bio")) return { label: "✓ verified", cls: "text-emerald-400" };
+  if (n === "low_confidence" || n === "unverified") return { label: "? unverified", cls: "text-[var(--text-muted)]" };
+  if (n.includes("name_mismatch")) return { label: "⚠ may not match", cls: "text-amber-400" };
+  return null;
 }
 
 function linkTypeLabel(type: string): string {
@@ -543,12 +560,14 @@ export function ArtistLeadCard({
       {/* Links & contacts */}
       {(allLinks.length > 0 || emails.length > 0) && (
         <section className="px-4 py-3 border-b border-[var(--border)]">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 items-end">
             {allLinks.map((l) => {
               const isSentViaThis = sentViaList.includes(l.type);
               const isFlagged = !!(l.id && flaggedLinks.has(l.id));
+              const igValidation = l.type === "instagram" ? instagramValidationLabel(l.validation_note) : null;
               return (
-                <span key={l.type} className="inline-flex items-center gap-0 rounded-full border text-xs font-medium transition-colors" style={{
+                <span key={l.type} className="inline-flex flex-col items-start gap-0.5">
+                <span className="inline-flex items-center gap-0 rounded-full border text-xs font-medium transition-colors" style={{
                   borderColor: isFlagged ? "rgba(239,68,68,0.4)" : isSentViaThis ? "rgba(52,211,153,0.4)" : "var(--border)",
                   backgroundColor: isFlagged ? "rgba(239,68,68,0.08)" : isSentViaThis ? "rgba(52,211,153,0.1)" : "var(--bg-card)",
                   color: isFlagged ? "#f87171" : "var(--text)",
@@ -584,12 +603,17 @@ export function ArtistLeadCard({
                     </button>
                   )}
                 </span>
+                {igValidation && (
+                  <span className={`text-[10px] font-normal pl-1 ${igValidation.cls}`}>{igValidation.label}</span>
+                )}
+                </span>
               );
             })}
             {emails.map((c, i) => {
               const src = contactSourceLabel(c.source_url);
               const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(c.value)}`;
               const isFlagged = !!(c.id && flaggedContacts.has(c.id));
+              const confBadge = confidenceBadge(c.confidence);
               return (
                 <span key={`${c.value}-${i}`} className="inline-flex items-center gap-0 rounded-full border text-xs font-medium" style={{
                   borderColor: isFlagged ? "rgba(239,68,68,0.4)" : "rgba(var(--accent-rgb, 96,165,250),0.3)",
@@ -606,6 +630,12 @@ export function ArtistLeadCard({
                   >
                     <LinkIcon type="email" brandColor />
                     {c.value}{src ? ` · ${src}` : ""}
+                    {confBadge && (
+                      <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${confBadge.text}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${confBadge.dot}`} />
+                        {confBadge.label}
+                      </span>
+                    )}
                     {isFlagged && (
                       <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                     )}
