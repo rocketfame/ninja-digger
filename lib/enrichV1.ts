@@ -576,7 +576,7 @@ async function fetchSoundCloudDescription(profileUrl: string, log: EnrichLog = (
       log(`[SC-API] no html for ${profileUrl} (${html?.length ?? 0} bytes)`);
       return null;
     }
-    const hydMatch = html.match(/__sc_hydration\s*=\s*(\[.*?\]);/s);
+    const hydMatch = html.match(/__sc_hydration\s*=\s*(\[[\s\S]*?\]);/);
     if (!hydMatch) {
       log(`[SC-API] no __sc_hydration in HTML (${html.length} bytes)`);
       return null;

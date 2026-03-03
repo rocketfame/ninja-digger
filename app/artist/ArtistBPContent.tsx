@@ -101,7 +101,7 @@ export async function ArtistBPContent({ id: rawId }: { id: string }) {
       if (normalizedSlug !== slugFromUrl) idsToTry.push(`bptoptracker:${normalizedSlug}`);
     }
 
-    let row: {
+    type ChartRow = {
       artist_beatport_id: string;
       artist_name: string;
       first_seen: string;
@@ -110,11 +110,12 @@ export async function ArtistBPContent({ id: rawId }: { id: string }) {
       avg_position: string;
       best_position: string;
       genres: string[];
-    } | null = null;
+    };
+    let row: ChartRow | null = null;
 
     if (isNumeric || syntheticMatch) {
       for (const tryId of idsToTry) {
-        const fromChart = await query<typeof row & {}>(
+        const fromChart = await query<ChartRow>(
           `SELECT ce.artist_beatport_id,
                   MAX(ce.artist_name) AS artist_name,
                   MIN(ce.snapshot_date)::text AS first_seen,
