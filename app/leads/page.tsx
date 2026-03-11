@@ -8,6 +8,7 @@ import { BptoptrackerBackfill } from "./BptoptrackerBackfill";
 import { LeadsDateRangeFilter } from "./LeadsDateRangeFilter";
 import { RunEnrichmentOnLeadsButton } from "./RunEnrichmentOnLeadsButton";
 import { LeadsTable } from "./LeadsTable";
+import { LeadsGenreHeader } from "./LeadsGenreHeader";
 import { BatchRescanButton } from "./BatchRescanButton";
 
 const SEGMENTS_V2 = ["NEWCOMER", "NEW_ENTRY", "CONSISTENT", "FAST_GROWING", "DECLINING", "TOP_PERFORMER"] as const;
@@ -93,7 +94,7 @@ export default async function LeadsPage({
   const dateToParam = parseDateParam(resolved.dateTo);
   const sortParam = resolved.sort?.trim();
   const sort: SortField =
-    sortParam && SORT_FIELDS.includes(sortParam as SortField) ? (sortParam as SortField) : "score";
+    sortParam && SORT_FIELDS.includes(sortParam as SortField) ? (sortParam as SortField) : "last_seen";
   const orderParam = resolved.order?.trim();
   const order: OrderField =
     orderParam && ORDER_FIELDS.includes(orderParam as OrderField) ? (orderParam as OrderField) : "desc";
@@ -102,6 +103,7 @@ export default async function LeadsPage({
 
   let leads: (LeadRowV2 & { _total?: number })[] = [];
   let totalCount = 0;
+  let countWithoutGenre = 0;
   let error: string | null = null;
   let distinctGenres: string[] = [];
   let positionHistory: Record<string, { date: string; position: number }[]> = {};
@@ -233,6 +235,21 @@ export default async function LeadsPage({
     const { rows, totalCount: total } = leadsResult;
     leads = rows;
     totalCount = total;
+
+    if (leads.length === 0 && genreParam) {
+      const noGenreCond = segment
+        ? `WHERE ls.segment = $1 AND ${blocklistCondition} AND $3::text IS NULL${dateConditionSeg}${contactsCondition}${inWorkCondition}${flaggedCondition}`
+        : `WHERE ${blocklistCondition.replace(/\$2/g, "$1")} AND $2::text IS NULL${dateConditionAll}${contactsCondition}${inWorkCondition}${flaggedCondition}`;
+      const noGenreParams = segment
+        ? [segment, blocklist, null, dateFromParam ?? null, dateToParam ?? null]
+        : [blocklist, null, dateFromParam ?? null, dateToParam ?? null];
+      const countRows = await query<{ cnt: number }>(
+        `SELECT COUNT(*)::int AS cnt FROM lead_scores ls LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id ${noGenreCond}`,
+        noGenreParams
+      );
+      countWithoutGenre = countRows[0]?.cnt ?? 0;
+    }
+
     {
       const toSlug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
       const slugMap = new Map<string, string>();
@@ -371,7 +388,7 @@ export default async function LeadsPage({
         {!error && kpi.dataFrom && (
           <div className="mb-4 flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
             <svg className="h-3.5 w-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-            <span>Дані: <span className="tabular-nums font-medium text-[var(--text)]">{formatDateDDMMYYYY(kpi.dataFrom)}</span> — <span className="tabular-nums font-medium text-[var(--text)]">{formatDateDDMMYYYY(kpi.dataTo)}</span></span>
+            <span title="Діапазон дат у БД (chart_entries). Таблиця за замовчуванням відсортована за «Востаннє» — спочатку артисти з найсвіжішими датами.">Дані: <span className="tabular-nums font-medium text-[var(--text)]">{formatDateDDMMYYYY(kpi.dataFrom)}</span> — <span className="tabular-nums font-medium text-[var(--text)]">{formatDateDDMMYYYY(kpi.dataTo)}</span></span>
           </div>
         )}
 
@@ -424,9 +441,37 @@ export default async function LeadsPage({
         )}
 
         {!error && leads.length === 0 && (
-          <p className="text-[var(--text-muted)]">
-            {genreParam ? "Немає лідів з обраним жанром." : "Лідів немає."}
-          </p>
+          <div className="flex flex-wrap items-center gap-4">
+            <p className="text-[var(--text-muted)]">
+              {genreParam ? (
+                <>
+                  Немає лідів з обраним жанром.
+                  {countWithoutGenre > 0 && (
+                    <>
+                      {" "}
+                      <Link
+                        href={buildQuery({ segment: segment ?? undefined, dateFrom: dateFromParam ?? undefined, dateTo: dateToParam ?? undefined, sort, order })}
+                        className="font-medium text-[var(--accent)] hover:underline"
+                      >
+                        Показати {countWithoutGenre} лідів (усі жанри)
+                      </Link>
+                    </>
+                  )}
+                </>
+              ) : (
+                "Лідів немає."
+              )}
+            </p>
+            <LeadsGenreHeader
+              segment={segment ?? undefined}
+              genre={genreParam ?? undefined}
+              dateFrom={dateFromParam ?? undefined}
+              dateTo={dateToParam ?? undefined}
+              sort={sort}
+              order={order}
+              genres={distinctGenres}
+            />
+          </div>
         )}
 
         {!error && leads.length > 0 && (

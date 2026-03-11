@@ -54,15 +54,12 @@ async function verifyCookie(cookie: string): Promise<boolean> {
  * Prefer BPTOPTRACKER_COOKIE; otherwise login with BPTOPTRACKER_EMAIL + BPTOPTRACKER_PASSWORD.
  */
 export async function getBptoptrackerCookie(): Promise<string | null> {
-  // #region agent log
   const existing = process.env.BPTOPTRACKER_COOKIE;
-  const email = process.env.BPTOPTRACKER_EMAIL?.trim();
-  const password = process.env.BPTOPTRACKER_PASSWORD;
-  fetch("http://127.0.0.1:7245/ingest/7798bf67-c5b4-45c1-bfd1-dc5453bf1c4b", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "bptoptrackerAuth.ts:getBptoptrackerCookie:entry", message: "cookie entry", data: { hasEnvCookie: !!existing?.trim(), hasEmail: !!email, hasPassword: !!password, hasCached: !!cachedCookie }, hypothesisId: "H4", timestamp: Date.now() }) }).catch(() => {});
-  // #endregion
   if (existing?.trim()) {
     return existing.trim();
   }
+  const email = process.env.BPTOPTRACKER_EMAIL?.trim();
+  const password = process.env.BPTOPTRACKER_PASSWORD;
   if (!email || !password) {
     lastLoginError = "BPTOPTRACKER_EMAIL або BPTOPTRACKER_PASSWORD не задані в .env";
     return null;
@@ -90,9 +87,6 @@ export async function getBptoptrackerCookie(): Promise<string | null> {
     // Always POST to login URL (page also has search form with action=/search — must not use that)
     const postUrl = LOGIN_URL;
     const emailField = html.includes('name="email"') ? "email" : html.includes('name="login"') ? "login" : "email";
-    // #region agent log
-    fetch("http://127.0.0.1:7245/ingest/7798bf67-c5b4-45c1-bfd1-dc5453bf1c4b", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "bptoptrackerAuth.ts:after GET login", message: "login form parse", data: { getStatus: getRes.status, hasToken: !!csrfToken, postUrl: postUrl.slice(0, 60), emailField, htmlLen: html.length }, hypothesisId: "H1", timestamp: Date.now() }) }).catch(() => {});
-    // #endregion
     const params: Record<string, string> = {
       [emailField]: email,
       password,
@@ -116,9 +110,6 @@ export async function getBptoptrackerCookie(): Promise<string | null> {
     let setCookie = getCookieHeaderFromResponse(res) ?? cookieFromGet;
     if (setCookie) cachedCookie = setCookie;
     const location = res.headers.get("location");
-    // #region agent log
-    fetch("http://127.0.0.1:7245/ingest/7798bf67-c5b4-45c1-bfd1-dc5453bf1c4b", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "bptoptrackerAuth.ts:after POST login", message: "post result", data: { postStatus: res.status, hasSetCookie: !!setCookie, hasLocation: !!location, location: location ? location.slice(0, 80) : null }, hypothesisId: "H2", timestamp: Date.now() }) }).catch(() => {});
-    // #endregion
     if (res.status === 419) {
       lastLoginError = "Сайт повернув 419 (CSRF). Перезавантаж сторінку або перевір, що логін/пароль правильні.";
       cachedCookie = null;
@@ -133,9 +124,6 @@ export async function getBptoptrackerCookie(): Promise<string | null> {
     }
     if (cachedCookie) {
       const verified = await verifyCookie(cachedCookie);
-      // #region agent log
-      fetch("http://127.0.0.1:7245/ingest/7798bf67-c5b4-45c1-bfd1-dc5453bf1c4b", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "bptoptrackerAuth.ts:after verify", message: "verify result", data: { verified, cookieLen: cachedCookie.length }, hypothesisId: "H3", timestamp: Date.now() }) }).catch(() => {});
-      // #endregion
       if (!verified) {
         lastLoginError = "Після логіну перевірка не пройшла — сайт повернув сторінку логіну. Спробуй інший браузер або перевір облікові дані.";
         cachedCookie = null;

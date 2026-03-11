@@ -27,14 +27,8 @@ function dateRange(from: string, to: string): string[] {
 
 export async function POST() {
   try {
-    const genresStr = process.env.BPTOPTRACKER_GENRES?.trim();
-    const envGenres = genresStr ? genresStr.split(",").map((g) => g.trim()).filter(Boolean) : [];
-    if (envGenres.length === 0) {
-      return NextResponse.json({
-        ok: false,
-        error: "Задай BPTOPTRACKER_GENRES у .env (наприклад afro-house,tech-house,house).",
-      }, { status: 400 });
-    }
+    const { getBptoptrackerGenresForSync } = await import("@/lib/bptoptrackerGenres");
+    const envGenres = getBptoptrackerGenresForSync();
 
     const today = new Date().toISOString().slice(0, 10);
     const yesterday = new Date(Date.now() - 86400 * 1000).toISOString().slice(0, 10);

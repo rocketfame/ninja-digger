@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { useRef, useState, useEffect } from "react";
 
+function toSlug(g: string): string {
+  return g.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
 function prettifyGenre(g: string): string {
   if (g !== g.toLowerCase() || !g.includes("-")) return g;
   return g.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -72,9 +76,9 @@ export function LeadsGenreHeader({
           {genres.map((g) => (
             <Link
               key={g}
-              href={`/leads${buildQuery({ segment, genre: g, dateFrom, dateTo, sort, order, page: 1 })}`}
+              href={`/leads${buildQuery({ segment, genre: toSlug(g), dateFrom, dateTo, sort, order, page: 1 })}`}
               onClick={() => setOpen(false)}
-              className={`block px-3 py-1.5 text-sm hover:bg-[var(--bg-hover)] ${genre === g ? "bg-[var(--accent)]/20 text-[var(--accent)]" : "text-[var(--text)]"}`}
+              className={`block px-3 py-1.5 text-sm hover:bg-[var(--bg-hover)] ${genre === toSlug(g) || genre === g ? "bg-[var(--accent)]/20 text-[var(--accent)]" : "text-[var(--text)]"}`}
             >
               {prettifyGenre(g)}
             </Link>

@@ -60,11 +60,8 @@ async function run(request: Request) {
       }
     }
 
-    const genresStr = process.env.BPTOPTRACKER_GENRES?.trim();
-    const envGenres = genresStr ? genresStr.split(",").map((g) => g.trim()).filter(Boolean) : [];
-    if (envGenres.length === 0) {
-      return NextResponse.json({ ok: true, skipped: true, reason: "no BPTOPTRACKER_GENRES in env" });
-    }
+    const { getBptoptrackerGenresForSync } = await import("@/lib/bptoptrackerGenres");
+    const envGenres = getBptoptrackerGenresForSync();
 
     const today = new Date().toISOString().slice(0, 10);
     const yesterday = new Date(Date.now() - 86400 * 1000).toISOString().slice(0, 10);

@@ -7,7 +7,9 @@
     "build": "node scripts/migrate.mjs && next build",
     "start": "next start",
     "lint": "next lint",
-    "db:migrate": "node scripts/migrate.mjs"
+    "db:migrate": "node scripts/migrate.mjs",
+    "verify-data": "node scripts/verify-data.mjs",
+    "bptt:refresh": "curl -s -X POST \"http://localhost:3000/api/internal/bptoptracker/refresh-now\" -H \"Content-Type: application/json\""
   },
   "dependencies": {
     "cheerio": "^1.0.0",

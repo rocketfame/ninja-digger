@@ -75,6 +75,7 @@ export function BptoptrackerBackfill() {
         type="button"
         onClick={runBackfill}
         disabled={loading || !needsUpdate}
+        title={needsUpdate ? "Завантажити нові дані з BP Top Tracker" : "Дані вже завантажені до цієї дати. Натисни, щоб оновити."}
         className="inline-flex items-center justify-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-card)] px-2.5 py-1 text-xs font-medium text-[var(--text)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
       >
         {loading && <ButtonSpinner />}

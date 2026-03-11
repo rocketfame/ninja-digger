@@ -47,13 +47,17 @@ export async function POST(request: Request) {
       AND NOT (am.artist_name ~ '^\\d+\\s*\\/\\s*')
     )
   ))`;
+  const toSlug = (ref: string) =>
+    `LOWER(REGEXP_REPLACE(REGEXP_REPLACE(TRIM(${ref}), '[^a-zA-Z0-9]+', '-', 'g'), '^-|-$', '', 'g'))`;
   const genreConditionSeg = genreParam
-    ? ` AND ((am.genres IS NOT NULL AND ($3 = ANY(am.genres) OR EXISTS (SELECT 1 FROM unnest(am.genres) AS g WHERE LOWER(REPLACE(TRIM(g::text), ' ', '-')) = LOWER(REPLACE(TRIM($3::text), ' ', '-'))))) OR EXISTS (SELECT 1 FROM chart_entries ce JOIN charts_catalog cc ON cc.id = ce.chart_id WHERE ce.artist_beatport_id = ls.artist_beatport_id AND cc.genre_slug IS NOT NULL AND (cc.genre_slug = $3 OR cc.genre_slug = LOWER(REPLACE(TRIM($3::text), ' ', '-')))))`
+    ? ` AND ((am.genres IS NOT NULL AND ($3 = ANY(am.genres) OR EXISTS (SELECT 1 FROM unnest(am.genres) AS g WHERE ${toSlug("g::text")} = ${toSlug("$3::text")}))) OR EXISTS (SELECT 1 FROM chart_entries ce JOIN charts_catalog cc ON cc.id = ce.chart_id WHERE ce.artist_beatport_id = ls.artist_beatport_id AND cc.genre_slug IS NOT NULL AND (cc.genre_slug = $3 OR cc.genre_slug = ${toSlug("$3::text")})))`
     : ` AND $3::text IS NULL`;
   const genreConditionAll =
-    ` AND ($2::text IS NULL OR ((am.genres IS NOT NULL AND ($2 = ANY(am.genres) OR EXISTS (SELECT 1 FROM unnest(am.genres) AS g WHERE LOWER(REPLACE(TRIM(g::text), ' ', '-')) = LOWER(REPLACE(TRIM($2::text), ' ', '-'))))) OR EXISTS (SELECT 1 FROM chart_entries ce JOIN charts_catalog cc ON cc.id = ce.chart_id WHERE ce.artist_beatport_id = ls.artist_beatport_id AND cc.genre_slug IS NOT NULL AND (cc.genre_slug = $2 OR cc.genre_slug = LOWER(REPLACE(TRIM($2::text), ' ', '-'))))))`;
-  const dateConditionSeg =
-    " AND (($4::date IS NULL AND $5::date IS NULL) OR EXISTS (SELECT 1 FROM chart_entries ce WHERE ce.artist_beatport_id = ls.artist_beatport_id AND ce.snapshot_date >= $4::date AND ce.snapshot_date <= $5::date))";
+    ` AND ($2::text IS NULL OR ((am.genres IS NOT NULL AND ($2 = ANY(am.genres) OR EXISTS (SELECT 1 FROM unnest(am.genres) AS g WHERE ${toSlug("g::text")} = ${toSlug("$2::text")}))) OR EXISTS (SELECT 1 FROM chart_entries ce JOIN charts_catalog cc ON cc.id = ce.chart_id WHERE ce.artist_beatport_id = ls.artist_beatport_id AND cc.genre_slug IS NOT NULL AND (cc.genre_slug = $2 OR cc.genre_slug = ${toSlug("$2::text")}))))`;
+  const useFirstSeen = segment === "NEWCOMER" || segment === "NEW_ENTRY";
+  const dateConditionSeg = useFirstSeen
+    ? " AND (($4::date IS NULL AND $5::date IS NULL) OR (am.first_seen IS NOT NULL AND am.first_seen >= $4::date AND am.first_seen <= $5::date))"
+    : " AND (($4::date IS NULL AND $5::date IS NULL) OR EXISTS (SELECT 1 FROM chart_entries ce WHERE ce.artist_beatport_id = ls.artist_beatport_id AND ce.snapshot_date >= $4::date AND ce.snapshot_date <= $5::date))";
   const dateConditionAll =
     " AND (($3::date IS NULL AND $4::date IS NULL) OR EXISTS (SELECT 1 FROM chart_entries ce WHERE ce.artist_beatport_id = ls.artist_beatport_id AND ce.snapshot_date >= $3::date AND ce.snapshot_date <= $4::date))";
 

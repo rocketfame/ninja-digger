@@ -54,3 +54,13 @@ export const BPTOPTRACKER_GENRES: { value: string; label: string }[] = [
 export function getBptoptrackerGenreSlugs(): string[] {
   return BPTOPTRACKER_GENRES.map((g) => g.value);
 }
+
+/** Genres for daily/background sync: BPTOPTRACKER_GENRES from env, or full list if empty. Use "all" for all 44 genres. */
+export function getBptoptrackerGenresForSync(): string[] {
+  const env = process.env.BPTOPTRACKER_GENRES?.trim();
+  if (!env) return getBptoptrackerGenreSlugs();
+  const lower = env.toLowerCase();
+  if (lower === "all" || lower === "__all__") return getBptoptrackerGenreSlugs();
+  const fromEnv = env.split(",").map((g) => g.trim()).filter(Boolean);
+  return fromEnv.length > 0 ? fromEnv : getBptoptrackerGenreSlugs();
+}

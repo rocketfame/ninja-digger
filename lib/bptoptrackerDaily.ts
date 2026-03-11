@@ -1,8 +1,10 @@
 /**
  * Daily update: fetch today (and yesterday) for BPTOPTRACKER_GENRES and insert into bptoptracker_daily.
+ * When BPTOPTRACKER_GENRES is empty, uses full genre list from code.
  */
 
 import { pool } from "@/lib/db";
+import { getBptoptrackerGenresForSync } from "./bptoptrackerGenres";
 import { fetchChartForDate } from "./bptoptrackerFetch";
 
 const DELAY_MS = 1500;
@@ -14,11 +16,7 @@ export async function runBptoptrackerDailyUpdate(): Promise<{
   skipped: number;
   errors: string[];
 }> {
-  const genresStr = process.env.BPTOPTRACKER_GENRES?.trim();
-  const genres = genresStr ? genresStr.split(",").map((g) => g.trim()).filter(Boolean) : [];
-  if (genres.length === 0) {
-    return { genres: [], dates: [], inserted: 0, skipped: 0, errors: [] };
-  }
+  const genres = getBptoptrackerGenresForSync();
 
   const today = new Date().toISOString().slice(0, 10);
   const yesterday = new Date(Date.now() - 86400 * 1000).toISOString().slice(0, 10);

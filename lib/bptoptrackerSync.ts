@@ -128,9 +128,10 @@ export async function syncBptoptrackerToChartEntries(): Promise<{
     return { chartEntriesInserted: 0, artistsMatched: 0, errors: [] };
   }
 
+  const toSlug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const genreSlugs = rows.map((r) => r.genre_slug);
-  const regularSlugs = genreSlugs.filter((s) => !s.startsWith("hype:"));
-  const hypeSlugs = genreSlugs.filter((s) => s.startsWith("hype:")).map((s) => s.replace(/^hype:/, ""));
+  const regularSlugs = genreSlugs.filter((s) => !s.startsWith("hype:")).map((s) => toSlug(s));
+  const hypeSlugs = genreSlugs.filter((s) => s.startsWith("hype:")).map((s) => toSlug(s.replace(/^hype:/, "")));
   const regularChartIds = await preloadChartIds([...new Set(regularSlugs)], "track");
   const hypeChartIds = await preloadChartIds([...new Set(hypeSlugs)], "hype");
   const genreChartIds = new Map<string, string>();
@@ -153,7 +154,8 @@ export async function syncBptoptrackerToChartEntries(): Promise<{
   }[] = [];
 
   for (const row of rows) {
-    const chartId = genreChartIds.get(row.genre_slug);
+    const slug = row.genre_slug.startsWith("hype:") ? `hype:${toSlug(row.genre_slug.replace(/^hype:/, ""))}` : toSlug(row.genre_slug);
+    const chartId = genreChartIds.get(slug);
     if (!chartId) continue;
 
     const trimmed = row.artist_name.trim();

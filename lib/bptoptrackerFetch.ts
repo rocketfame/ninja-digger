@@ -179,10 +179,6 @@ export async function fetchChartForDate(genreSlug: string, date: string, chartTy
     },
   });
   const html = await res.text();
-  // #region agent log
-  const looksLikeLogin = looksLikeLoginOrLandingPage(html);
-  fetch("http://127.0.0.1:7245/ingest/7798bf67-c5b4-45c1-bfd1-dc5453bf1c4b", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "bptoptrackerFetch.ts:fetchChartForDate", message: "chart fetch", data: { genreSlug, date, cookiePresent: !!cookie, resStatus: res.status, htmlLength: html.length, looksLikeLogin }, hypothesisId: "H4", timestamp: Date.now() }) }).catch(() => {});
-  // #endregion
   if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
   return parseChartHtml(html, url);
 }
