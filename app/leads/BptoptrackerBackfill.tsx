@@ -28,33 +28,29 @@ export function BptoptrackerBackfill() {
 
   const today = new Date().toISOString().slice(0, 10);
   const backfillFrom = lastDate ? nextDay(lastDate) : today;
-  const needsUpdate = backfillFrom <= today;
+  const needsDateUpdate = backfillFrom <= today;
 
-  const runBackfill = useCallback(async () => {
+  const runRefresh = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/internal/bptoptracker/backfill", {
+      // Use refresh-now which checks genre coverage for last 7 days
+      const res = await fetch("/api/internal/bptoptracker/refresh-now", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          genreSlug: "__all__",
-          dateFrom: backfillFrom,
-          dateTo: today,
-        }),
       });
       const data = await res.json();
       if (data.ok) {
         playSuccessSound();
-        let text = `+${data.totalInserted} записів`;
-        if (data.sync) {
-          text += ` · ${data.sync.chartEntriesInserted} у чарти · ${data.sync.scoresUpdated} лідів`;
+        const bpt = data.bptoptracker;
+        let text = "";
+        if (bpt) {
+          text = `+${bpt.inserted} записів`;
+          if (bpt.errors?.length) text += ` · ${bpt.errors.length} помилок`;
         }
-        if (data.errors?.length) {
-          text += ` · ${data.errors.length} помилок`;
-        }
-        toast(text, "success");
+        if (data.chartEntriesInserted) text += ` · ${data.chartEntriesInserted} у чарти`;
+        if (data.scoresUpdated) text += ` · ${data.scoresUpdated} лідів`;
+        if (data.fetchedDates?.length === 0) text = data.message ?? "Дані актуальні";
+        toast(text || "Оновлено", "success");
         if (data.lastDateInDb) setLastDate(data.lastDateInDb);
-        else setLastDate(today);
         router.refresh();
       } else {
         toast(data.error ?? "Помилка", "error");
@@ -64,7 +60,7 @@ export function BptoptrackerBackfill() {
     } finally {
       setLoading(false);
     }
-  }, [backfillFrom, today, router, toast]);
+  }, [router, toast]);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -73,17 +69,17 @@ export function BptoptrackerBackfill() {
       </span>
       <button
         type="button"
-        onClick={runBackfill}
-        disabled={loading || !needsUpdate}
-        title={needsUpdate ? "Завантажити нові дані з BP Top Tracker" : "Дані вже завантажені до цієї дати. Натисни, щоб оновити."}
+        onClick={runRefresh}
+        disabled={loading}
+        title="Оновити дані з BP Top Tracker (перевірить покриття жанрів за останні 7 днів)"
         className="inline-flex items-center justify-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-card)] px-2.5 py-1 text-xs font-medium text-[var(--text)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
       >
         {loading && <ButtonSpinner />}
         {loading
           ? "Оновлення…"
-          : needsUpdate
+          : needsDateUpdate
             ? `Оновити до ${formatDateDDMMYYYY(today)}`
-            : "✓ Актуально"}
+            : "Оновити жанри"}
       </button>
     </div>
   );
