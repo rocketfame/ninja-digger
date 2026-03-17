@@ -1,16 +1,90 @@
 /**
  * POST /api/internal/bptoptracker/refresh-now
  * Manual "Оновити дані з BP Top Tracker": determine last date in DB, fetch missing days (last+1 .. today),
- * then sync to chart_entries + normalize + score. No throttle.
+ * then sync to chart_entries + normalize + score.
+ * For gaps > 3 days: uses parallel backfill mode to fit within Vercel 300s timeout.
  */
 
 import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { query, pool } from "@/lib/db";
 import { getBptoptrackerCookie, clearBptoptrackerCookieCache, getLastLoginError } from "@/lib/bptoptrackerAuth";
 import { runBptoptrackerForDateRange } from "@/lib/bptoptrackerDaily";
+import { fetchChartForDate, dateRange as genDateRange, type BptoptrackerDailyRow } from "@/lib/bptoptrackerFetch";
 import { syncBptoptrackerToChartEntries } from "@/lib/bptoptrackerSync";
 import { refreshArtistMetrics } from "@/segment/normalize";
 import { refreshLeadScoresV2 } from "@/segment/score";
+
+export const maxDuration = 300; // 5 min for Vercel
+
+const PARALLEL_CONCURRENCY = 3;
+const PARALLEL_BATCH_DELAY_MS = 1000;
+const MAX_RETRIES = 2;
+const RETRY_BASE_MS = 3000;
+
+/** Parallel backfill for large gaps (>3 days). Faster than sequential. */
+async function parallelFetchAndStore(
+  genres: string[],
+  dates: string[]
+): Promise<{ inserted: number; skipped: number; errors: string[] }> {
+  const tasks: { genre: string; date: string }[] = [];
+  for (const genre of genres) for (const date of dates) tasks.push({ genre, date });
+
+  const errors: string[] = [];
+  const allRows: BptoptrackerDailyRow[] = [];
+
+  for (let i = 0; i < tasks.length; i += PARALLEL_CONCURRENCY) {
+    if (i > 0) await new Promise(r => setTimeout(r, PARALLEL_BATCH_DELAY_MS));
+    const chunk = tasks.slice(i, i + PARALLEL_CONCURRENCY);
+    const results = await Promise.all(
+      chunk.map(async (t) => {
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+          try {
+            return { rows: await fetchChartForDate(t.genre, t.date, "track"), error: null };
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (msg.includes("логіну") || msg.includes("login") || msg.includes("HTTP 404")) {
+              return { rows: [] as BptoptrackerDailyRow[], error: `${t.genre}/${t.date}: ${msg}` };
+            }
+            if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, RETRY_BASE_MS * Math.pow(2, attempt)));
+            else return { rows: [] as BptoptrackerDailyRow[], error: `${t.genre}/${t.date}: ${msg}` };
+          }
+        }
+        return { rows: [] as BptoptrackerDailyRow[], error: null };
+      })
+    );
+    for (const r of results) {
+      if (r.error) errors.push(r.error);
+      if (r.rows.length) allRows.push(...r.rows);
+    }
+  }
+
+  // Batch insert into bptoptracker_daily
+  let inserted = 0;
+  let skipped = 0;
+  const BATCH = 150;
+  for (let j = 0; j < allRows.length; j += BATCH) {
+    const batch = allRows.slice(j, j + BATCH);
+    const values: (string | number | null)[] = [];
+    const phs: string[] = [];
+    let p = 1;
+    for (const row of batch) {
+      phs.push(`($${p},$${p+1},$${p+2},$${p+3},$${p+4},$${p+5},$${p+6},$${p+7},$${p+8},$${p+9},$${p+10})`);
+      values.push(row.snapshot_date, row.genre_slug, row.position, row.track_title, row.artist_name, row.artists_full, row.label_name, row.released, row.movement, row.artist_beatport_id ?? null, row.artist_link_path ?? null);
+      p += 11;
+    }
+    const res = await pool.query(
+      `INSERT INTO bptoptracker_daily (snapshot_date,genre_slug,position,track_title,artist_name,artists_full,label_name,released,movement,artist_beatport_id,artist_link_path)
+       VALUES ${phs.join(",")}
+       ON CONFLICT (snapshot_date,genre_slug,position) DO UPDATE SET
+         artist_beatport_id=COALESCE(EXCLUDED.artist_beatport_id,bptoptracker_daily.artist_beatport_id),
+         artist_link_path=COALESCE(EXCLUDED.artist_link_path,bptoptracker_daily.artist_link_path)`,
+      values
+    );
+    inserted += res.rowCount ?? 0;
+    skipped += batch.length - (res.rowCount ?? 0);
+  }
+  return { inserted, skipped, errors };
+}
 
 function dateRange(from: string, to: string): string[] {
   const out: string[] = [];
@@ -94,7 +168,17 @@ export async function POST() {
       }, { status: 401 });
     }
 
-    const bpt = await runBptoptrackerForDateRange(envGenres, datesToFetch);
+    // For large gaps (>3 days) use parallel mode to fit within Vercel 300s timeout
+    const useParallel = datesToFetch.length > 3;
+    let bpt: { inserted: number; skipped: number; errors: string[] };
+
+    if (useParallel) {
+      bpt = await parallelFetchAndStore(envGenres, datesToFetch);
+    } else {
+      const seq = await runBptoptrackerForDateRange(envGenres, datesToFetch);
+      bpt = { inserted: seq.inserted, skipped: seq.skipped, errors: seq.errors };
+    }
+
     const sync = await syncBptoptrackerToChartEntries();
     const metricsUpdated = await refreshArtistMetrics();
     const scoresUpdated = await refreshLeadScoresV2();
@@ -110,6 +194,7 @@ export async function POST() {
       ok: true,
       lastDateInDb: newLastInDb,
       fetchedDates: datesToFetch,
+      mode: useParallel ? "parallel" : "sequential",
       bptoptracker: { inserted: bpt.inserted, skipped: bpt.skipped, errors: bpt.errors },
       chartEntriesInserted: sync.chartEntriesInserted,
       artistsMatched: sync.artistsMatched,
