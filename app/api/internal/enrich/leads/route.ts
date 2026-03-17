@@ -9,6 +9,9 @@ import { query, pool } from "@/lib/db";
 import { getBlocklistValuesForSql } from "@/lib/bptoptrackerBlocklist";
 import { runEnrichmentForArtist } from "@/lib/enrichV1";
 
+/** Vercel: дозволяємо до 120с для batch enrichment */
+export const maxDuration = 120;
+
 /** 2 in parallel ≈ 52s per request (under 60s). Same as segment. */
 const PARALLEL_ARTISTS = 2;
 const MAX_ARTISTS_PER_RUN = PARALLEL_ARTISTS;

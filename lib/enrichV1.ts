@@ -32,10 +32,11 @@ const USER_AGENTS = [
 ] as const;
 function randomUA(): string { return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]; }
 
-const RATE_DELAY_MS = 2000;       // затримка між запитами до сайтів
-const SEARCH_DELAY_MS = 4000;     // довша затримка між запитами до пошуковиків (DDG/Bing/Startpage)
+const RATE_DELAY_MS = 1000;       // затримка між запитами до сайтів (було 2000)
+const SEARCH_DELAY_MS = 2000;     // довша затримка між запитами до пошуковиків (було 4000)
 const CACHE_TTL_SECONDS = 86400;  // 24h
-const REQUEST_TIMEOUT_MS = 12000;
+const REQUEST_TIMEOUT_MS = 10000;
+const GLOBAL_TIMEOUT_MS = 50000;  // глобальний таймаут для всього enrichment — повертаємо що є
 
 /**
  * Proxy rotation для пошукових запитів.
@@ -847,6 +848,10 @@ export async function discoverLinks(
 
   log(`[discoverLinks] name="${name}" slug="${slug}"`);
 
+  const startTime = Date.now();
+  const isTimedOut = () => Date.now() - startTime > GLOBAL_TIMEOUT_MS;
+  const hasEmail = () => contacts.some((c) => c.type === "email");
+
   const hasLink = (t: DiscoveredLink["type"]) => links.find((l) => l.type === t);
 
   let raPageUrl: string | null = null;
@@ -876,7 +881,7 @@ export async function discoverLinks(
   }
 
   // Крок 1b: заходимо на Resident Advisor і робимо пошук по імені — з результатів беремо посилання на артиста
-  if (!raPageUrl) {
+  if (!raPageUrl && !isTimedOut()) {
     log(`[1b] Прямий URL не дав результату, пробуємо RA пошук`);
     const raSearchUrls = [
       `https://ra.co/search?query=${encodeURIComponent(name)}`,
@@ -906,7 +911,7 @@ export async function discoverLinks(
   }
 
   // Крок 1c: якщо через RA пошук не знайшли — пошук у DDG
-  if (!raPageUrl) {
+  if (!raPageUrl && !isTimedOut()) {
     const raQuery = `${quotedName} site:residentadvisor.net OR site:ra.co`;
     log(`[1c] RA пошук не дав результату, DDG: "${raQuery}"`);
     const raResultUrls = (await searchDDG(raQuery)).filter(isRAArtistPageUrl);
@@ -987,11 +992,12 @@ export async function discoverLinks(
   }
 
   // Fallback: якщо через RA нічого не знайшли або типів не вистачає — пошук по кожному типу
+  // Пріоритет: email-rich джерела першими (linktree, soundcloud, bandcamp)
   const domains: { type: DiscoveredLink["type"]; query: string }[] = [
     { type: "linktree", query: `${quotedName} linktr.ee OR beacons.ai OR carrd.co` },
-    { type: "resident_advisor", query: `${quotedName} site:residentadvisor.net` },
     { type: "soundcloud", query: `${quotedName} site:soundcloud.com` },
     { type: "bandcamp", query: `${quotedName} site:bandcamp.com` },
+    { type: "resident_advisor", query: `${quotedName} site:residentadvisor.net` },
     { type: "mixcloud", query: `${quotedName} site:mixcloud.com` },
     { type: "reverbnation", query: `${quotedName} site:reverbnation.com` },
     { type: "instagram", query: `${quotedName} site:instagram.com` },
@@ -999,7 +1005,10 @@ export async function discoverLinks(
 
   log(`[fallback] Типів посилань зараз: ${links.length}, запускаємо пошук по типах для недостатніх`);
   for (const { type, query: q } of domains) {
+    if (isTimedOut()) { log(`[fallback] TIMEOUT — зупинка (${Date.now() - startTime}ms)`); break; }
     if (hasLink(type)) continue;
+    // Якщо вже маємо email і витратили >30с — можна зупинитись, решта типів необов'язкова
+    if (hasEmail() && Date.now() - startTime > 30000) { log(`[fallback] email є + >30с — пропускаємо решту`); break; }
     log(`[fallback] Пошук ${type}: ${q}`);
     const resultUrls = await searchDDG(q);
     log(`[fallback] ${type} -> ${resultUrls.length} URL: ${resultUrls.slice(0, 3).join(", ")}`);
@@ -1063,6 +1072,17 @@ export async function discoverLinks(
   }
 
   // Крок 3: Direct URL probing — коли пошукові системи заблоковані, пробуємо прямі URL за шаблоном
+  if (isTimedOut()) {
+    log(`[direct] TIMEOUT — пропускаємо direct probing (${Date.now() - startTime}ms)`);
+    log(`[discoverLinks] Підсумок (timeout): links=${links.length}, contacts=${contacts.length}`);
+    return { links, contacts };
+  }
+  // Якщо вже маємо email — пропускаємо direct probing (основна ціль досягнута)
+  if (hasEmail()) {
+    log(`[direct] Email вже знайдений — пропускаємо direct probing`);
+    log(`[discoverLinks] Підсумок (early exit): links=${links.length}, contacts=${contacts.length}`);
+    return { links, contacts };
+  }
   const slugNoSep = slug.replace(/-/g, "");
   const directProbes: { type: DiscoveredLink["type"]; urls: string[] }[] = [
     {
@@ -1092,6 +1112,7 @@ export async function discoverLinks(
     log(`[direct] Probing ${probedTypes.length} типів: ${probedTypes.map((p) => p.type).join(", ")}`);
   }
   for (const { type, urls: probeUrls } of probedTypes) {
+    if (isTimedOut()) { log(`[direct] TIMEOUT mid-probing`); break; }
     let found = false;
     for (const probeUrl of probeUrls) {
       try {

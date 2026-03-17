@@ -9,6 +9,9 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { runEnrichmentForArtist } from "@/lib/enrichV1";
 
+/** Vercel Pro: дозволяємо до 60с для enrichment одного артиста */
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   const { searchParams } = new URL(request.url);
   const artistId = searchParams.get("artistId");
