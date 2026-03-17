@@ -8,6 +8,28 @@ import { getBptoptrackerGenresForSync } from "./bptoptrackerGenres";
 import { fetchChartForDate } from "./bptoptrackerFetch";
 
 const DELAY_MS = 1500;
+const MAX_RETRIES = 2;
+const RETRY_BASE_MS = 3000;
+
+/** Fetch with retry + exponential backoff */
+async function fetchWithRetry(genreSlug: string, date: string, chartType: "track" | "hype" = "track"): Promise<ReturnType<typeof fetchChartForDate>> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fetchChartForDate(genreSlug, date, chartType);
+    } catch (e) {
+      lastErr = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      // Don't retry on auth/login errors or 404
+      if (msg.includes("логіну") || msg.includes("login") || msg.includes("HTTP 404")) throw e;
+      if (attempt < MAX_RETRIES) {
+        const delay = RETRY_BASE_MS * Math.pow(2, attempt);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+  }
+  throw lastErr;
+}
 
 export async function runBptoptrackerDailyUpdate(): Promise<{
   genres: string[];
@@ -52,7 +74,7 @@ export async function runBptoptrackerForDateRange(
       const chartType: "track" | "hype" = "track";
       try {
         await new Promise((r) => setTimeout(r, DELAY_MS));
-        const rows = await fetchChartForDate(genreSlug, date, chartType);
+        const rows = await fetchWithRetry(genreSlug, date, chartType);
         for (const row of rows) {
           let result;
           if (withArtistId && withLinkPath) {

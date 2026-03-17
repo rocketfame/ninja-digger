@@ -14,9 +14,30 @@ import { syncBptoptrackerToChartEntries } from "@/lib/bptoptrackerSync";
 import { refreshArtistMetrics } from "@/segment/normalize";
 import { refreshLeadScoresV2 } from "@/segment/score";
 
-const CONCURRENCY = 5;
-const BATCH_DELAY_MS = 500;
+const CONCURRENCY = 3; // Reduced from 5 to avoid BPTT rate limits
+const BATCH_DELAY_MS = 1000; // Increased from 500ms for safer rate limiting
 const INSERT_BATCH_SIZE = 150;
+const MAX_RETRIES = 2;
+const RETRY_BASE_MS = 3000;
+
+/** Fetch with retry + exponential backoff */
+async function fetchWithRetry(genreSlug: string, date: string, chartType: "track" | "hype" = "track"): Promise<BptoptrackerDailyRow[]> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fetchChartForDate(genreSlug, date, chartType);
+    } catch (e) {
+      lastErr = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("логіну") || msg.includes("login") || msg.includes("HTTP 404")) throw e;
+      if (attempt < MAX_RETRIES) {
+        const delay = RETRY_BASE_MS * Math.pow(2, attempt);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+  }
+  throw lastErr;
+}
 
 export async function POST(request: Request) {
   try {
@@ -73,7 +94,7 @@ export async function POST(request: Request) {
       const results = await Promise.all(
         chunk.map(async (t) => {
           try {
-            const rows = await fetchChartForDate(t.genreSlug, t.date, t.chartType);
+            const rows = await fetchWithRetry(t.genreSlug, t.date, t.chartType);
             return { genreSlug: t.genreSlug, date: t.date, chartType: t.chartType, rows };
           } catch (e) {
             return { genreSlug: t.genreSlug, date: t.date, chartType: t.chartType, error: e instanceof Error ? e.message : String(e) };

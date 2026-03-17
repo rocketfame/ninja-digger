@@ -46,6 +46,19 @@ export async function POST() {
       lastInDb = dailyRows[0]?.max_date ?? null;
     }
 
+    // Check genre coverage for recent dates (today + yesterday)
+    const recentDates = [yesterday, today];
+    const coverageRows = await query<{ snapshot_date: string; genre_count: number }>(
+      `SELECT snapshot_date::text, COUNT(DISTINCT genre_slug)::int AS genre_count
+       FROM bptoptracker_daily
+       WHERE snapshot_date = ANY($1::date[])
+       GROUP BY snapshot_date`,
+      [recentDates]
+    );
+    const coverageMap = new Map(coverageRows.map(r => [r.snapshot_date, r.genre_count]));
+    const expectedGenres = envGenres.length;
+    const missingCoverage = recentDates.filter(d => (coverageMap.get(d) ?? 0) < expectedGenres * 0.8); // <80% coverage
+
     let datesToFetch: string[];
     if (!lastInDb) {
       datesToFetch = [yesterday, today];
@@ -53,7 +66,7 @@ export async function POST() {
       const nextDay = new Date(lastInDb);
       nextDay.setDate(nextDay.getDate() + 1);
       const from = nextDay.toISOString().slice(0, 10);
-      if (from > today) {
+      if (from > today && missingCoverage.length === 0) {
         return NextResponse.json({
           ok: true,
           lastDateInDb: lastInDb,
@@ -64,7 +77,9 @@ export async function POST() {
           scoresUpdated: 0,
         });
       }
-      datesToFetch = dateRange(from, today);
+      // Include dates with missing genre coverage
+      const newDates = from <= today ? dateRange(from, today) : [];
+      datesToFetch = [...new Set([...newDates, ...missingCoverage])].sort();
     }
 
     clearBptoptrackerCookieCache();
