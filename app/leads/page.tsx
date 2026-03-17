@@ -161,8 +161,77 @@ export default async function LeadsPage({
     ? " AND (EXISTS (SELECT 1 FROM artist_links al_fl WHERE al_fl.artist_beatport_id = ls.artist_beatport_id AND al_fl.status = 'flagged') OR EXISTS (SELECT 1 FROM artist_contacts ac_fl WHERE ac_fl.artist_beatport_id = ls.artist_beatport_id AND ac_fl.status = 'flagged'))"
     : "";
 
+  // Genre-specific segment CTE: compute segment per artist based on metrics within a single genre
+  const genreSegmentCte = `
+    genre_metrics AS (
+      SELECT
+        ce.artist_beatport_id,
+        MIN(ce.snapshot_date) AS g_first_seen,
+        MAX(ce.snapshot_date) AS g_last_seen,
+        COUNT(DISTINCT ce.snapshot_date)::INT AS g_days,
+        MIN(ce.position)::INT AS g_best_pos,
+        AVG(ce.position)::NUMERIC AS g_avg_pos,
+        (AVG(ce.position) FILTER (WHERE ce.snapshot_date >= ref.d - 6 AND ce.snapshot_date <= ref.d - 3)
+         - AVG(ce.position) FILTER (WHERE ce.snapshot_date >= ref.d - 2 AND ce.snapshot_date <= ref.d))::NUMERIC AS g_momentum_7d
+      FROM chart_entries ce
+      JOIN charts_catalog cc ON cc.id = ce.chart_id
+      CROSS JOIN (SELECT MAX(snapshot_date) AS d FROM chart_entries) ref
+      WHERE cc.genre_slug = $3 OR cc.genre_slug = ${toSlug("$3::text")}
+      GROUP BY ce.artist_beatport_id, ref.d
+    ),
+    genre_segment AS (
+      SELECT
+        gm.artist_beatport_id,
+        CASE
+          WHEN COALESCE(gm.g_days, 0) BETWEEN 1 AND 4
+               AND COALESCE(gm.g_best_pos, 99) > 60
+               AND gm.g_last_seen >= (SELECT MAX(snapshot_date) FROM chart_entries) - 4
+            THEN 'NEWCOMER'
+          WHEN COALESCE(gm.g_days, 0) BETWEEN 5 AND 7
+               AND gm.g_last_seen >= (SELECT MAX(snapshot_date) FROM chart_entries) - 7
+            THEN 'NEW_ENTRY'
+          WHEN COALESCE(gm.g_momentum_7d, 0) > 3
+            THEN 'FAST_GROWING'
+          WHEN COALESCE(gm.g_best_pos, 99) <= 10
+               AND COALESCE(gm.g_days, 0) >= 8
+            THEN 'TOP_PERFORMER'
+          WHEN COALESCE(gm.g_momentum_7d, 0) < -3
+               AND COALESCE(gm.g_days, 0) >= 5
+            THEN 'DECLINING'
+          WHEN COALESCE(gm.g_days, 0) BETWEEN 8 AND 30
+               AND COALESCE(gm.g_momentum_7d, 0) >= -3
+            THEN 'CONSISTENT'
+          WHEN COALESCE(gm.g_days, 0) BETWEEN 1 AND 4
+               AND COALESCE(gm.g_best_pos, 99) <= 60
+            THEN 'NEW_ENTRY'
+          WHEN COALESCE(gm.g_days, 0) > 30
+            THEN 'CONSISTENT'
+          ELSE 'NEW_ENTRY'
+        END AS g_segment
+      FROM genre_metrics gm
+    )`;
+
   const getCachedLeads = unstable_cache(
     async () => {
+      // When filtering by BOTH segment AND genre, use genre-specific segment computation
+      if (segment && genreParam) {
+        const params: (string | string[] | null)[] = [segment, blocklist, genreParam, dateFromParam ?? null, dateToParam ?? null];
+        const rows = await query<LeadRowV2 & { _total: number }>(
+          `WITH ${genreSegmentCte}
+           SELECT ls.artist_beatport_id, am.artist_name, gs.g_segment AS segment, ls.score::text,
+                  am.total_chart_entries, am.first_seen::text AS first_seen, am.last_seen::text AS last_seen,
+                  am.genres AS genres,
+                  COUNT(*) OVER()::int AS _total
+           FROM lead_scores ls
+           LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
+           INNER JOIN genre_segment gs ON gs.artist_beatport_id = ls.artist_beatport_id AND gs.g_segment = $1
+           WHERE ${blocklistCondition}${dateConditionSeg}${contactsCondition}${inWorkCondition}${flaggedCondition}
+           ORDER BY ${orderByClause}
+           LIMIT ${LEADS_PAGE_SIZE} OFFSET ${offset}`,
+          params
+        );
+        return { rows, totalCount: rows[0]?._total ?? 0 };
+      }
       if (segment) {
         const params: (string | string[] | null)[] = [segment, blocklist, genreParam ?? null, dateFromParam ?? null, dateToParam ?? null];
         const rows = await query<LeadRowV2 & { _total: number }>(
@@ -173,6 +242,25 @@ export default async function LeadsPage({
            FROM lead_scores ls
            LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
            WHERE ls.segment = $1 AND ${blocklistCondition}${genreConditionSeg}${dateConditionSeg}${contactsCondition}${inWorkCondition}${flaggedCondition}
+           ORDER BY ${orderByClause}
+           LIMIT ${LEADS_PAGE_SIZE} OFFSET ${offset}`,
+          params
+        );
+        return { rows, totalCount: rows[0]?._total ?? 0 };
+      }
+      // When filtering by genre only (no segment), show genre-specific segment
+      if (genreParam) {
+        const params: (string | string[] | null)[] = [blocklist, genreParam, dateFromParam ?? null, dateToParam ?? null];
+        const rows = await query<LeadRowV2 & { _total: number }>(
+          `WITH ${genreSegmentCte.replace(/\$3/g, "$2")}
+           SELECT ls.artist_beatport_id, am.artist_name, COALESCE(gs.g_segment, ls.segment) AS segment, ls.score::text,
+                  am.total_chart_entries, am.first_seen::text AS first_seen, am.last_seen::text AS last_seen,
+                  am.genres AS genres,
+                  COUNT(*) OVER()::int AS _total
+           FROM lead_scores ls
+           LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
+           LEFT JOIN genre_segment gs ON gs.artist_beatport_id = ls.artist_beatport_id
+           WHERE ${blocklistCondition.replace(/\$2/g, "$1")}${genreConditionAll}${dateConditionAll}${contactsCondition}${inWorkCondition}${flaggedCondition}
            ORDER BY ${orderByClause}
            LIMIT ${LEADS_PAGE_SIZE} OFFSET ${offset}`,
           params
