@@ -70,6 +70,27 @@ export async function GET() {
       ),
     ]);
 
+    // Check afro-house specifically and all distinct genre_slugs ever stored
+    const [afroHouseCheck, allGenreSlugs, envGenresCheck] = await Promise.all([
+      query<{ snapshot_date: string; cnt: number }>(
+        `SELECT snapshot_date::text, COUNT(*)::int AS cnt
+         FROM bptoptracker_daily
+         WHERE genre_slug ILIKE '%afro%'
+         GROUP BY snapshot_date ORDER BY snapshot_date DESC LIMIT 10`
+      ),
+      query<{ genre_slug: string; cnt: number }>(
+        `SELECT genre_slug, COUNT(*)::int AS cnt
+         FROM bptoptracker_daily
+         GROUP BY genre_slug ORDER BY genre_slug`
+      ),
+      query<{ genre_slug: string; cnt: number }>(
+        `SELECT genre_slug, COUNT(*)::int AS cnt
+         FROM bptoptracker_daily
+         WHERE genre_slug IN ('afro-house', 'Afro House', 'afro house', 'Afro-House')
+         GROUP BY genre_slug`
+      ),
+    ]);
+
     return NextResponse.json({
       bptoptracker_daily: dailyStats[0],
       chart_entries: chartEntryStats[0],
@@ -79,6 +100,9 @@ export async function GET() {
       recent_daily_by_date: recentDailyByGenre,
       new_artists_last_7d: recentNewArtists,
       genre_coverage_latest_date: genreCoverage,
+      afro_house_in_daily: afroHouseCheck,
+      afro_house_exact_match: envGenresCheck,
+      all_genre_slugs: allGenreSlugs,
     });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
