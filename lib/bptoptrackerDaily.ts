@@ -7,7 +7,7 @@ import { pool } from "@/lib/db";
 import { getBptoptrackerGenresForSync } from "./bptoptrackerGenres";
 import { fetchChartForDate } from "./bptoptrackerFetch";
 
-const DELAY_MS = 1500;
+const DELAY_MS = 800; // Reduced from 1500ms — BPTT handles this rate fine
 const MAX_RETRIES = 2;
 const RETRY_BASE_MS = 3000;
 
@@ -60,6 +60,15 @@ export async function runBptoptrackerForDateRange(
   let skipped = 0;
   const errors: string[] = [];
 
+  // Skip genre+date pairs that already exist in DB
+  const existingPairs = await pool.query<{ genre_slug: string; snapshot_date: string }>(
+    `SELECT DISTINCT genre_slug, snapshot_date::text
+     FROM bptoptracker_daily
+     WHERE snapshot_date = ANY($1::date[]) AND genre_slug = ANY($2::text[])`,
+    [dates, genreSlugs]
+  );
+  const existingSet = new Set(existingPairs.rows.map(r => `${r.genre_slug}|${r.snapshot_date}`));
+
   const hasArtistIdColumn = await pool.query(
     `SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'bptoptracker_daily' AND column_name = 'artist_beatport_id' LIMIT 1`
   );
@@ -71,6 +80,10 @@ export async function runBptoptrackerForDateRange(
 
   for (const genreSlug of genreSlugs) {
     for (const date of dates) {
+      // Skip if already fetched
+      if (existingSet.has(`${genreSlug}|${date}`)) {
+        continue;
+      }
       const chartType: "track" | "hype" = "track";
       try {
         await new Promise((r) => setTimeout(r, DELAY_MS));

@@ -21,13 +21,29 @@ const PARALLEL_BATCH_DELAY_MS = 1000;
 const MAX_RETRIES = 2;
 const RETRY_BASE_MS = 3000;
 
-/** Parallel backfill for large gaps (>3 days). Faster than sequential. */
+/** Parallel backfill for large gaps (>3 days). Faster than sequential. Skips already-fetched genre+date pairs. */
 async function parallelFetchAndStore(
   genres: string[],
   dates: string[]
-): Promise<{ inserted: number; skipped: number; errors: string[] }> {
+): Promise<{ inserted: number; skipped: number; errors: string[]; tasksTotal: number; tasksSkipped: number }> {
+  // Check which genre+date pairs already exist in DB to avoid re-fetching
+  const existingPairs = await query<{ genre_slug: string; snapshot_date: string }>(
+    `SELECT DISTINCT genre_slug, snapshot_date::text
+     FROM bptoptracker_daily
+     WHERE snapshot_date = ANY($1::date[]) AND genre_slug = ANY($2::text[])`,
+    [dates, genres]
+  );
+  const existingSet = new Set(existingPairs.map(r => `${r.genre_slug}|${r.snapshot_date}`));
+
   const tasks: { genre: string; date: string }[] = [];
-  for (const genre of genres) for (const date of dates) tasks.push({ genre, date });
+  for (const genre of genres) {
+    for (const date of dates) {
+      if (!existingSet.has(`${genre}|${date}`)) {
+        tasks.push({ genre, date });
+      }
+    }
+  }
+  const tasksSkipped = genres.length * dates.length - tasks.length;
 
   const errors: string[] = [];
   const allRows: BptoptrackerDailyRow[] = [];
@@ -83,7 +99,7 @@ async function parallelFetchAndStore(
     inserted += res.rowCount ?? 0;
     skipped += batch.length - (res.rowCount ?? 0);
   }
-  return { inserted, skipped, errors };
+  return { inserted, skipped, errors, tasksTotal: tasks.length + tasksSkipped, tasksSkipped };
 }
 
 function dateRange(from: string, to: string): string[] {
@@ -120,8 +136,12 @@ export async function POST() {
       lastInDb = dailyRows[0]?.max_date ?? null;
     }
 
-    // Check genre coverage for recent dates (today + yesterday)
-    const recentDates = [yesterday, today];
+    // Check genre coverage for last 7 days (not just today/yesterday)
+    const recentDates: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(Date.now() - i * 86400 * 1000);
+      recentDates.push(d.toISOString().slice(0, 10));
+    }
     const coverageRows = await query<{ snapshot_date: string; genre_count: number }>(
       `SELECT snapshot_date::text, COUNT(DISTINCT genre_slug)::int AS genre_count
        FROM bptoptracker_daily
