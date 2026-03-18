@@ -139,13 +139,55 @@ export async function GET() {
     if (enriched > 0) actions.push(`enriched: ${enriched}`);
   }
 
+  // RA Promoter outreach: ~30% chance, different hours than Beatport
+  if (hour >= 8 && hour <= 20 && rand > 0.3 && rand < 0.6) {
+    try {
+      const raRes = await fetch(`${process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : 'https://ninja-digger.vercel.app'}/api/internal/ra/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ touchNum: 1, batchSize: 3 }),
+      });
+      const raData = await raRes.json() as { sent?: number };
+      if ((raData.sent ?? 0) > 0) actions.push(`ra_outreach: ${raData.sent}`);
+    } catch { /* skip RA errors */ }
+  }
+
+  // RA scrape: once a day (~4% per hour = ~1x/day)
+  if (rand < 0.04) {
+    try {
+      const scrapeRes = await fetch(`${process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : 'https://ninja-digger.vercel.app'}/api/internal/ra/scrape`, { method: 'POST' });
+      const scrapeData = await scrapeRes.json() as { eventsAdded?: number; promotersAdded?: number };
+      if ((scrapeData.eventsAdded ?? 0) > 0) actions.push(`ra_scrape: ${scrapeData.eventsAdded} events`);
+    } catch { /* skip */ }
+  }
+
+  // RA enrichment: ~25% chance
+  if (rand > 0.5 && rand < 0.75) {
+    try {
+      const enrichRes = await fetch(`${process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : 'https://ninja-digger.vercel.app'}/api/internal/ra/enrich`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batchSize: 5 }),
+      });
+      const enrichData = await enrichRes.json() as { totalEmails?: number };
+      if ((enrichData.totalEmails ?? 0) > 0) actions.push(`ra_enrich: ${enrichData.totalEmails} emails`);
+    } catch { /* skip */ }
+  }
+
   // Cold marking: once a day (low probability per hour)
   if (rand < 0.05) {
+    // Beatport cold
     const cold = await pool.query(`
       UPDATE lead_profiles SET status = 'Cold', updated_at = now()
       WHERE status = 'No Response' AND updated_at < now() - interval '5 days'
     `);
-    if ((cold.rowCount ?? 0) > 0) actions.push(`cold: ${cold.rowCount}`);
+    // RA cold
+    const raCold = await pool.query(`
+      UPDATE ra_promoter_profiles SET status = 'Cold', updated_at = now()
+      WHERE status = 'No Response' AND updated_at < now() - interval '5 days'
+    `).catch(() => ({ rowCount: 0 }));
+    const totalCold = (cold.rowCount ?? 0) + (raCold.rowCount ?? 0);
+    if (totalCold > 0) actions.push(`cold: ${totalCold}`);
   }
 
   return NextResponse.json({
