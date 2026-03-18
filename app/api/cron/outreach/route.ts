@@ -78,6 +78,8 @@ async function sendBatch(touchNum: number, fromStatus: string, toStatus: string,
 
   let sent = 0;
   for (const lead of leads.rows) {
+    // Random delay 5-30s between emails to avoid spam patterns
+    if (sent > 0) await new Promise(r => setTimeout(r, 5000 + Math.random() * 25000));
     const v = hashId(lead.id) % touch.subjects.length;
     try {
       await transporter.sendMail({
@@ -106,8 +108,8 @@ export async function GET() {
   try {
     const results = await Promise.all([
       sendBatch(1, "New", "Attempt 1", 0),         // Touch 1: нові ліди
-      sendBatch(2, "Attempt 1", "Attempt 2", 3),    // Touch 2: 3 дні після Touch 1
-      sendBatch(3, "Attempt 2", "No Response", 5),   // Touch 3: 5 днів після Touch 2
+      sendBatch(2, "Attempt 1", "Attempt 2", 2),    // Touch 2: 2 дні після Touch 1
+      sendBatch(3, "Attempt 2", "No Response", 3),   // Touch 3: 3 дні після Touch 2
     ]);
 
     // Mark as Cold: No Response older than 5 days
