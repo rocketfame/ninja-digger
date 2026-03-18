@@ -3,9 +3,6 @@
   "framework": "nextjs",
   "crons": [
     { "path": "/api/cron/daily", "schedule": "14 5 * * *" },
-    { "path": "/api/cron/daily", "schedule": "38 17 * * *" },
-    { "path": "/api/cron/outreach", "schedule": "42 8 * * *" },
-    { "path": "/api/cron/outreach", "schedule": "7 14 * * *" },
-    { "path": "/api/cron/outreach", "schedule": "53 19 * * *" }
+    { "path": "/api/cron/pipeline", "schedule": "0 * * * *" }
   ]
 }
