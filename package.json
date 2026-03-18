@@ -12,19 +12,21 @@
     "bptt:refresh": "curl -s -X POST \"http://localhost:3000/api/internal/bptoptracker/refresh-now\" -H \"Content-Type: application/json\""
   },
   "dependencies": {
+    "@types/nodemailer": "^7.0.11",
     "cheerio": "^1.0.0",
     "next": "^15.0.0",
+    "nodemailer": "^8.0.3",
+    "pg": "^8.13.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "pg": "^8.13.0"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/cheerio": "^0.22.0",
-    "dotenv": "^16.4.0",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.11.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "dotenv": "^16.4.0",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.0.0",
     "postcss": "^8.4.0",
