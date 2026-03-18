@@ -2,10 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "crons": [
-    { "path": "/api/cron/daily", "schedule": "0 6 * * *" },
-    { "path": "/api/cron/daily", "schedule": "0 18 * * *" },
-    { "path": "/api/cron/outreach", "schedule": "23 7 * * *" },
-    { "path": "/api/cron/outreach", "schedule": "47 13 * * *" },
-    { "path": "/api/cron/outreach", "schedule": "11 16 * * *" }
+    { "path": "/api/cron/daily", "schedule": "14 5 * * *" },
+    { "path": "/api/cron/daily", "schedule": "38 17 * * *" },
+    { "path": "/api/cron/outreach", "schedule": "42 8 * * *" },
+    { "path": "/api/cron/outreach", "schedule": "7 14 * * *" },
+    { "path": "/api/cron/outreach", "schedule": "53 19 * * *" }
   ]
 }
