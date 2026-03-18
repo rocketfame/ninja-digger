@@ -40,7 +40,7 @@ async function sendBatch(touchNum: number, fromStatus: string, toStatus: string,
   const transporter = nodemailer.createTransport({ service: "gmail", auth: { user, pass } });
   const touch = TOUCHES[touchNum - 1];
 
-  // Send max 5 per batch to spread across hours
+  // Send max 15 per batch (×14 runs/day = ~210 Beatport emails/day)
   const leads = await pool.query<{ id: string; name: string; email: string }>(`
     SELECT DISTINCT ON (ac.artist_beatport_id)
       ac.artist_beatport_id as id, am.artist_name as name, ac.value as email
@@ -51,12 +51,12 @@ async function sendBatch(touchNum: number, fromStatus: string, toStatus: string,
       AND (lp.status ${touchNum === 1 ? "IS NULL OR lp.status = 'New'" : `= '${fromStatus}'`})
       ${minAgeDays > 0 ? `AND lp.updated_at < now() - interval '${minAgeDays} days'` : ""}
     ORDER BY ac.artist_beatport_id, ac.confidence DESC
-    LIMIT 5
+    LIMIT 15
   `);
 
   let sent = 0;
   for (const lead of leads.rows) {
-    if (sent > 0) await new Promise(r => setTimeout(r, 3000 + Math.random() * 15000));
+    if (sent > 0) await new Promise(r => setTimeout(r, 1000 + Math.random() * 5000));
     const v = hashId(lead.id) % touch.subjects.length;
     // Get ALL valid emails for CC
     const allEmails = await pool.query<{ value: string }>(
@@ -123,8 +123,8 @@ export async function GET() {
   const rand = Math.random();
   const actions: string[] = [];
 
-  // Outreach: ~40% chance each hour (= ~10 times/day), skip night hours
-  if (hour >= 6 && hour <= 21 && rand < 0.45) {
+  // Outreach: ~60% chance each hour (= ~14 times/day × 15 per batch = ~210/day), skip night hours
+  if (hour >= 6 && hour <= 21 && rand < 0.65) {
     const t1 = await sendBatch(1, "New", "Attempt 1", 0);
     const t2 = await sendBatch(2, "Attempt 1", "Attempt 2", 2);
     const t3 = await sendBatch(3, "Attempt 2", "No Response", 3);
@@ -139,13 +139,13 @@ export async function GET() {
     if (enriched > 0) actions.push(`enriched: ${enriched}`);
   }
 
-  // RA Promoter outreach: ~30% chance, different hours than Beatport
-  if (hour >= 8 && hour <= 20 && rand > 0.3 && rand < 0.6) {
+  // RA Promoter outreach: ~50% chance (= ~12 runs × 10 = ~120 RA emails/day)
+  if (hour >= 7 && hour <= 21 && rand > 0.2 && rand < 0.7) {
     try {
       const raRes = await fetch(`${process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : 'https://ninja-digger.vercel.app'}/api/internal/ra/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ touchNum: 1, batchSize: 3 }),
+        body: JSON.stringify({ touchNum: 1, batchSize: 10 }),
       });
       const raData = await raRes.json() as { sent?: number };
       if ((raData.sent ?? 0) > 0) actions.push(`ra_outreach: ${raData.sent}`);
