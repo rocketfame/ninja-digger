@@ -994,6 +994,7 @@ export async function discoverLinks(
   // Fallback: якщо через RA нічого не знайшли або типів не вистачає — пошук по кожному типу.
   // СТРАТЕГІЯ: спочатку direct probing (безкоштовно, без ScraperAPI), потім DDG якщо є ScraperAPI.
   // Пріоритет: email-rich джерела першими (linktree, soundcloud, bandcamp)
+  const slugNoSep = slug.replace(/-/g, "");
 
   // Крок 2a: Direct platform probing ПЕРЕД DDG fallback — працює без ScraperAPI
   const directFallbackProbes: { type: DiscoveredLink["type"]; urls: string[] }[] = [
@@ -1130,7 +1131,6 @@ export async function discoverLinks(
     log(`[discoverLinks] Підсумок (early exit): links=${links.length}, contacts=${contacts.length}`);
     return { links, contacts };
   }
-  const slugNoSep = slug.replace(/-/g, "");
   const directProbes: { type: DiscoveredLink["type"]; urls: string[] }[] = [
     {
       type: "soundcloud",
