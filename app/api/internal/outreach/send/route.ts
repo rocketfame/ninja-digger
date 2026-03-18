@@ -164,9 +164,9 @@ export async function POST(request: Request) {
 
         // Record outreach event
         await pool.query(
-          `INSERT INTO outreach_events (artist_beatport_id, template_id, channel, status, created_at)
-           VALUES ($1, $2, 'email', $3, now())`,
-          [lead.id, `email_touch_${touchNum}`, toStatus]
+          `INSERT INTO outreach_events (artist_beatport_id, template_id, channel, contact_value, sent_at, outcome)
+           VALUES ($1, $2, 'email', $3, now(), $4)`,
+          [lead.id, `email_touch_${touchNum}`, lead.email, toStatus]
         );
 
         sent++;
