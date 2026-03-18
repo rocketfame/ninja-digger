@@ -991,8 +991,76 @@ export async function discoverLinks(
     log(`[RA] Сторінку RA не знайдено (raPageUrl=${raPageUrl ? "ok" : "null"})`);
   }
 
-  // Fallback: якщо через RA нічого не знайшли або типів не вистачає — пошук по кожному типу
+  // Fallback: якщо через RA нічого не знайшли або типів не вистачає — пошук по кожному типу.
+  // СТРАТЕГІЯ: спочатку direct probing (безкоштовно, без ScraperAPI), потім DDG якщо є ScraperAPI.
   // Пріоритет: email-rich джерела першими (linktree, soundcloud, bandcamp)
+
+  // Крок 2a: Direct platform probing ПЕРЕД DDG fallback — працює без ScraperAPI
+  const directFallbackProbes: { type: DiscoveredLink["type"]; urls: string[] }[] = [
+    { type: "linktree", urls: [`https://linktr.ee/${slugNoSep}`, `https://linktr.ee/${slug}`] },
+    { type: "soundcloud", urls: [`https://soundcloud.com/${slug}`, ...(slugNoSep !== slug ? [`https://soundcloud.com/${slugNoSep}`] : [])] },
+    { type: "bandcamp", urls: [`https://${slug}.bandcamp.com/`, ...(slugNoSep !== slug ? [`https://${slugNoSep}.bandcamp.com/`] : [])] },
+    { type: "mixcloud", urls: [`https://www.mixcloud.com/${slug}/`, `https://www.mixcloud.com/${slugNoSep}/`] },
+    { type: "instagram", urls: [`https://www.instagram.com/${slugNoSep}/`, ...(slugNoSep !== slug ? [`https://www.instagram.com/${slug.replace(/-/g, "_")}/`] : [])] },
+    { type: "facebook", urls: [`https://www.facebook.com/${slugNoSep}`] },
+  ];
+
+  log(`[direct-fallback] Probing ${directFallbackProbes.length} платформ напряму (без ScraperAPI)`);
+  for (const { type, urls: probeUrls } of directFallbackProbes) {
+    if (isTimedOut()) { log(`[direct-fallback] TIMEOUT`); break; }
+    if (hasLink(type)) continue;
+    if (hasEmail() && Date.now() - startTime > 30000) { log(`[direct-fallback] email є + >30с — стоп`); break; }
+    for (const probeUrl of probeUrls) {
+      try {
+        await jitteredDelay(RATE_DELAY_MS);
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+        const hdrs = browserHeaders();
+        applyCookies(probeUrl, hdrs);
+        const res = await fetch(probeUrl, { signal: controller.signal, headers: hdrs, redirect: "follow" });
+        clearTimeout(t);
+        storeCookies(probeUrl, res.headers.getSetCookie?.() ?? []);
+        const status = res.status;
+        if (status === 404 || status === 410) continue;
+        if (status >= 400 && !(status === 403 && type === "soundcloud")) continue;
+        const body = await res.text();
+        if (body.length < 500) continue;
+        if (type === "instagram" && isInstagramNotFoundPage(body)) continue;
+        if (type === "linktree" && (body.includes("page not found") || body.includes("Nothing to see here"))) continue;
+        if (type === "bandcamp" && body.includes("Sorry, that something isn")) continue;
+
+        let urlNorm = probeUrl;
+        try { urlNorm = new URL(probeUrl).origin + new URL(probeUrl).pathname.replace(/\/$/, ""); } catch { /* keep */ }
+        links.push({ type, url: urlNorm, confidence: 0.7, source: "direct_probe" });
+        log(`[direct-fallback] ${type} OK -> ${urlNorm} (${body.length}b)`);
+
+        // Email extraction
+        if (type === "soundcloud") {
+          const scDesc = await fetchSoundCloudDescription(probeUrl, log);
+          if (scDesc) {
+            const conf = EMAIL_CONFIDENCE.soundcloud ?? { mailto: 0.8, plain: 0.8 };
+            collectContactsFromPages(contacts, urlNorm, scDesc, { confidenceMailto: conf.mailto, confidencePlain: conf.plain, maxPerPage: EMAIL_MAX_PER_PAGE, artistName: name });
+            log(`[direct-fallback] SoundCloud API email -> contacts=${contacts.length}`);
+          }
+        } else if (type !== "instagram" && type !== "facebook") {
+          const conf = EMAIL_CONFIDENCE[type] ?? { mailto: 0.65, plain: 0.65 };
+          collectContactsFromPages(contacts, urlNorm, body, { confidenceMailto: conf.mailto, confidencePlain: conf.plain, maxPerPage: EMAIL_MAX_PER_PAGE, artistName: name });
+        }
+        // Cross-validate links from linktree/soundcloud pages
+        if (type === "linktree" || type === "soundcloud") {
+          addCrossValidatedLinks(links, body, type, name, slug, 0.75);
+        }
+        break; // found this type
+      } catch (e) {
+        log(`[direct-fallback] ${type} ${probeUrl} -> error: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+  }
+  log(`[direct-fallback] Після direct probing: links=${links.length}, contacts=${contacts.length}`);
+
+  // Крок 2b: DDG/Bing search — ТІЛЬКИ якщо ScraperAPI доступний (не витрачаємо без нього)
+  const hasScraperApi = !!process.env.SCRAPER_API_KEY;
+  const scraperNotExhausted = hasScraperApi; // TODO: можна додати перевірку ліміту через API
   const domains: { type: DiscoveredLink["type"]; query: string }[] = [
     { type: "linktree", query: `${quotedName} linktr.ee OR beacons.ai OR carrd.co` },
     { type: "soundcloud", query: `${quotedName} site:soundcloud.com` },
@@ -1003,72 +1071,51 @@ export async function discoverLinks(
     { type: "instagram", query: `${quotedName} site:instagram.com` },
   ];
 
-  log(`[fallback] Типів посилань зараз: ${links.length}, запускаємо пошук по типах для недостатніх`);
-  for (const { type, query: q } of domains) {
-    if (isTimedOut()) { log(`[fallback] TIMEOUT — зупинка (${Date.now() - startTime}ms)`); break; }
-    if (hasLink(type)) continue;
-    // Якщо вже маємо email і витратили >30с — можна зупинитись, решта типів необов'язкова
-    if (hasEmail() && Date.now() - startTime > 30000) { log(`[fallback] email є + >30с — пропускаємо решту`); break; }
-    log(`[fallback] Пошук ${type}: ${q}`);
-    const resultUrls = await searchDDG(q);
-    log(`[fallback] ${type} -> ${resultUrls.length} URL: ${resultUrls.slice(0, 3).join(", ")}`);
-    const maxCandidates = type === "instagram" ? 5 : 2;
-    for (const candidateUrl of resultUrls.slice(0, maxCandidates)) {
-      const html = await fetchWithCache(candidateUrl);
-      if (!html) continue;
-      if (type === "instagram" && isInstagramNotFoundPage(html)) continue;
-      const nameOk = nameMatches(html, name) || urlSuggestArtist(type, candidateUrl, name, slug);
-      if (!nameOk) {
-        log(`[fallback] ${type} ${candidateUrl} nameMatches/urlSuggest=false`);
-        continue;
-      }
-      let url = candidateUrl;
-      try {
-        const u = new URL(candidateUrl);
-        url = u.origin + u.pathname.replace(/\/$/, "") || candidateUrl;
-      } catch {
-        // keep as is
-      }
-      let linkConfidence = candidateUrl.includes(slug) ? 0.9 : 0.6;
-      if (type === "instagram") {
-        try {
-          const pathSeg = new URL(candidateUrl).pathname.split("/").filter(Boolean)[0] ?? "";
-          const slugNorm = slug.toLowerCase().replace(/-/g, "");
-          if (pathSeg.length > slugNorm.length && pathSeg.toLowerCase().includes(slugNorm)) linkConfidence = 0.95;
-        } catch {
-          // keep default
+  if (scraperNotExhausted && !hasEmail() && !isTimedOut()) {
+    log(`[fallback-ddg] ScraperAPI доступний, запускаємо DDG пошук для відсутніх типів`);
+    for (const { type, query: q } of domains) {
+      if (isTimedOut()) { log(`[fallback-ddg] TIMEOUT — зупинка (${Date.now() - startTime}ms)`); break; }
+      if (hasLink(type)) continue;
+      if (hasEmail() && Date.now() - startTime > 30000) { log(`[fallback-ddg] email є + >30с — пропускаємо решту`); break; }
+      log(`[fallback-ddg] Пошук ${type}: ${q}`);
+      const resultUrls = await searchDDG(q);
+      log(`[fallback-ddg] ${type} -> ${resultUrls.length} URL: ${resultUrls.slice(0, 3).join(", ")}`);
+      const maxCandidates = type === "instagram" ? 5 : 2;
+      for (const candidateUrl of resultUrls.slice(0, maxCandidates)) {
+        const html = await fetchWithCache(candidateUrl);
+        if (!html) continue;
+        if (type === "instagram" && isInstagramNotFoundPage(html)) continue;
+        const nameOk = nameMatches(html, name) || urlSuggestArtist(type, candidateUrl, name, slug);
+        if (!nameOk) {
+          log(`[fallback-ddg] ${type} ${candidateUrl} nameMatches/urlSuggest=false`);
+          continue;
         }
-      }
-      links.push({ type, url, confidence: linkConfidence, source: "search" });
-      // SoundCloud: HTML — JS-оболонка без email, використовуємо API v2
-      if (type === "soundcloud") {
-        log(`[fallback] SoundCloud — пробуємо API v2 для ${url}`);
-        const scDesc = await fetchSoundCloudDescription(url, log);
-        if (scDesc) {
-          const conf = EMAIL_CONFIDENCE.soundcloud ?? { mailto: 0.8, plain: 0.8 };
-          collectContactsFromPages(contacts, url, scDesc, {
-            confidenceMailto: conf.mailto,
-            confidencePlain: conf.plain,
-            maxPerPage: EMAIL_MAX_PER_PAGE,
-            artistName: name,
-          });
-          log(`[fallback] SoundCloud API email -> contacts=${contacts.length}`);
+        let url = candidateUrl;
+        try { const u = new URL(candidateUrl); url = u.origin + u.pathname.replace(/\/$/, "") || candidateUrl; } catch { /* keep */ }
+        let linkConfidence = candidateUrl.includes(slug) ? 0.9 : 0.6;
+        if (type === "instagram") {
+          try { const pathSeg = new URL(candidateUrl).pathname.split("/").filter(Boolean)[0] ?? ""; const slugNorm = slug.toLowerCase().replace(/-/g, ""); if (pathSeg.length > slugNorm.length && pathSeg.toLowerCase().includes(slugNorm)) linkConfidence = 0.95; } catch { /* keep default */ }
         }
-      } else {
-        const conf = EMAIL_CONFIDENCE[type] ?? { mailto: 0.65, plain: 0.65 };
-        collectContactsFromPages(contacts, candidateUrl, html, {
-          confidenceMailto: conf.mailto,
-          confidencePlain: conf.plain,
-          maxPerPage: EMAIL_MAX_PER_PAGE,
-          artistName: name,
-        });
+        links.push({ type, url, confidence: linkConfidence, source: "search" });
+        if (type === "soundcloud") {
+          const scDesc = await fetchSoundCloudDescription(url, log);
+          if (scDesc) {
+            const conf = EMAIL_CONFIDENCE.soundcloud ?? { mailto: 0.8, plain: 0.8 };
+            collectContactsFromPages(contacts, url, scDesc, { confidenceMailto: conf.mailto, confidencePlain: conf.plain, maxPerPage: EMAIL_MAX_PER_PAGE, artistName: name });
+          }
+        } else {
+          const conf = EMAIL_CONFIDENCE[type] ?? { mailto: 0.65, plain: 0.65 };
+          collectContactsFromPages(contacts, candidateUrl, html, { confidenceMailto: conf.mailto, confidencePlain: conf.plain, maxPerPage: EMAIL_MAX_PER_PAGE, artistName: name });
+        }
+        if (type === "soundcloud" || type === "resident_advisor" || type === "linktree") {
+          addCrossValidatedLinks(links, html, type, name, slug, 0.75);
+        }
+        log(`[fallback-ddg] ${type} OK -> ${candidateUrl}`);
+        break;
       }
-      if (type === "soundcloud" || type === "resident_advisor" || type === "linktree") {
-        addCrossValidatedLinks(links, html, type, name, slug, 0.75);
-      }
-      log(`[fallback] ${type} OK -> ${candidateUrl}`);
-      break;
     }
+  } else if (!scraperNotExhausted) {
+    log(`[fallback-ddg] ScraperAPI недоступний — пропускаємо DDG пошук (direct probing вже виконано)`);
   }
 
   // Крок 3: Direct URL probing — коли пошукові системи заблоковані, пробуємо прямі URL за шаблоном
