@@ -58,10 +58,18 @@ async function sendBatch(touchNum: number, fromStatus: string, toStatus: string,
   for (const lead of leads.rows) {
     if (sent > 0) await new Promise(r => setTimeout(r, 3000 + Math.random() * 15000));
     const v = hashId(lead.id) % touch.subjects.length;
+    // Get ALL valid emails for CC
+    const allEmails = await pool.query<{ value: string }>(
+      `SELECT value FROM artist_contacts WHERE artist_beatport_id = $1 AND type = 'email' AND confidence >= 0.65 AND (status IS NULL OR status != 'bounced') ORDER BY confidence DESC`,
+      [lead.id]
+    );
+    const primaryEmail = allEmails.rows[0]?.value || lead.email;
+    const ccEmails = allEmails.rows.slice(1).map((r: { value: string }) => r.value);
     try {
       await transporter.sendMail({
         from: `"Max from PromoSound" <${user}>`,
-        to: lead.email,
+        to: primaryEmail,
+        cc: ccEmails.length > 0 ? ccEmails.join(", ") : undefined,
         subject: touch.subjects[v],
         text: touch.bodies[v](lead.name) + SIGNATURE,
       });
