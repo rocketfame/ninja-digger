@@ -28,11 +28,17 @@ async function getAnalytics() {
     raEvents,
     raCities,
   ] = await Promise.all([
-    pool.query<DayStat>("SELECT sent_at::date::text as date, COUNT(*)::int as count FROM outreach_events WHERE sent_at >= CURRENT_DATE - 14 GROUP BY date ORDER BY date DESC").catch(() => ({ rows: [] as DayStat[] })),
-    pool.query("SELECT COUNT(*)::int as c FROM outreach_events").catch(() => ({ rows: [{ c: 0 }] })),
-    pool.query("SELECT COUNT(*)::int as c FROM outreach_events WHERE sent_at >= CURRENT_DATE").catch(() => ({ rows: [{ c: 0 }] })),
-    pool.query("SELECT COUNT(*)::int as c FROM outreach_events WHERE sent_at >= CURRENT_DATE - 1 AND sent_at < CURRENT_DATE").catch(() => ({ rows: [{ c: 0 }] })),
-    pool.query("SELECT COUNT(*)::int as c FROM outreach_events WHERE sent_at >= CURRENT_DATE - 7").catch(() => ({ rows: [{ c: 0 }] })),
+    pool.query<DayStat>(`
+      SELECT date, SUM(count)::int as count FROM (
+        SELECT updated_at::date::text as date, COUNT(*)::int as count FROM lead_profiles WHERE status != 'New' AND updated_at >= CURRENT_DATE - 14 GROUP BY date
+        UNION ALL
+        SELECT updated_at::date::text as date, COUNT(*)::int as count FROM ra_promoter_profiles WHERE status != 'New' AND updated_at >= CURRENT_DATE - 14 GROUP BY date
+      ) combined GROUP BY date ORDER BY date DESC
+    `).catch(() => ({ rows: [] as DayStat[] })),
+    pool.query(`SELECT (SELECT COUNT(*)::int FROM lead_profiles WHERE status IN ('Attempt 1','Attempt 2','Contacted','No Response','Cold','Hot')) + (SELECT COUNT(*)::int FROM ra_promoter_profiles WHERE status IN ('Attempt 1','Attempt 2','No Response','Cold','Hot')) as c`).catch(() => ({ rows: [{ c: 0 }] })),
+    pool.query(`SELECT (SELECT COUNT(*)::int FROM lead_profiles WHERE status != 'New' AND updated_at >= CURRENT_DATE) + (SELECT COUNT(*)::int FROM ra_promoter_profiles WHERE status != 'New' AND updated_at >= CURRENT_DATE) as c`).catch(() => ({ rows: [{ c: 0 }] })),
+    pool.query(`SELECT (SELECT COUNT(*)::int FROM lead_profiles WHERE status != 'New' AND updated_at >= CURRENT_DATE - 1 AND updated_at < CURRENT_DATE) + (SELECT COUNT(*)::int FROM ra_promoter_profiles WHERE status != 'New' AND updated_at >= CURRENT_DATE - 1 AND updated_at < CURRENT_DATE) as c`).catch(() => ({ rows: [{ c: 0 }] })),
+    pool.query(`SELECT (SELECT COUNT(*)::int FROM lead_profiles WHERE status != 'New' AND updated_at >= CURRENT_DATE - 7) + (SELECT COUNT(*)::int FROM ra_promoter_profiles WHERE status != 'New' AND updated_at >= CURRENT_DATE - 7) as c`).catch(() => ({ rows: [{ c: 0 }] })),
     pool.query<StatusCount>("SELECT COALESCE(status, 'New') as status, COUNT(*)::int as count FROM lead_profiles GROUP BY status ORDER BY count DESC").catch(() => ({ rows: [] as StatusCount[] })),
     pool.query<StatusCount>("SELECT COALESCE(status, 'New') as status, COUNT(*)::int as count FROM ra_promoter_profiles GROUP BY status ORDER BY count DESC").catch(() => ({ rows: [] as StatusCount[] })),
     pool.query("SELECT COUNT(*)::int as c FROM lead_scores").catch(() => ({ rows: [{ c: 0 }] })),
