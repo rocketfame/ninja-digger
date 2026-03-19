@@ -12,10 +12,10 @@ async function getStats() {
       pool.query("SELECT COUNT(*) as c FROM ra_promoters").catch(() => ({ rows: [{ c: 0 }] })),
       pool.query("SELECT COUNT(DISTINCT promoter_id) as c FROM ra_promoter_contacts WHERE type='email' AND status != 'bounced'").catch(() => ({ rows: [{ c: 0 }] })),
       pool.query("SELECT COUNT(*) as c FROM ra_promoter_profiles WHERE status IS NOT NULL AND status != 'New'").catch(() => ({ rows: [{ c: 0 }] })),
-      pool.query("SELECT COUNT(*) as c FROM outreach_events WHERE sent_at >= CURRENT_DATE"),
-      pool.query("SELECT COUNT(*) as c FROM outreach_events WHERE sent_at >= CURRENT_DATE - 1 AND sent_at < CURRENT_DATE"),
-      pool.query("SELECT COUNT(*) as c FROM outreach_events"),
-      pool.query("SELECT COUNT(*) as c FROM artist_contacts WHERE status = 'bounced'"),
+      pool.query("SELECT COUNT(*) as c FROM outreach_events WHERE sent_at >= CURRENT_DATE").catch(() => ({ rows: [{ c: 0 }] })),
+      pool.query("SELECT COUNT(*) as c FROM outreach_events WHERE sent_at >= CURRENT_DATE - 1 AND sent_at < CURRENT_DATE").catch(() => ({ rows: [{ c: 0 }] })),
+      pool.query("SELECT COUNT(*) as c FROM outreach_events").catch(() => ({ rows: [{ c: 0 }] })),
+      pool.query("SELECT COUNT(*) as c FROM artist_contacts WHERE status = 'bounced'").catch(() => ({ rows: [{ c: 0 }] })),
     ]);
     return {
       bp: { email: Number(bpEmail.rows[0]?.c ?? 0), work: Number(bpWork.rows[0]?.c ?? 0) },
