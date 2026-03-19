@@ -217,3 +217,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
+
+// GET handler for Vercel Cron — enriches 2 NEWCOMER artists
+export async function GET() {
+  const url = new URL("http://localhost/api/internal/enrich/leads?segment=NEWCOMER");
+  const req = new Request(url, { method: "POST", headers: { "Content-Type": "application/json" } });
+  return POST(req);
+}

@@ -61,3 +61,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
   }
 }
+
+// GET handler for Vercel Cron
+export async function GET() {
+  const req = new Request("http://localhost", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ batchSize: 5 }) });
+  return POST(req);
+}
