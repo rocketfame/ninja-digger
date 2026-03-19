@@ -80,6 +80,19 @@ export async function GET() {
     if (t1 + t2 + t3 > 0) actions.push(`bp: T1=${t1} T2=${t2} T3=${t3}`);
   }
 
+  // Beatport enrichment: 50% chance — find new emails via API
+  if (rand < 0.5) {
+    try {
+      const enrichRes = await fetch(`https://ninja-digger.vercel.app/api/internal/enrich/leads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ segment: 'NEWCOMER', batchSize: 2 }),
+      });
+      const enrichData = await enrichRes.json() as { enriched?: number; contactsFound?: number };
+      if ((enrichData.contactsFound ?? 0) > 0) actions.push(`bp_enrich: ${enrichData.contactsFound} contacts`);
+    } catch { /* skip enrichment errors */ }
+  }
+
   // Cold marking: 5% chance
   if (rand < 0.05) {
     const cold = await pool.query(`UPDATE lead_profiles SET status = 'Cold', updated_at = now() WHERE status = 'No Response' AND updated_at < now() - interval '5 days'`);
