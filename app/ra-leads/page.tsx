@@ -66,7 +66,7 @@ async function getRALeads(city?: string, weeks?: string) {
       COALESCE(p.city, '') as city,
       COALESCE(p.country, '') as country,
       COALESCE(p.follower_count, 0) as follower_count,
-      CEIL(EXTRACT(EPOCH FROM (MIN(e.event_date) OVER (PARTITION BY p.id) - CURRENT_DATE)) / 604800)::int as weeks_until,
+      GREATEST(1, LEAST(6, CEIL((MIN(e.event_date) OVER (PARTITION BY p.id) - CURRENT_DATE)::numeric / 7)))::int as weeks_until,
       COALESCE(pp.status, 'New') as status,
       (SELECT c.value FROM ra_promoter_contacts c WHERE c.promoter_id = p.id AND c.type = 'email' AND c.status != 'bounced' ORDER BY c.confidence DESC LIMIT 1) as email,
       (SELECT COUNT(*) FROM ra_events e2 WHERE e2.promoter_id = p.id AND e2.event_date >= CURRENT_DATE)::int as event_count,
@@ -89,9 +89,9 @@ async function getStats() {
     pool.query("SELECT COUNT(DISTINCT promoter_id) as c FROM ra_promoter_contacts WHERE type = 'email' AND status != 'bounced'"),
     pool.query("SELECT city, COUNT(*) as c FROM ra_promoters WHERE city != '' GROUP BY city ORDER BY c DESC LIMIT 30"),
     pool.query(`
-      SELECT CEIL(EXTRACT(EPOCH FROM (MIN(e.event_date) - CURRENT_DATE)) / 604800)::int as w, COUNT(DISTINCT e.promoter_id) as c
+      SELECT CEIL((MIN(e.event_date) - CURRENT_DATE)::numeric / 7)::int as w, COUNT(DISTINCT e.promoter_id) as c
       FROM ra_events e WHERE e.event_date >= CURRENT_DATE AND e.promoter_id IS NOT NULL
-      GROUP BY w HAVING CEIL(EXTRACT(EPOCH FROM (MIN(e.event_date) - CURRENT_DATE)) / 604800)::int BETWEEN 1 AND 6
+      GROUP BY w HAVING CEIL((MIN(e.event_date) - CURRENT_DATE)::numeric / 7)::int BETWEEN 1 AND 6
       ORDER BY w
     `),
     pool.query("SELECT COUNT(*) as c FROM ra_promoter_profiles WHERE status IS NOT NULL AND status != 'New'"),
