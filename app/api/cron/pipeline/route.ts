@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import * as nodemailer from "nodemailer";
 
-export const maxDuration = 55;
+export const maxDuration = 300; // 5 min for natural-paced sends
 
 const SIGNATURE = `\n\n--\nWith Regards, your Promosound.\nSPOTIFY PROMO: https://promosoundgroup.net/collections/spotify-promotion\nBEATPORT PROMO: https://promosoundgroup.net/collections/beatport-top-100-promotion\nSOUNDCLOUD PROMO: https://promosoundgroup.net/collections/soundcloud-promotion\nPROMOSOUND: https://promosoundgroup.net/`;
 
@@ -37,12 +37,12 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
       AND (lp.status ${touchNum === 1 ? "IS NULL OR lp.status = 'New'" : `= '${fromStatus}'`})
       ${minDays > 0 ? `AND lp.updated_at < now() - interval '${minDays} days'` : ""}
     ORDER BY ac.artist_beatport_id, ac.confidence DESC
-    LIMIT 10
+    LIMIT 5
   `);
 
   let sent = 0;
   for (const lead of leads.rows) {
-    if (sent > 0) await new Promise(r => setTimeout(r, 1000 + Math.random() * 3000));
+    if (sent > 0) await new Promise(r => setTimeout(r, 20000 + Math.random() * 40000)); // 20-60s between emails
     const v = hashId(lead.id) % T1_SUBJECTS.length;
     try {
       const allEmails = await pool.query<{ value: string }>(

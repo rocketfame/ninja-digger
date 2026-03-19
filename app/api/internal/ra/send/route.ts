@@ -8,7 +8,7 @@ import { pool } from "@/lib/db";
 import * as nodemailer from "nodemailer";
 import { RA_TOUCH1, RA_TOUCH2, RA_TOUCH3, RA_SIGNATURE, hashPromoterId } from "@/lib/raOutreach";
 
-export const maxDuration = 60;
+export const maxDuration = 300; // 5 min for slow sends
 
 const TOUCHES = [RA_TOUCH1, RA_TOUCH2, RA_TOUCH3];
 

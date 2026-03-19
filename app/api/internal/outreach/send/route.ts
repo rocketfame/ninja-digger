@@ -13,7 +13,7 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import * as nodemailer from "nodemailer";
 
-export const maxDuration = 60;
+export const maxDuration = 300; // 5 min for slow sends with 15-30s delays
 
 // 5 subject + body variants per touch
 const TOUCH1 = {
@@ -91,7 +91,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const touchNum = Math.min(Math.max(body.touchNum || 1, 1), 3);
-    const batchSize = Math.min(Math.max(body.batchSize || 10, 1), 50);
+    const batchSize = Math.min(Math.max(body.batchSize || 5, 1), 10);
     const specificArtistId = body.artistId as string | undefined;
 
     const touch = TOUCHES[touchNum - 1];
@@ -142,6 +142,8 @@ export async function POST(request: Request) {
     const results: { name: string; email: string; ok: boolean; error?: string }[] = [];
 
     for (const lead of leads.rows) {
+      // Random delay 15-30s between emails to look natural
+      if (sent > 0) await new Promise(r => setTimeout(r, 15000 + Math.random() * 15000));
       const variant = hashId(lead.id) % touch.subjects.length;
       const subject = touch.subjects[variant];
       const text = touch.bodies[variant](lead.name) + SIGNATURE;
