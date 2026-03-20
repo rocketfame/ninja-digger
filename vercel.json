@@ -7,6 +7,6 @@
     { "path": "/api/internal/ra/send", "schedule": "23 */2 * * *" },
     { "path": "/api/internal/ra/enrich", "schedule": "47 */3 * * *" },
     { "path": "/api/internal/ra/scrape", "schedule": "33 4 * * *" },
-    { "path": "/api/internal/enrich/leads", "schedule": "17 * * * *" }
+    { "path": "/api/internal/enrich/leads", "schedule": "7,37 * * * *" }
   ]
 }

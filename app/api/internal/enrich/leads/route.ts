@@ -12,8 +12,8 @@ import { runEnrichmentForArtist } from "@/lib/enrichV1";
 /** Vercel: дозволяємо до 120с для batch enrichment */
 export const maxDuration = 120;
 
-/** 2 in parallel ≈ 52s per request (under 60s). Same as segment. */
-const PARALLEL_ARTISTS = 2;
+/** 3 in parallel ≈ 55s per request. Fits safely within 60s. */
+const PARALLEL_ARTISTS = 3;
 const MAX_ARTISTS_PER_RUN = PARALLEL_ARTISTS;
 const SEGMENTS_V2 = ["NEWCOMER", "NEW_ENTRY", "CONSISTENT", "FAST_GROWING", "DECLINING", "TOP_PERFORMER"] as const;
 
