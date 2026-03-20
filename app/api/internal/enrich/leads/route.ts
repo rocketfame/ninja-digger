@@ -218,9 +218,111 @@ export async function POST(request: Request) {
   }
 }
 
-// GET handler for Vercel Cron — enriches 2 NEWCOMER artists
+/**
+ * GET handler for Vercel Cron — batch-enriches NEWCOMER artists.
+ * Loops through multiple batches until time runs out (~110s safety margin from 120s maxDuration).
+ * Each batch processes PARALLEL_ARTISTS in parallel. If one artist errors, others still succeed.
+ */
 export async function GET() {
-  const url = new URL("http://localhost/api/internal/enrich/leads?segment=NEWCOMER");
-  const req = new Request(url, { method: "POST", headers: { "Content-Type": "application/json" } });
-  return POST(req);
+  const CRON_TIME_LIMIT_MS = 110_000; // stop 10s before maxDuration
+  const cronStart = Date.now();
+  let totalProcessed = 0;
+  let totalLinks = 0;
+  let totalContacts = 0;
+  let lastError: string | null = null;
+  let batchCount = 0;
+
+  const blocklist = getBlocklistValuesForSql();
+  const blocklistCondition = `(array_length($2::text[], 1) IS NULL OR (
+    am.artist_name IS NULL OR (
+      NOT (LOWER(TRIM(am.artist_name)) = ANY($2::text[]))
+      AND NOT (LOWER(TRIM(REGEXP_REPLACE(am.artist_name, '\\s*[→↗⟶➔›].*$', '', 'gi'))) = ANY($2::text[]))
+      AND NOT (LOWER(TRIM(am.artist_name)) LIKE 'about us%')
+      AND NOT (am.artist_name ~ '^\\d+\\s*\\/\\s*')
+    )
+  ))`;
+
+  try {
+    while (Date.now() - cronStart < CRON_TIME_LIMIT_MS) {
+      // Fetch next batch of un-enriched NEWCOMER artists
+      const artists = await query<{ artist_beatport_id: string; artist_name: string | null }>(
+        `SELECT DISTINCT ON (ls.artist_beatport_id) ls.artist_beatport_id, am.artist_name
+         FROM lead_scores ls
+         LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
+         WHERE ls.segment = $1 AND ${blocklistCondition}
+         ${WHERE_NOT_ENRICHED}
+         ORDER BY ls.artist_beatport_id
+         LIMIT ${PARALLEL_ARTISTS}`,
+        ["NEWCOMER", blocklist]
+      );
+
+      if (artists.length === 0) break; // all enriched
+
+      batchCount++;
+      console.log(`[enrich-cron] Batch ${batchCount}: processing ${artists.length} artists (${Math.round((Date.now() - cronStart) / 1000)}s elapsed)`);
+
+      // Process batch — each artist independently so one failure doesn't kill others
+      const results = await Promise.allSettled(
+        artists.map(({ artist_beatport_id }) => runEnrichmentForArtist(artist_beatport_id))
+      );
+
+      for (const result of results) {
+        if (result.status === "fulfilled") {
+          totalProcessed++;
+          totalLinks += result.value.linksAdded;
+          totalContacts += result.value.contactsAdded;
+          if (result.value.error) lastError = result.value.error;
+        } else {
+          totalProcessed++;
+          lastError = result.reason instanceof Error ? result.reason.message : String(result.reason);
+          console.error(`[enrich-cron] Artist failed:`, lastError);
+        }
+      }
+
+      console.log(`[enrich-cron] Batch ${batchCount} done: +${results.length} artists, total ${totalLinks} links, ${totalContacts} contacts`);
+    }
+
+    // Count remaining
+    const [remRow] = await query<{ count: string }>(
+      `SELECT COUNT(DISTINCT ls.artist_beatport_id)::text AS count
+       FROM lead_scores ls
+       LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
+       WHERE ls.segment = $1 AND ${blocklistCondition}
+       ${WHERE_NOT_ENRICHED}`,
+      ["NEWCOMER", blocklist]
+    );
+    const remaining = parseInt(remRow?.count ?? "0", 10);
+
+    console.log(`[enrich-cron] Done: ${totalProcessed} processed in ${batchCount} batches, ${remaining} remaining, ${Math.round((Date.now() - cronStart) / 1000)}s total`);
+
+    // Log run
+    await pool.query(
+      `INSERT INTO enrichment_runs (scope, scope_id, status, started_at, finished_at, error)
+       VALUES ('leads', 'NEWCOMER-cron', 'completed', to_timestamp($1), now(), $2)`,
+      [Math.floor(cronStart / 1000), lastError]
+    ).catch(() => {}); // don't fail on logging
+
+    return NextResponse.json({
+      ok: true,
+      source: "cron",
+      batches: batchCount,
+      processed: totalProcessed,
+      linksAdded: totalLinks,
+      contactsAdded: totalContacts,
+      remaining,
+      elapsed: `${Math.round((Date.now() - cronStart) / 1000)}s`,
+      error: lastError ?? undefined,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[enrich-cron] Fatal error:`, message);
+
+    await pool.query(
+      `INSERT INTO enrichment_runs (scope, scope_id, status, started_at, finished_at, error)
+       VALUES ('leads', 'NEWCOMER-cron', 'failed', to_timestamp($1), now(), $2)`,
+      [Math.floor(cronStart / 1000), message]
+    ).catch(() => {});
+
+    return NextResponse.json({ ok: false, error: message, processed: totalProcessed }, { status: 500 });
+  }
 }
