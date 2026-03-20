@@ -220,17 +220,19 @@ export async function POST(request: Request) {
 
 /**
  * GET handler for Vercel Cron — batch-enriches NEWCOMER artists.
- * Loops through multiple batches until time runs out (~110s safety margin from 120s maxDuration).
- * Each batch processes PARALLEL_ARTISTS in parallel. If one artist errors, others still succeed.
+ * Loops through multiple batches until time runs out.
+ * Each batch ≈ 50-60s (2 artists in parallel). We track elapsed time per batch
+ * and only start a new batch if there's enough time remaining.
  */
 export async function GET() {
-  const CRON_TIME_LIMIT_MS = 110_000; // stop 10s before maxDuration
+  const HARD_LIMIT_MS = 115_000; // absolute max before Vercel kills us (120s maxDuration)
   const cronStart = Date.now();
   let totalProcessed = 0;
   let totalLinks = 0;
   let totalContacts = 0;
   let lastError: string | null = null;
   let batchCount = 0;
+  let avgBatchMs = 60_000; // initial estimate: 60s per batch
 
   const blocklist = getBlocklistValuesForSql();
   const blocklistCondition = `(array_length($2::text[], 1) IS NULL OR (
@@ -243,7 +245,14 @@ export async function GET() {
   ))`;
 
   try {
-    while (Date.now() - cronStart < CRON_TIME_LIMIT_MS) {
+    while (true) {
+      const elapsed = Date.now() - cronStart;
+      const timeRemaining = HARD_LIMIT_MS - elapsed;
+      // Only start new batch if we have enough time (avg batch duration + 10s safety)
+      if (timeRemaining < avgBatchMs + 10_000) {
+        console.log(`[enrich-cron] Stopping: ${Math.round(timeRemaining / 1000)}s remaining, need ~${Math.round(avgBatchMs / 1000)}s for next batch`);
+        break;
+      }
       // Fetch next batch of un-enriched NEWCOMER artists
       const artists = await query<{ artist_beatport_id: string; artist_name: string | null }>(
         `SELECT DISTINCT ON (ls.artist_beatport_id) ls.artist_beatport_id, am.artist_name
@@ -259,12 +268,17 @@ export async function GET() {
       if (artists.length === 0) break; // all enriched
 
       batchCount++;
+      const batchStart = Date.now();
       console.log(`[enrich-cron] Batch ${batchCount}: processing ${artists.length} artists (${Math.round((Date.now() - cronStart) / 1000)}s elapsed)`);
 
       // Process batch — each artist independently so one failure doesn't kill others
       const results = await Promise.allSettled(
         artists.map(({ artist_beatport_id }) => runEnrichmentForArtist(artist_beatport_id))
       );
+
+      const batchDuration = Date.now() - batchStart;
+      // Update rolling average for smarter time estimation
+      avgBatchMs = batchCount === 1 ? batchDuration : Math.round((avgBatchMs + batchDuration) / 2);
 
       for (const result of results) {
         if (result.status === "fulfilled") {
@@ -279,7 +293,7 @@ export async function GET() {
         }
       }
 
-      console.log(`[enrich-cron] Batch ${batchCount} done: +${results.length} artists, total ${totalLinks} links, ${totalContacts} contacts`);
+      console.log(`[enrich-cron] Batch ${batchCount} done in ${Math.round(batchDuration / 1000)}s: +${results.length} artists, total ${totalLinks} links, ${totalContacts} contacts`);
     }
 
     // Count remaining
