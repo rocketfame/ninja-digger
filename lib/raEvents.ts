@@ -13,7 +13,7 @@ const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (
 // ---- GraphQL Queries ----
 
 const EVENTS_QUERY = `
-query GetEvents($filters: EventListingFilterInput, $pageSize: Int, $page: Int) {
+query GetEvents($filters: FilterInputDtoInput, $pageSize: Int, $page: Int) {
   eventListings(filters: $filters, pageSize: $pageSize, page: $page) {
     data {
       event {

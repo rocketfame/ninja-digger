@@ -105,8 +105,23 @@ export async function POST(request: Request) {
   }
 }
 
-// GET handler for Vercel Cron
+// GET handler for Vercel Cron — cycles through Touch 1, 2, 3
 export async function GET() {
-  const req = new Request("http://localhost", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ touchNum: 1, batchSize: 5 }) });
-  return POST(req);
+  const allResults: Array<{ touch: number; sent: number; total: number; results?: unknown[] }> = [];
+
+  for (const touchNum of [1, 2, 3]) {
+    const req = new Request("http://localhost", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ touchNum, batchSize: 5 }),
+    });
+    const resp = await POST(req);
+    const data = await resp.json();
+    allResults.push({ touch: touchNum, sent: data.sent ?? 0, total: data.total ?? 0, results: data.results });
+  }
+
+  const totalSent = allResults.reduce((s, r) => s + r.sent, 0);
+  console.log(`[ra-send-cron] Sent ${totalSent} emails: T1=${allResults[0].sent}, T2=${allResults[1].sent}, T3=${allResults[2].sent}`);
+
+  return NextResponse.json({ ok: true, source: "cron", totalSent, touches: allResults });
 }

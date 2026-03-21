@@ -62,8 +62,8 @@ export async function POST(request: Request) {
   }
 }
 
-// GET handler for Vercel Cron
+// GET handler for Vercel Cron — increased batch for faster processing
 export async function GET() {
-  const req = new Request("http://localhost", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ batchSize: 5 }) });
+  const req = new Request("http://localhost", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ batchSize: 15 }) });
   return POST(req);
 }
