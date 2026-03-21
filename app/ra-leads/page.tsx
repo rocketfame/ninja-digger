@@ -61,23 +61,23 @@ async function getRALeads(city?: string, weeks?: string) {
   }
 
   const result = await pool.query<RAPromoterRow>(`
-    SELECT DISTINCT ON (p.id)
+    SELECT
       p.id, p.name, p.ra_url,
       COALESCE(p.city, '') as city,
       COALESCE(p.country, '') as country,
       COALESCE(p.follower_count, 0) as follower_count,
-      GREATEST(1, LEAST(6, CEIL((MIN(e.event_date) OVER (PARTITION BY p.id) - CURRENT_DATE)::numeric / 7)))::int as weeks_until,
+      GREATEST(1, LEAST(6, CEIL((MIN(e.event_date) - CURRENT_DATE)::numeric / 7)))::int as weeks_until,
       COALESCE(pp.status, 'New') as status,
       (SELECT c.value FROM ra_promoter_contacts c WHERE c.promoter_id = p.id AND c.type = 'email' AND c.status != 'bounced' ORDER BY c.confidence DESC LIMIT 1) as email,
-      (SELECT COUNT(*) FROM ra_events e2 WHERE e2.promoter_id = p.id AND e2.event_date >= CURRENT_DATE)::int as event_count,
+      COUNT(DISTINCT e.id)::int as event_count,
       MIN(e.event_date)::text as nearest_event,
       (SELECT e3.name FROM ra_events e3 WHERE e3.promoter_id = p.id AND e3.event_date >= CURRENT_DATE ORDER BY e3.event_date LIMIT 1) as nearest_event_name
     FROM ra_promoters p
     JOIN ra_events e ON e.promoter_id = p.id
     LEFT JOIN ra_promoter_profiles pp ON p.id = pp.promoter_id
     WHERE ${conditions.join(" AND ")}
-    GROUP BY p.id, p.name, p.ra_url, p.city, p.country, p.follower_count, pp.status, e.event_date
-    ORDER BY p.id, e.event_date ASC
+    GROUP BY p.id, p.name, p.ra_url, p.city, p.country, p.follower_count, pp.status
+    ORDER BY MIN(e.event_date) ASC
     LIMIT 300
   `, params);
   return result.rows;
@@ -89,9 +89,11 @@ async function getStats() {
     pool.query("SELECT COUNT(DISTINCT promoter_id) as c FROM ra_promoter_contacts WHERE type = 'email' AND status != 'bounced'"),
     pool.query("SELECT city, COUNT(*) as c FROM ra_promoters WHERE city != '' GROUP BY city ORDER BY c DESC LIMIT 30"),
     pool.query(`
-      SELECT CEIL((MIN(e.event_date) - CURRENT_DATE)::numeric / 7)::int as w, COUNT(DISTINCT e.promoter_id) as c
-      FROM ra_events e WHERE e.event_date >= CURRENT_DATE AND e.promoter_id IS NOT NULL
-      GROUP BY w HAVING CEIL((MIN(e.event_date) - CURRENT_DATE)::numeric / 7)::int BETWEEN 1 AND 6
+      SELECT w, COUNT(DISTINCT promoter_id) as c FROM (
+        SELECT e.promoter_id, GREATEST(1, LEAST(6, CEIL((e.event_date - CURRENT_DATE)::numeric / 7)))::int as w
+        FROM ra_events e WHERE e.event_date >= CURRENT_DATE AND e.promoter_id IS NOT NULL
+      ) sub
+      GROUP BY w HAVING w BETWEEN 1 AND 6
       ORDER BY w
     `),
     pool.query("SELECT COUNT(*) as c FROM ra_promoter_profiles WHERE status IS NOT NULL AND status != 'New'"),
