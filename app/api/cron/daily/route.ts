@@ -11,6 +11,7 @@ import { refreshArtistMetrics } from "@/segment/normalize";
 import { refreshLeadScoresV2 } from "@/segment/score";
 import { runBptoptrackerDailyUpdate } from "@/lib/bptoptrackerDaily";
 import { syncBptoptrackerToChartEntries } from "@/lib/bptoptrackerSync";
+import { pool } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 min — discovery може тривати
@@ -32,6 +33,7 @@ export async function GET(request: Request) {
     bptoptracker?: { genres: string[]; inserted: number; skipped: number; errors: string[] };
     metricsUpdated?: number;
     scoresUpdated?: number;
+    cleanup?: { url_cache: number; enrichment_runs: number; old_chart_entries: number; bptoptracker_daily: number };
     error?: string;
   } = { ok: true };
 
@@ -71,8 +73,33 @@ export async function GET(request: Request) {
     result.metricsUpdated = metricsUpdated;
     result.scoresUpdated = scoresUpdated;
 
+    // --- DB Cleanup: видаляємо старі дані щоб не перевищити Neon 512 MB ---
+    const cleanup = { url_cache: 0, enrichment_runs: 0, old_chart_entries: 0, bptoptracker_daily: 0 };
+    try {
+      // url_cache: HTML кеш, тримаємо 2 дні
+      const c1 = await pool.query("DELETE FROM url_cache WHERE fetched_at < NOW() - INTERVAL '2 days'");
+      cleanup.url_cache = c1.rowCount ?? 0;
+
+      // enrichment_runs: логи запусків, тримаємо 7 днів
+      const c2 = await pool.query("DELETE FROM enrichment_runs WHERE started_at < NOW() - INTERVAL '7 days'");
+      cleanup.enrichment_runs = c2.rowCount ?? 0;
+
+      // chart_entries: тримаємо 8 тижнів (для розрахунку momentum_30d)
+      const c3 = await pool.query("DELETE FROM chart_entries WHERE snapshot_date < CURRENT_DATE - 56");
+      cleanup.old_chart_entries = c3.rowCount ?? 0;
+
+      // bptoptracker_daily: сирі дані, тримаємо 8 тижнів
+      const c4 = await pool.query("DELETE FROM bptoptracker_daily WHERE fetched_date < CURRENT_DATE - 56").catch(() => ({ rowCount: 0 }));
+      cleanup.bptoptracker_daily = c4.rowCount ?? 0;
+
+      result.cleanup = cleanup;
+      console.log("[cron/daily] cleanup:", cleanup);
+    } catch (cleanupErr) {
+      console.error("[cron/daily] cleanup error:", cleanupErr);
+    }
+
     if (process.env.NODE_ENV !== "test") {
-      console.log("[cron/daily] done", { ingest: result.ingest, metricsUpdated, scoresUpdated });
+      console.log("[cron/daily] done", { ingest: result.ingest, metricsUpdated, scoresUpdated, cleanup });
     }
 
     return NextResponse.json(result);
