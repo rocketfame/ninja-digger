@@ -5,7 +5,7 @@
 import { NextResponse } from "next/server";
 import { scrapeAndSaveRAEvents } from "@/lib/raEvents";
 
-export const maxDuration = 120;
+export const maxDuration = 300; // 5 min for 50 pages of RA events
 
 export async function POST() {
   try {

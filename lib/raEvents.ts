@@ -238,7 +238,7 @@ export async function scrapeAndSaveRAEvents(): Promise<{
   let totalEvents = 0;
   let totalPromoters = 0;
   let page = 1;
-  const maxPages = 20; // Cap at ~400 events
+  const maxPages = 50; // ~1000 events, covers full 6 weeks
 
   while (page <= maxPages) {
     const { events, total } = await fetchRAEvents(startDate, endDate, page, 20);
