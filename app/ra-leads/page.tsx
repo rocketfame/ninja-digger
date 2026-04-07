@@ -6,6 +6,7 @@
 import Link from "next/link";
 import { pool } from "@/lib/db";
 import { NavBar } from "@/app/components/NavBar";
+import { BlacklistForm } from "@/app/components/BlacklistForm";
 
 export const dynamic = "force-dynamic";
 
@@ -187,6 +188,13 @@ export default async function RALeadsPage({
                 </Link>
               );
             })}
+          </div>
+        )}
+
+        {/* Blacklist */}
+        {!error && (
+          <div className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
+            <BlacklistForm />
           </div>
         )}
 

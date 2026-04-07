@@ -43,10 +43,11 @@ export async function POST(request: Request) {
         (SELECT e.name FROM ra_events e WHERE e.promoter_id = p.id AND e.event_date >= CURRENT_DATE ORDER BY e.event_date LIMIT 1) as event_name,
         p.city
       FROM ra_promoters p
-      JOIN ra_promoter_contacts c ON p.id = c.promoter_id AND c.type = 'email' AND c.status != 'bounced' AND c.confidence >= 0.60
+      JOIN ra_promoter_contacts c ON p.id = c.promoter_id AND c.type = 'email' AND c.status NOT IN ('bounced', 'blocked') AND c.confidence >= 0.60
       LEFT JOIN ra_promoter_profiles pp ON p.id = pp.promoter_id
       WHERE (pp.status ${touchNum === 1 ? "IS NULL OR pp.status = 'New'" : `= '${fromStatus}'`})
         ${minDays > 0 ? `AND pp.updated_at < now() - interval '${minDays} days'` : ""}
+        AND LOWER(c.value) NOT IN (SELECT email FROM email_blacklist)
       ORDER BY p.id, c.confidence DESC
       LIMIT $1
     `, [batchSize]);
@@ -71,7 +72,10 @@ export async function POST(request: Request) {
 
       // Get all emails for CC
       const allEmails = await pool.query<{ value: string }>(
-        `SELECT value FROM ra_promoter_contacts WHERE promoter_id = $1 AND type = 'email' AND status != 'bounced' AND confidence >= 0.60 ORDER BY confidence DESC`,
+        `SELECT value FROM ra_promoter_contacts
+         WHERE promoter_id = $1 AND type = 'email' AND status NOT IN ('bounced', 'blocked') AND confidence >= 0.60
+           AND LOWER(value) NOT IN (SELECT email FROM email_blacklist)
+         ORDER BY confidence DESC`,
         [lead.promoter_id]
       );
       const primaryEmail = allEmails.rows[0]?.value || lead.email;

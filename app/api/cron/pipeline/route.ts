@@ -33,9 +33,10 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
     FROM artist_contacts ac
     JOIN artist_metrics am ON ac.artist_beatport_id = am.artist_beatport_id
     LEFT JOIN lead_profiles lp ON ac.artist_beatport_id = lp.artist_beatport_id
-    WHERE ac.type = 'email' AND ac.confidence >= 0.65 AND (ac.status IS NULL OR ac.status != 'bounced')
+    WHERE ac.type = 'email' AND ac.confidence >= 0.65 AND (ac.status IS NULL OR ac.status NOT IN ('bounced', 'blocked'))
       AND (lp.status ${touchNum === 1 ? "IS NULL OR lp.status = 'New'" : `= '${fromStatus}'`})
       ${minDays > 0 ? `AND lp.updated_at < now() - interval '${minDays} days'` : ""}
+      AND LOWER(ac.value) NOT IN (SELECT email FROM email_blacklist)
     ORDER BY ac.artist_beatport_id, ac.confidence DESC
     LIMIT 5
   `);
@@ -46,7 +47,10 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
     const v = hashId(lead.id) % T1_SUBJECTS.length;
     try {
       const allEmails = await pool.query<{ value: string }>(
-        `SELECT value FROM artist_contacts WHERE artist_beatport_id = $1 AND type = 'email' AND confidence >= 0.65 AND (status IS NULL OR status != 'bounced') ORDER BY confidence DESC`,
+        `SELECT value FROM artist_contacts WHERE artist_beatport_id = $1 AND type = 'email' AND confidence >= 0.65
+           AND (status IS NULL OR status NOT IN ('bounced', 'blocked'))
+           AND LOWER(value) NOT IN (SELECT email FROM email_blacklist)
+         ORDER BY confidence DESC`,
         [lead.id]
       );
       await transporter.sendMail({
