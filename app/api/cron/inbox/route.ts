@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import { ImapFlow } from "imapflow";
 import { pool } from "@/lib/db";
 import { invalidateContactEmail } from "@/lib/emailHygiene";
+import { sendTelegramMessage, tgEscape } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -18,6 +19,9 @@ export const maxDuration = 120;
 const LOOKBACK_DAYS = 3;
 const BOUNCE_FROM_RE = /^(mailer-daemon|postmaster|mail delivery (subsystem|system))/i;
 const EMAIL_IN_BODY_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+/** Auto-responders and system mail — not a real human reply. */
+const AUTO_REPLY_SUBJECT_RE = /^(automatic reply|auto.?reply|autosvar|out of office|ooo[:\s]|abwesenheit|réponse automatique|respuesta automática|delivery status|undeliverable|vacation)/i;
+const TECHNICAL_SENDER_RE = /(no-?reply|do-?not-?reply|noreply|notifications?@|newsletter@|updates@|support@.*\.(zendesk|freshdesk|intercom)\.|calendar-notification|drive-shares|@docs\.google\.com|@calendar\.google\.com)/i;
 /** Statuses that a reply upgrades to Responded. */
 const REPLYABLE = ["Attempt 1", "Attempt 2", "No Response", "Contacted", "Cold"];
 
@@ -40,7 +44,7 @@ export async function GET(request: Request) {
 
   let bouncedMarked = 0;
   let replies = 0;
-  const replyFrom: string[] = [];
+  const replyFrom: { addr: string; subject: string }[] = [];
   const bounceUids: number[] = [];
 
   try {
@@ -49,15 +53,22 @@ export async function GET(request: Request) {
     try {
       const since = new Date(Date.now() - LOOKBACK_DAYS * 86400e3);
 
-      // Pass 1: envelopes only — split into bounce notifications and potential replies
+      // Pass 1: envelopes only — split into bounce notifications and potential replies.
+      // Auto-responders and technical senders are dropped here: only mail that can
+      // be a real human reply goes into the match list.
       for await (const msg of client.fetch({ since }, { envelope: true, uid: true })) {
         const fromAddr = msg.envelope?.from?.[0]?.address?.toLowerCase() ?? "";
         const fromName = msg.envelope?.from?.[0]?.name ?? "";
+        const subject = msg.envelope?.subject ?? "";
         if (!fromAddr) continue;
         if (BOUNCE_FROM_RE.test(fromAddr) || BOUNCE_FROM_RE.test(fromName)) {
           bounceUids.push(msg.uid);
-        } else if (fromAddr !== user.toLowerCase()) {
-          replyFrom.push(fromAddr);
+        } else if (
+          fromAddr !== user.toLowerCase() &&
+          !TECHNICAL_SENDER_RE.test(fromAddr) &&
+          !AUTO_REPLY_SUBJECT_RE.test(subject.trim())
+        ) {
+          replyFrom.push({ addr: fromAddr, subject });
         }
       }
 
@@ -88,21 +99,25 @@ export async function GET(request: Request) {
 
   // Reply detection: match sender addresses against known lead contacts
   if (replyFrom.length > 0) {
-    const unique = [...new Set(replyFrom)];
-    const matched = await pool.query<{ artist_beatport_id: string; value: string }>(
-      `SELECT DISTINCT ac.artist_beatport_id, ac.value
+    const subjectByAddr = new Map(replyFrom.map((r) => [r.addr, r.subject]));
+    const unique = [...subjectByAddr.keys()];
+    const matched = await pool.query<{ artist_beatport_id: string; value: string; artist_name: string | null }>(
+      `SELECT DISTINCT ac.artist_beatport_id, ac.value, am.artist_name
        FROM artist_contacts ac
        JOIN lead_profiles lp ON lp.artist_beatport_id = ac.artist_beatport_id
+       LEFT JOIN artist_metrics am ON am.artist_beatport_id = ac.artist_beatport_id
        WHERE ac.type = 'email' AND LOWER(TRIM(ac.value)) = ANY($1::text[])
          AND lp.status = ANY($2::text[])`,
       [unique, REPLYABLE]
     );
     for (const row of matched.rows) {
-      await pool.query(
+      // The status transition is the dedup: once Responded, this lead can't match again
+      const updated = await pool.query(
         `UPDATE lead_profiles SET status = 'Responded', updated_at = now()
          WHERE artist_beatport_id = $1 AND status = ANY($2::text[])`,
         [row.artist_beatport_id, REPLYABLE]
       );
+      if ((updated.rowCount ?? 0) === 0) continue;
       await pool.query(
         `INSERT INTO outreach_events (artist_beatport_id, template_id, channel, contact_value, sent_at, outcome)
          VALUES ($1, 'reply', 'email', $2, now(), 'replied')`,
@@ -110,6 +125,15 @@ export async function GET(request: Request) {
       ).catch(() => {});
       replies++;
       console.log(`[cron/inbox] reply detected from ${row.value} (artist ${row.artist_beatport_id})`);
+      const name = row.artist_name ?? row.artist_beatport_id;
+      const subject = subjectByAddr.get(row.value.toLowerCase().trim()) ?? "";
+      await sendTelegramMessage(
+        `🎉 <b>Відповідь від ліда!</b>\n\n` +
+        `🎧 <b>${tgEscape(name)}</b>\n` +
+        `📧 ${tgEscape(row.value)}\n` +
+        (subject ? `✉️ ${tgEscape(subject)}\n` : "") +
+        `\n<a href="https://ninja-digger.vercel.app/artist/${encodeURIComponent(row.artist_beatport_id)}">Відкрити картку ліда</a>`
+      );
     }
   }
 
