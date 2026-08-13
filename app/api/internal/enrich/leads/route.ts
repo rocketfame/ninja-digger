@@ -258,17 +258,24 @@ export async function GET() {
         console.log(`[enrich-cron] Stopping: ${Math.round(timeRemaining / 1000)}s remaining, need ~${Math.round(avgBatchMs / 1000)}s for next batch`);
         break;
       }
-      // Fetch next batch of un-enriched NEWCOMER artists
-      const artists = await query<{ artist_beatport_id: string; artist_name: string | null }>(
-        `SELECT DISTINCT ON (ls.artist_beatport_id) ls.artist_beatport_id, am.artist_name
-         FROM lead_scores ls
-         LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
-         WHERE ls.segment = $1 AND ${blocklistCondition}
-         ${WHERE_NOT_ENRICHED}
-         ORDER BY ls.artist_beatport_id
-         LIMIT ${PARALLEL_ARTISTS}`,
-        ["NEWCOMER", blocklist]
-      );
+      // Fetch next batch of un-enriched artists: hottest segments first, freshest first
+      let artists: { artist_beatport_id: string; artist_name: string | null }[] = [];
+      for (const seg of ["NEWCOMER", "NEW_ENTRY", "FAST_GROWING"]) {
+        artists = await query<{ artist_beatport_id: string; artist_name: string | null }>(
+          `SELECT t.artist_beatport_id, t.artist_name FROM (
+             SELECT DISTINCT ON (ls.artist_beatport_id) ls.artist_beatport_id, am.artist_name, am.first_seen
+             FROM lead_scores ls
+             LEFT JOIN artist_metrics am ON am.artist_beatport_id = ls.artist_beatport_id
+             WHERE ls.segment = $1 AND ${blocklistCondition}
+             ${WHERE_NOT_ENRICHED}
+             ORDER BY ls.artist_beatport_id
+           ) t
+           ORDER BY t.first_seen DESC NULLS LAST
+           LIMIT ${PARALLEL_ARTISTS}`,
+          [seg, blocklist]
+        );
+        if (artists.length > 0) break;
+      }
 
       if (artists.length === 0) break; // all enriched
 

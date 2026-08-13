@@ -39,17 +39,27 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
 
   const transporter = nodemailer.createTransport({ service: "gmail", auth: { user, pass } });
 
+  // Touch 1 only for artists still in charts recently — a "congrats on your chart entry"
+  // months after the fact reads as spam. Follow-ups (2/3) go regardless.
   const leads = await pool.query<{ id: string; name: string; email: string }>(`
-    SELECT DISTINCT ON (ac.artist_beatport_id)
-      ac.artist_beatport_id as id, am.artist_name as name, ac.value as email
-    FROM artist_contacts ac
-    JOIN artist_metrics am ON ac.artist_beatport_id = am.artist_beatport_id
-    LEFT JOIN lead_profiles lp ON ac.artist_beatport_id = lp.artist_beatport_id
-    WHERE ac.type = 'email' AND ac.confidence >= 0.65 AND (ac.status IS NULL OR ac.status = 'ok')
-      AND (lp.status ${touchNum === 1 ? "IS NULL OR lp.status = 'New'" : `= '${fromStatus}'`})
-      ${minDays > 0 ? `AND lp.updated_at < now() - interval '${minDays} days'` : ""}
-      AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)
-    ORDER BY ac.artist_beatport_id, ac.confidence DESC
+    SELECT t.id, t.name, t.email FROM (
+      SELECT DISTINCT ON (ac.artist_beatport_id)
+        ac.artist_beatport_id as id, am.artist_name as name, ac.value as email,
+        ls.segment, am.first_seen
+      FROM artist_contacts ac
+      JOIN artist_metrics am ON ac.artist_beatport_id = am.artist_beatport_id
+      LEFT JOIN lead_scores ls ON ls.artist_beatport_id = ac.artist_beatport_id
+      LEFT JOIN lead_profiles lp ON ac.artist_beatport_id = lp.artist_beatport_id
+      WHERE ac.type = 'email' AND ac.confidence >= 0.65 AND (ac.status IS NULL OR ac.status = 'ok')
+        AND (lp.status ${touchNum === 1 ? "IS NULL OR lp.status = 'New'" : `= '${fromStatus}'`})
+        ${minDays > 0 ? `AND lp.updated_at < now() - interval '${minDays} days'` : ""}
+        ${touchNum === 1 ? "AND am.last_seen >= current_date - 14" : ""}
+        AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)
+      ORDER BY ac.artist_beatport_id, ac.confidence DESC
+    ) t
+    ORDER BY CASE t.segment
+      WHEN 'NEWCOMER' THEN 0 WHEN 'NEW_ENTRY' THEN 1 WHEN 'FAST_GROWING' THEN 2 ELSE 3 END,
+      t.first_seen DESC NULLS LAST
     LIMIT 5
   `);
 
