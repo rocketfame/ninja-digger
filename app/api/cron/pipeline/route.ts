@@ -133,6 +133,14 @@ export async function GET(request: Request) {
   const rand = Math.random();
   const actions: string[] = [];
 
+  // Pause flag managed from the Telegram bot (/pause, /resume)
+  const paused = await pool.query<{ value: string }>(
+    `SELECT value FROM app_settings WHERE key = 'outreach_paused'`
+  ).then((r) => r.rows[0]?.value === "1").catch(() => false);
+  if (paused) {
+    return NextResponse.json({ ok: true, hour, actions: ["paused"], ts: new Date().toISOString() });
+  }
+
   // Beatport outreach: 60% chance, skip night
   if (hour >= 6 && hour <= 21 && rand < 0.65) {
     const t1 = await sendBeatportBatch(1, "New", "Attempt 1", 0);

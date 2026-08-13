@@ -26,6 +26,8 @@ const TECHNICAL_SENDER_RE = /(no-?reply|do-?not-?reply|noreply|notifications?@|n
 /** Statuses that a reply upgrades to Responded. */
 const REPLYABLE = ["Attempt 1", "Attempt 2", "No Response", "Contacted", "Cold"];
 const REPLY_EXCERPT_CHARS = 700;
+/** Opt-out / rejection phrasing → lead is closed and email is blacklisted. */
+const OPT_OUT_RE = /(not interested|no,? thanks?|not for me|stop (emailing|contacting|sending)|unsubscribe|remove me|take me off|don'?t (contact|email|write)|no longer interested|leave me alone|не цікаво|не интересно|nicht interessiert|kein interesse|no me interesa|pas intéressé)/i;
 
 async function downloadText(client: ImapFlow, uid: number): Promise<string | null> {
   // Part "1" is the first MIME part (usually text/plain); fall back to full text
@@ -152,6 +154,25 @@ export async function GET(request: Request) {
           const subject = subjectByAddr.get(addrKey) ?? "";
           const uid = uidByAddr.get(addrKey);
           const excerpt = uid ? await downloadText(client, uid) : null;
+
+          // Opt-out: close the lead, blacklist the email everywhere, notify differently
+          if (excerpt && OPT_OUT_RE.test(excerpt)) {
+            await pool.query(
+              `UPDATE lead_profiles SET status = 'Not Interested', updated_at = now() WHERE artist_beatport_id = $1`,
+              [row.artist_beatport_id]
+            );
+            await pool.query(
+              `INSERT INTO email_blacklist (email, reason) VALUES (LOWER(TRIM($1)), 'opt-out (auto-detected)')
+               ON CONFLICT (email) DO NOTHING`,
+              [row.value]
+            ).catch(() => {});
+            await sendTelegramMessage(
+              `🚫 <b>Лід відмовився</b>\n\n🎧 <b>${tgEscape(name)}</b>\n📧 ${tgEscape(row.value)}\n` +
+              (excerpt ? `\n<blockquote>${tgEscape(excerpt.slice(0, 300))}</blockquote>\n` : "") +
+              `\nСтатус → Not Interested, email у blacklist — більше не турбуємо.`
+            );
+            continue;
+          }
 
           const tgMessageId = await sendTelegramMessage(
             `🎉 <b>Відповідь від ліда!</b>\n\n` +
