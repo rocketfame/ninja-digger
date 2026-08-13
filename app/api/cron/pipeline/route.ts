@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import * as nodemailer from "nodemailer";
+import { validateEmailForOutreach, invalidateContactEmail, isHardBounceError } from "@/lib/emailHygiene";
 
 export const maxDuration = 300; // 5 min for natural-paced sends
 
@@ -76,13 +77,35 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
          ORDER BY confidence DESC`,
         [lead.id]
       );
-      await transporter.sendMail({
-        from: `"Max from PromoSound" <${user}>`,
-        to: allEmails.rows[0]?.value || lead.email,
-        cc: allEmails.rows.slice(1).map(r => r.value).join(", ") || undefined,
-        subject: touch.subjects[v],
-        text: touch.bodies[v](lead.name) + SIGNATURE,
-      });
+      // Pre-send hygiene: validate every candidate; dead/junk addresses are
+      // invalidated in DB immediately and never retried
+      const valid: string[] = [];
+      for (const { value } of allEmails.rows) {
+        const check = await validateEmailForOutreach(value);
+        if (check.ok) valid.push(value);
+        else await invalidateContactEmail(value, check.reason);
+      }
+      if (valid.length === 0) continue; // no deliverable address — lead skipped, no status change
+      const primary = valid[0];
+      try {
+        await transporter.sendMail({
+          from: `"Max from PromoSound" <${user}>`,
+          to: primary,
+          cc: valid.length > 1 ? valid.slice(1).join(", ") : undefined,
+          subject: touch.subjects[v],
+          text: touch.bodies[v](lead.name) + SIGNATURE,
+        });
+      } catch (sendErr) {
+        if (isHardBounceError(sendErr)) {
+          await invalidateContactEmail(primary, "SMTP hard bounce");
+          await pool.query(
+            `INSERT INTO outreach_events (artist_beatport_id, template_id, channel, contact_value, sent_at, outcome)
+             VALUES ($1, $2, 'email', $3, now(), 'bounced')`,
+            [lead.id, `email_touch_${touchNum}`, primary]
+          ).catch(() => {});
+        }
+        throw sendErr;
+      }
       await pool.query(
         `INSERT INTO lead_profiles (artist_beatport_id, status, updated_at) VALUES ($1, $2, now())
          ON CONFLICT (artist_beatport_id) DO UPDATE SET status = $2, updated_at = now()`,
@@ -91,10 +114,12 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
       await pool.query(
         `INSERT INTO outreach_events (artist_beatport_id, template_id, channel, contact_value, sent_at, outcome)
          VALUES ($1, $2, 'email', $3, now(), $4)`,
-        [lead.id, `email_touch_${touchNum}`, lead.email, toStatus]
+        [lead.id, `email_touch_${touchNum}`, primary, toStatus]
       ).catch((e) => console.error("[cron/pipeline] outreach_events insert failed:", e instanceof Error ? e.message : e));
       sent++;
-    } catch { /* skip */ }
+    } catch (e) {
+      console.error(`[cron/pipeline] send failed for ${lead.id}:`, e instanceof Error ? e.message : e);
+    }
   }
   return sent;
 }
