@@ -144,10 +144,15 @@ export async function POST(request: Request) {
     let linksAdded = 0;
     let contactsAdded = 0;
     let lastError: string | null = null;
-    const results = await Promise.all(
+    const results = await Promise.allSettled(
       artists.map(({ artist_beatport_id }) => runEnrichmentForArtist(artist_beatport_id))
     );
-    for (const result of results) {
+    for (const settled of results) {
+      if (settled.status === "rejected") {
+        lastError = settled.reason instanceof Error ? settled.reason.message : String(settled.reason);
+        continue;
+      }
+      const result = settled.value;
       linksAdded += result.linksAdded;
       contactsAdded += result.contactsAdded;
       if (result.error) lastError = result.error;

@@ -35,7 +35,10 @@ export async function POST(request: Request) {
       `UPDATE artist_contacts SET status = 'blocked'
        WHERE LOWER(value) = $1 AND type = 'email' AND status != 'blocked'`,
       [email]
-    ).catch(() => ({ rowCount: 0 }));
+    ).catch((e) => {
+      console.error("[blacklist] artist_contacts update failed:", e instanceof Error ? e.message : e);
+      return { rowCount: 0 };
+    });
 
     return NextResponse.json({
       ok: true,
@@ -77,7 +80,9 @@ export async function DELETE(request: Request) {
       `UPDATE artist_contacts SET status = 'ok'
        WHERE LOWER(value) = $1 AND type = 'email' AND status = 'blocked'`,
       [email]
-    ).catch(() => {});
+    ).catch((e) => {
+      console.error("[blacklist] artist_contacts restore failed:", e instanceof Error ? e.message : e);
+    });
 
     return NextResponse.json({ ok: true, removed: email });
   } catch (e) {

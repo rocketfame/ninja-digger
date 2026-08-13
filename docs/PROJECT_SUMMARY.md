@@ -1,5 +1,7 @@
 # Ninja Digger — Детальний опис проєкту
 
+> **Оновлення 2026-08-13:** (1) Причина 3.5-місячної зупинки ingestion — переповнення Neon 512MB через баг cleanup (`fetched_date` замість `snapshot_date`); виправлено, дані бекфілнуто за 46 днів (`scripts/backfill-bptt.mjs`). (2) Прямий скрапінг beatport.com вимкнено (Cloudflare 403) — джерело тільки BPTT; вмикається `ENABLE_BEATPORT_DIRECT=1`. (3) Слаги жанрів: `r-b`→`rb`, додано `dj-edits`, `latin-electronic` (47 жанрів). (4) Enrichment: додано крок MusicBrainz url-rels (безкоштовні канонічні лінки). (5) Міграція 042: unique constraint контактів на LOWER(TRIM(value)), CHECK на status. (6) Outreach: фільтр email_blacklist + status='ok' у всіх send-запитах, auth через CRON_SECRET.
+
 > Документ для передачі контексту в Claude або інший AI. Описує стек, архітектуру та бізнес-логіку сервісу.
 
 ---

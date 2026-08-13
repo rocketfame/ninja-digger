@@ -88,6 +88,10 @@ function getTransporter() {
 }
 
 export async function POST(request: Request) {
+  const secret = process.env.CRON_SECRET;
+  if (secret && request.headers.get("authorization") !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const body = await request.json().catch(() => ({}));
     const touchNum = Math.min(Math.max(body.touchNum || 1, 1), 3);
@@ -113,6 +117,8 @@ export async function POST(request: Request) {
         FROM artist_contacts ac
         JOIN artist_metrics am ON ac.artist_beatport_id = am.artist_beatport_id
         WHERE ac.artist_beatport_id = $1 AND ac.type = 'email' AND ac.confidence >= 0.65
+          AND (ac.status IS NULL OR ac.status = 'ok')
+          AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)
         ORDER BY ac.artist_beatport_id, ac.confidence DESC
       `;
       params = [specificArtistId];
@@ -124,6 +130,8 @@ export async function POST(request: Request) {
         JOIN artist_metrics am ON ac.artist_beatport_id = am.artist_beatport_id
         LEFT JOIN lead_profiles lp ON ac.artist_beatport_id = lp.artist_beatport_id
         WHERE ac.type = 'email' AND ac.confidence >= 0.65
+          AND (ac.status IS NULL OR ac.status = 'ok')
+          AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)
           AND (lp.status IS NULL OR lp.status = $1)
         ORDER BY ac.artist_beatport_id, ac.confidence DESC
         LIMIT $2
@@ -150,7 +158,11 @@ export async function POST(request: Request) {
 
       // Get ALL valid emails for this artist (TO + CC)
       const allEmails = await pool.query<{ value: string }>(
-        `SELECT value FROM artist_contacts WHERE artist_beatport_id = $1 AND type = 'email' AND confidence >= 0.65 AND (status IS NULL OR status != 'bounced') ORDER BY confidence DESC`,
+        `SELECT value FROM artist_contacts
+         WHERE artist_beatport_id = $1 AND type = 'email' AND confidence >= 0.65
+           AND (status IS NULL OR status = 'ok')
+           AND LOWER(value) NOT IN (SELECT LOWER(email) FROM email_blacklist)
+         ORDER BY confidence DESC`,
         [lead.id]
       );
       const primaryEmail = allEmails.rows[0]?.value || lead.email;

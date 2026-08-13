@@ -70,6 +70,8 @@ async function sendBatch(touchNum: number, fromStatus: string, toStatus: string,
     JOIN artist_metrics am ON ac.artist_beatport_id = am.artist_beatport_id
     LEFT JOIN lead_profiles lp ON ac.artist_beatport_id = lp.artist_beatport_id
     WHERE ac.type = 'email' AND ac.confidence >= 0.65
+      AND (ac.status IS NULL OR ac.status = 'ok')
+      AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)
       AND (lp.status ${touchNum === 1 ? "IS NULL OR lp.status = 'New'" : `= '${fromStatus}'`})
       ${minAgeDays > 0 ? `AND lp.updated_at < now() - interval '${minAgeDays} days'` : ""}
     ORDER BY ac.artist_beatport_id, ac.confidence DESC
@@ -104,7 +106,11 @@ async function sendBatch(touchNum: number, fromStatus: string, toStatus: string,
   return { touch: touchNum, sent, total: leads.rows.length };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const secret = process.env.CRON_SECRET;
+  if (secret && request.headers.get("authorization") !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const results = await Promise.all([
       sendBatch(1, "New", "Attempt 1", 0),         // Touch 1: нові ліди

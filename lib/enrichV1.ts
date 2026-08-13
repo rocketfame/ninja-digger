@@ -835,6 +835,60 @@ function raPageMatchesArtist(html: string, name: string, slug: string, pageUrl: 
 export type EnrichLog = (msg: string) => void;
 
 /** Discover links: спочатку Resident Advisor — заходимо на сторінку артиста, витягуємо всі соцпосилання з неї; далі з усіх посилань збираємо email. Якщо RA не знайшли — fallback пошук по типах. */
+/** Map a MusicBrainz URL relation to our link type. */
+function linkTypeFromMusicBrainzUrl(relType: string, url: string): DiscoveredLink["type"] | null {
+  const u = url.toLowerCase();
+  if (u.includes("soundcloud.com")) return "soundcloud";
+  if (u.includes("instagram.com")) return "instagram";
+  if (u.includes("bandcamp.com")) return "bandcamp";
+  if (u.includes("mixcloud.com")) return "mixcloud";
+  if (u.includes("facebook.com")) return "facebook";
+  if (u.includes("twitter.com") || u.includes("//x.com")) return "twitter";
+  if (u.includes("linktr.ee")) return "linktree";
+  if (u.includes("ra.co/") || u.includes("residentadvisor.net")) return "resident_advisor";
+  if (relType === "official homepage") return "website";
+  return null;
+}
+
+/**
+ * MusicBrainz: free, keyless, ToS-clean source of canonical artist links (url-rels).
+ * Two requests per artist max; requires a descriptive User-Agent per MB guidelines.
+ */
+async function fetchMusicBrainzLinks(artistName: string, log: EnrichLog): Promise<DiscoveredLink[]> {
+  const MB_HEADERS = { "User-Agent": "NinjaDigger/1.0 (lead research; contact via site)", Accept: "application/json" };
+  try {
+    const searchUrl = `https://musicbrainz.org/ws/2/artist/?query=artist:${encodeURIComponent(`"${artistName}"`)}&fmt=json&limit=3`;
+    const searchRes = await fetch(searchUrl, { headers: MB_HEADERS });
+    if (!searchRes.ok) return [];
+    const search = (await searchRes.json()) as { artists?: { id: string; name: string; score?: number }[] };
+    const nameLower = artistName.trim().toLowerCase();
+    const match = (search.artists ?? []).find(
+      (a) => (a.score ?? 0) >= 90 && a.name.trim().toLowerCase() === nameLower
+    );
+    if (!match) {
+      log(`[mb] Немає впевненого збігу для "${artistName}"`);
+      return [];
+    }
+    await delay(1100); // MB rate limit: 1 req/s
+    const relRes = await fetch(`https://musicbrainz.org/ws/2/artist/${match.id}?inc=url-rels&fmt=json`, { headers: MB_HEADERS });
+    if (!relRes.ok) return [];
+    const rel = (await relRes.json()) as { relations?: { type: string; url?: { resource?: string } }[] };
+    const found: DiscoveredLink[] = [];
+    for (const r of rel.relations ?? []) {
+      const url = r.url?.resource;
+      if (!url) continue;
+      const type = linkTypeFromMusicBrainzUrl(r.type, url);
+      if (!type || found.some((l) => l.type === type)) continue;
+      found.push({ type, url, confidence: 0.85, source: "musicbrainz" });
+    }
+    log(`[mb] MusicBrainz дав ${found.length} посилань: ${found.map((l) => l.type).join(", ")}`);
+    return found;
+  } catch (e) {
+    log(`[mb] помилка: ${e instanceof Error ? e.message : String(e)}`);
+    return [];
+  }
+}
+
 export async function discoverLinks(
   artistName: string,
   artistSlug: string | null,
@@ -989,6 +1043,48 @@ export async function discoverLinks(
     }
   } else {
     log(`[RA] Сторінку RA не знайдено (raPageUrl=${raPageUrl ? "ok" : "null"})`);
+  }
+
+  // Крок 1d: MusicBrainz url-rels — безкоштовні канонічні посилання за точним ім'ям.
+  // Знайдені лінки скорочують direct probing і дають сторінки для email-екстракції.
+  if (!isTimedOut()) {
+    const mbLinks = await fetchMusicBrainzLinks(name, log);
+    for (const link of mbLinks) {
+      const existing = hasLink(link.type);
+      if (!existing) links.push(link);
+      else if (link.confidence > existing.confidence) {
+        existing.url = link.url;
+        existing.confidence = link.confidence;
+        existing.source = link.source;
+      }
+    }
+    for (const link of mbLinks) {
+      if (isTimedOut() || hasEmail()) break;
+      if (link.type === "instagram" || link.type === "facebook" || link.type === "twitter") continue;
+      if (link.type === "soundcloud") {
+        const scDesc = await fetchSoundCloudDescription(link.url, log);
+        if (scDesc) {
+          const conf = EMAIL_CONFIDENCE.soundcloud ?? { mailto: 0.8, plain: 0.8 };
+          collectContactsFromPages(contacts, link.url, scDesc, {
+            confidenceMailto: conf.mailto,
+            confidencePlain: conf.plain,
+            maxPerPage: EMAIL_MAX_PER_PAGE,
+            artistName: name,
+          });
+        }
+        continue;
+      }
+      const html = await fetchWithCache(link.url);
+      if (!html) continue;
+      const conf = EMAIL_CONFIDENCE[link.type] ?? { mailto: 0.7, plain: 0.7 };
+      collectContactsFromPages(contacts, link.url, html, {
+        confidenceMailto: conf.mailto,
+        confidencePlain: conf.plain,
+        maxPerPage: EMAIL_MAX_PER_PAGE,
+        artistName: name,
+      });
+    }
+    log(`[mb] Після MusicBrainz: links=${links.length}, contacts=${contacts.length}`);
   }
 
   // Fallback: якщо через RA нічого не знайшли або типів не вистачає — пошук по кожному типу.
@@ -1317,7 +1413,7 @@ export async function runEnrichmentForArtist(
       await pool.query(
         `INSERT INTO artist_contacts (artist_beatport_id, type, value, source_url, confidence, status, email_type, quality_score, source_context)
          VALUES ($1, $2, $3, $4, $5, 'ok', $6, $7, $8)
-         ON CONFLICT (artist_beatport_id, type, value) DO UPDATE SET
+         ON CONFLICT (artist_beatport_id, type, LOWER(TRIM(value))) DO UPDATE SET
            source_url = COALESCE(EXCLUDED.source_url, artist_contacts.source_url),
            confidence = GREATEST(artist_contacts.confidence, EXCLUDED.confidence),
            email_type = EXCLUDED.email_type,

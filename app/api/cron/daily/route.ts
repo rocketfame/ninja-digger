@@ -38,7 +38,9 @@ export async function GET(request: Request) {
   } = { ok: true };
 
   try {
-    if (isSunday) {
+    // Пряме скрапінгування beatport.com вимкнено: Cloudflare віддає 403, а джерело
+    // чартів за правилами проєкту — BP Top Tracker. Увімкнути можна через env.
+    if (isSunday && process.env.ENABLE_BEATPORT_DIRECT === "1") {
       const discovery = await runBeatportDiscovery();
       result.discovery = {
         genresFetched: discovery.genresFetched,
@@ -50,12 +52,14 @@ export async function GET(request: Request) {
       }
     }
 
-    const ingestResult = await runIngest("beatport", chartDate);
-    result.ingest = {
-      fetched: ingestResult.fetched,
-      inserted: ingestResult.inserted,
-      skipped: ingestResult.skipped,
-    };
+    if (process.env.ENABLE_BEATPORT_DIRECT === "1") {
+      const ingestResult = await runIngest("beatport", chartDate);
+      result.ingest = {
+        fetched: ingestResult.fetched,
+        inserted: ingestResult.inserted,
+        skipped: ingestResult.skipped,
+      };
+    }
 
     const bpt = await runBptoptrackerDailyUpdate();
     if (bpt.genres.length > 0) {
@@ -89,7 +93,7 @@ export async function GET(request: Request) {
       cleanup.old_chart_entries = c3.rowCount ?? 0;
 
       // bptoptracker_daily: сирі дані, тримаємо 8 тижнів
-      const c4 = await pool.query("DELETE FROM bptoptracker_daily WHERE fetched_date < CURRENT_DATE - 56").catch(() => ({ rowCount: 0 }));
+      const c4 = await pool.query("DELETE FROM bptoptracker_daily WHERE snapshot_date < CURRENT_DATE - 56");
       cleanup.bptoptracker_daily = c4.rowCount ?? 0;
 
       result.cleanup = cleanup;

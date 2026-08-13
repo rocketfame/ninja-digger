@@ -160,6 +160,12 @@ function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
       "Не знайдено жодного валідного рядка чарту. Можливо сторінка логіну або змінилась структура сайту."
     );
   }
+  // Charts have 100 entries; a tiny row count means a selector fell through to garbage
+  if (rows.length < 10) {
+    throw new Error(
+      `Парсер повернув лише ${rows.length} рядків для ${pageUrl} — ймовірно змінилась структура сайту.`
+    );
+  }
   return rows;
 }
 
