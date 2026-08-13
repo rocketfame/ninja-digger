@@ -25,7 +25,8 @@ async function domainAcceptsMail(domain: string): Promise<boolean> {
   let ok = false;
   try {
     const mx = await dns.resolveMx(key);
-    ok = mx.length > 0;
+    // RFC 7505 Null MX ("." / empty exchange) = domain explicitly refuses mail
+    ok = mx.some((r) => r.exchange && r.exchange !== "." && r.exchange !== "");
   } catch {
     // RFC 5321: fall back to A record when no MX exists
     try {

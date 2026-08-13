@@ -74,7 +74,9 @@ export async function GET(request: Request) {
 
   let bouncedMarked = 0;
   let replies = 0;
+  let snoozed = 0;
   const replyFrom: { addr: string; subject: string; uid: number }[] = [];
+  const autoReplyAddrs: string[] = [];
   const bounceUids: number[] = [];
 
   try {
@@ -92,13 +94,29 @@ export async function GET(request: Request) {
         if (!fromAddr) continue;
         if (BOUNCE_FROM_RE.test(fromAddr) || BOUNCE_FROM_RE.test(fromName)) {
           bounceUids.push(msg.uid);
-        } else if (
-          fromAddr !== user.toLowerCase() &&
-          !TECHNICAL_SENDER_RE.test(fromAddr) &&
-          !AUTO_REPLY_SUBJECT_RE.test(subject.trim())
-        ) {
+        } else if (fromAddr === user.toLowerCase() || TECHNICAL_SENDER_RE.test(fromAddr)) {
+          // own mail / technical senders — ignore
+        } else if (AUTO_REPLY_SUBJECT_RE.test(subject.trim())) {
+          autoReplyAddrs.push(fromAddr); // OOO etc. — snooze follow-ups, not a reply
+        } else {
           replyFrom.push({ addr: fromAddr, subject, uid: msg.uid });
         }
+      }
+
+      // Auto-responder (out of office): postpone the next touch by 5 days so we
+      // don't follow up into an empty inbox
+      if (autoReplyAddrs.length > 0) {
+        const res = await pool.query(
+          `UPDATE lead_profiles lp SET updated_at = now() + interval '5 days'
+           FROM artist_contacts ac
+           WHERE ac.artist_beatport_id = lp.artist_beatport_id AND ac.type = 'email'
+             AND LOWER(TRIM(ac.value)) = ANY($1::text[])
+             AND lp.status IN ('Attempt 1', 'Attempt 2')
+             AND lp.updated_at < now() + interval '4 days'`,
+          [[...new Set(autoReplyAddrs)]]
+        ).catch(() => ({ rowCount: 0 }));
+        snoozed = res.rowCount ?? 0;
+        if (snoozed > 0) console.log(`[cron/inbox] snoozed follow-ups for ${snoozed} lead(s) (auto-reply/OOO)`);
       }
 
       // Pass 2: bounce bodies → failed recipient addresses
@@ -204,9 +222,10 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     ok: true,
-    scanned: { bounceMessages: bounceUids.length, inboxSenders: replyFrom.length },
+    scanned: { bounceMessages: bounceUids.length, inboxSenders: replyFrom.length, autoReplies: autoReplyAddrs.length },
     bouncedMarked,
     replies,
+    snoozed,
     ts: new Date().toISOString(),
   });
 }
