@@ -9,7 +9,8 @@
 import { NextResponse } from "next/server";
 import * as nodemailer from "nodemailer";
 import { pool } from "@/lib/db";
-import { sendTelegramMessage, tgEscape } from "@/lib/telegram";
+import { sendTelegramMessage, tgEscape, answerCallbackQuery, type InlineButton } from "@/lib/telegram";
+import { buildStats, buildDailyReport } from "@/lib/reports";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -21,15 +22,21 @@ type TgUpdate = {
     chat?: { id: number };
     reply_to_message?: { message_id: number };
   };
+  callback_query?: {
+    id: string;
+    data?: string;
+    message?: { chat?: { id: number } };
+  };
 };
 
-const REPLY_SIGNATURE = `\n\nBest,\nMax | PromoSound\nhttps://promosoundgroup.net/`;
+const MENU_KEYBOARD: InlineButton[][] = [
+  [{ text: "📊 Статус", callback_data: "stats" }, { text: "🎯 Черга", callback_data: "queue" }],
+  [{ text: "📈 Звіт за сьогодні", callback_data: "report" }],
+  [{ text: "⏸ Пауза", callback_data: "pause" }, { text: "▶️ Відновити", callback_data: "resume" }],
+  [{ text: "🌐 Дашборд", url: "https://ninja-digger.vercel.app/" }, { text: "👥 Ліди", url: "https://ninja-digger.vercel.app/leads" }],
+];
 
-async function getSetting(key: string): Promise<string | null> {
-  return pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key = $1`, [key])
-    .then((r) => r.rows[0]?.value ?? null)
-    .catch(() => null);
-}
+const REPLY_SIGNATURE = `\n\nBest,\nMax | PromoSound\nhttps://promosoundgroup.net/`;
 
 async function setSetting(key: string, value: string): Promise<void> {
   await pool.query(
@@ -39,55 +46,24 @@ async function setSetting(key: string, value: string): Promise<void> {
   );
 }
 
-async function buildStats(): Promise<string> {
-  const q = (sql: string) => pool.query(sql).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
-  const [sentToday, sent7d, sentTotal, replied, won, optOut, queue, validEmails, bounced, newcomersToday] = await Promise.all([
-    q("SELECT COUNT(*)::int c FROM outreach_events WHERE channel='email' AND template_id LIKE 'email_touch_%' AND sent_at >= CURRENT_DATE"),
-    q("SELECT COUNT(*)::int c FROM outreach_events WHERE channel='email' AND template_id LIKE 'email_touch_%' AND sent_at >= CURRENT_DATE - 7"),
-    q("SELECT COUNT(*)::int c FROM outreach_events WHERE channel='email' AND template_id LIKE 'email_touch_%'"),
-    q("SELECT COUNT(*)::int c FROM lead_profiles WHERE status IN ('Responded','In Progress','Won')"),
-    q("SELECT COUNT(*)::int c FROM lead_profiles WHERE status='Won'"),
-    q("SELECT COUNT(*)::int c FROM lead_profiles WHERE status='Not Interested'"),
-    q(`SELECT COUNT(DISTINCT ac.artist_beatport_id)::int c FROM artist_contacts ac
-       JOIN artist_metrics am ON am.artist_beatport_id = ac.artist_beatport_id
-       LEFT JOIN lead_profiles lp ON lp.artist_beatport_id = ac.artist_beatport_id
-       WHERE ac.type='email' AND ac.confidence>=0.65 AND (ac.status IS NULL OR ac.status='ok')
-         AND (lp.status IS NULL OR lp.status='New') AND am.last_seen >= current_date - 14
-         AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)`),
-    q("SELECT COUNT(DISTINCT artist_beatport_id)::int c FROM artist_contacts WHERE type='email' AND (status IS NULL OR status='ok')"),
-    q("SELECT COUNT(*)::int c FROM artist_contacts WHERE status='bounced'"),
-    q(`SELECT COUNT(*)::int c FROM lead_scores ls JOIN artist_metrics am ON am.artist_beatport_id=ls.artist_beatport_id
-       WHERE ls.segment='NEWCOMER' AND am.first_seen >= CURRENT_DATE - 1`),
-  ]);
-  const paused = (await getSetting("outreach_paused")) === "1";
-  return (
-    `📊 <b>Lead Digger — статус</b>\n\n` +
-    `${paused ? "⏸ Розсилка НА ПАУЗІ (/resume)\n\n" : "▶️ Розсилка активна\n\n"}` +
-    `✉️ Відправлено: сьогодні ${sentToday} · за 7д ${sent7d} · всього ${sentTotal}\n` +
-    `🎯 Черга Touch 1: ${queue} лідів\n` +
-    `🆕 Нових NEWCOMER за добу: ${newcomersToday}\n\n` +
-    `💬 Відповіли: ${replied} · 🏆 Won: ${won} · 🚫 Відмов: ${optOut}\n` +
-    `📧 Валідних email-лідів: ${validEmails} · bounced: ${bounced}\n\n` +
-    `<a href="https://ninja-digger.vercel.app/">Дашборд</a> · <a href="https://ninja-digger.vercel.app/leads">Ліди</a>`
-  );
-}
-
 async function handleCommand(cmd: string): Promise<void> {
   switch (cmd) {
     case "/start":
     case "/help":
+    case "/menu":
       await sendTelegramMessage(
         `🥷 <b>Lead Digger — меню</b>\n\n` +
-        `/stats — статус: відправки, черга, відповіді, база\n` +
-        `/queue — хто наступний у черзі Touch 1\n` +
-        `/pause — поставити розсилку на паузу\n` +
-        `/resume — відновити розсилку\n\n` +
         `↩️ <i>Reply на нотифікацію про відповідь ліда = надіслати йому email.</i>\n` +
-        `🚫 Відмови ("not interested") обробляються автоматично — лід у blacklist.`
+        `🚫 Відмови ("not interested") обробляються автоматично.\n` +
+        `📈 Щоденний звіт приходить сам о 20:30.`,
+        MENU_KEYBOARD
       );
       break;
     case "/stats":
-      await sendTelegramMessage(await buildStats());
+      await sendTelegramMessage(await buildStats(), MENU_KEYBOARD);
+      break;
+    case "/report":
+      await sendTelegramMessage(await buildDailyReport(), MENU_KEYBOARD);
       break;
     case "/queue": {
       const next = await pool.query<{ name: string; segment: string | null }>(
@@ -134,11 +110,22 @@ export async function POST(request: Request) {
   }
 
   const update = (await request.json().catch(() => null)) as TgUpdate | null;
+  const allowedChat = process.env.TELEGRAM_CHAT_ID;
+
+  // Inline-button presses
+  const cb = update?.callback_query;
+  if (cb?.data) {
+    if (allowedChat && String(cb.message?.chat?.id) === allowedChat) {
+      await answerCallbackQuery(cb.id);
+      await handleCommand(`/${cb.data}`);
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   const msg = update?.message;
   // Always 200 so Telegram doesn't retry forever on messages we ignore
   if (!msg?.text) return NextResponse.json({ ok: true });
 
-  const allowedChat = process.env.TELEGRAM_CHAT_ID;
   if (!allowedChat || String(msg.chat?.id) !== allowedChat) {
     return NextResponse.json({ ok: true });
   }
