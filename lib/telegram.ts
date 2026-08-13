@@ -4,10 +4,11 @@
  * No-op when not configured, so the pipeline never breaks on missing setup.
  */
 
-export async function sendTelegramMessage(text: string): Promise<boolean> {
+/** Send a message; returns the Telegram message_id or null. */
+export async function sendTelegramMessage(text: string): Promise<number | null> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) return false;
+  if (!token || !chatId) return null;
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
@@ -21,12 +22,13 @@ export async function sendTelegramMessage(text: string): Promise<boolean> {
     });
     if (!res.ok) {
       console.error("[telegram] sendMessage failed:", res.status, await res.text().catch(() => ""));
-      return false;
+      return null;
     }
-    return true;
+    const data = (await res.json()) as { result?: { message_id?: number } };
+    return data.result?.message_id ?? null;
   } catch (e) {
     console.error("[telegram] error:", e instanceof Error ? e.message : e);
-    return false;
+    return null;
   }
 }
 

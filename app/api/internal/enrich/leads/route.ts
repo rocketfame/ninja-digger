@@ -40,6 +40,7 @@ export async function POST(request: Request) {
   const dateFromParam = parseDateParam(searchParams.get("dateFrom"));
   const dateToParam = parseDateParam(searchParams.get("dateTo"));
   const force = searchParams.get("force") === "1" || searchParams.get("force") === "true";
+  const countOnly = searchParams.get("countOnly") === "1";
 
   const blocklist = getBlocklistValuesForSql();
   const blocklistCondition = `(array_length($2::text[], 1) IS NULL OR (
@@ -122,6 +123,11 @@ export async function POST(request: Request) {
         params
       );
       remaining = parseInt(remRow?.count ?? "0", 10);
+    }
+
+    // Preflight: return the queue size instantly so the UI can show scale/ETA
+    if (countOnly) {
+      return NextResponse.json({ ok: true, processed: 0, remaining });
     }
 
     if (artists.length === 0) {
