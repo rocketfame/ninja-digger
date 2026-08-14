@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { NavBar } from "@/app/components/NavBar";
 import { pool } from "@/lib/db";
+import { getSegmentStats } from "@/lib/emailSegments";
 
 export const dynamic = "force-dynamic";
 
@@ -145,8 +146,15 @@ async function getStats() {
   }
 }
 
+const SEGMENT_STYLE: Record<string, { color: string; icon: string; hint: string }> = {
+  no_reply: { color: "#60a5fa", icon: "📨", hint: "для повторних розсилок" },
+  warm: { color: "#4ade80", icon: "🔥", hint: "відповідали — працюємо" },
+  dead: { color: "#f87171", icon: "🚫", hint: "suppression-лист" },
+};
+
 export default async function Home() {
   const s = await getStats();
+  const emailSegments = await getSegmentStats().catch(() => []);
 
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
@@ -236,6 +244,39 @@ export default async function Home() {
           <div className="mt-2 flex gap-4 text-[10px] text-[var(--text-muted)]">
             <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-[var(--accent)]" />листи</span>
             <span><span className="mr-1 font-bold text-green-400">+N</span>відповіді</span>
+          </div>
+        </div>
+
+        {/* Email segments */}
+        <div className="mb-6 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-5">
+          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-[var(--text-muted)]">Email-сегменти бази</h2>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {emailSegments.map((seg) => {
+              const st = SEGMENT_STYLE[seg.type];
+              return (
+                <div key={seg.type} className="rounded-lg border border-[var(--border)] bg-[var(--bg-page)] p-4">
+                  <div className="mb-1 flex items-center gap-2 text-sm font-medium">
+                    <span>{st.icon}</span>
+                    <span>{seg.label}</span>
+                  </div>
+                  <div className="text-3xl font-bold tabular-nums" style={{ color: st.color }}>{seg.count}</div>
+                  <div className="mb-3 text-[10px] text-[var(--text-muted)]">
+                    {st.hint}
+                    {seg.lastUpdated ? ` · оновлено ${seg.lastUpdated.slice(0, 16).replace("T", " ")}` : ""}
+                  </div>
+                  <a
+                    href={`/api/segments/email/export?type=${seg.type}`}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--text-muted)] transition-colors hover:border-[var(--accent)]/60 hover:text-[var(--text)]"
+                    download
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" />
+                    </svg>
+                    Завантажити CSV
+                  </a>
+                </div>
+              );
+            })}
           </div>
         </div>
 
