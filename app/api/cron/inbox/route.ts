@@ -214,6 +214,43 @@ export async function GET(request: Request) {
     } finally {
       lock.release();
     }
+
+    // Sent sweep: a manual thread-reply from us (In-Reply-To present) means a
+    // live conversation — move the lead to 'In Progress'. Automated touches
+    // carry no In-Reply-To, so they never match.
+    try {
+      const boxes = await client.list();
+      const sentBox = boxes.find((b) => b.specialUse === "\\Sent")?.path;
+      if (sentBox) {
+        const sentLock = await client.getMailboxLock(sentBox);
+        const repliedTo = new Set<string>();
+        try {
+          const since = new Date(Date.now() - LOOKBACK_DAYS * 86400e3);
+          for await (const msg of client.fetch({ since }, { envelope: true, uid: true })) {
+            if (!msg.envelope?.inReplyTo) continue;
+            for (const a of [...(msg.envelope?.to ?? []), ...(msg.envelope?.cc ?? [])]) {
+              const addr = a.address?.toLowerCase();
+              if (addr && addr !== user.toLowerCase()) repliedTo.add(addr);
+            }
+          }
+        } finally {
+          sentLock.release();
+        }
+        if (repliedTo.size > 0) {
+          await pool.query(
+            `UPDATE lead_profiles lp SET status = 'In Progress', updated_at = now()
+             FROM artist_contacts ac
+             WHERE ac.artist_beatport_id = lp.artist_beatport_id AND ac.type = 'email'
+               AND LOWER(TRIM(ac.value)) = ANY($1::text[])
+               AND lp.status NOT IN ('Won', 'Not Interested', 'Blacklist', 'In Progress')`,
+            [[...repliedTo]]
+          ).catch((e) => console.error("[cron/inbox] sent-sweep update failed:", e instanceof Error ? e.message : e));
+        }
+      }
+    } catch (e) {
+      console.error("[cron/inbox] sent sweep failed:", e instanceof Error ? e.message : e);
+    }
+
     await client.logout();
   } catch (e) {
     try { await client.logout(); } catch { /* already closed */ }
