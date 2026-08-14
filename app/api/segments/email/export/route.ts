@@ -23,9 +23,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "type must be one of: " + TYPES.join(", ") }, { status: 400 });
   }
   const rows = await getSegmentRows(type);
-  const header = "email,artist_name,artist_beatport_id,lead_status,chart_segment,first_seen,last_seen";
+  const header = "email,artist_name,tier,artist_beatport_id,lead_status,chart_segment,first_seen,last_seen";
   const body = rows
-    .map((r) => [r.email, r.artist_name, r.artist_beatport_id, r.lead_status, r.chart_segment, r.first_seen?.slice(0, 10) ?? "", r.last_seen?.slice(0, 10) ?? ""].map(csvCell).join(","))
+    .map((r) => [r.email, r.artist_name, r.tier, r.artist_beatport_id, r.lead_status, r.chart_segment, r.first_seen?.slice(0, 10) ?? "", r.last_seen?.slice(0, 10) ?? ""].map(csvCell).join(","))
     .join("\n");
   const date = new Date().toISOString().slice(0, 10);
   return new NextResponse(header + "\n" + body + "\n", {

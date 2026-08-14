@@ -198,7 +198,10 @@ export default async function Home() {
               <div key={seg.type} className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
                 <div>
                   <div className="text-xs text-[var(--text-muted)]">{st.icon} {seg.label}</div>
-                  <div className="text-2xl font-bold tabular-nums leading-tight" style={{ color: st.color }}>{seg.count}</div>
+                  <div className="text-2xl font-bold tabular-nums leading-tight" style={{ color: st.color }}>
+                    {seg.count}
+                    {seg.gems != null && <span className="ml-2 text-sm font-semibold text-amber-400">💎 {seg.gems}</span>}
+                  </div>
                   {seg.lastUpdated && <div className="text-[9px] text-[var(--text-muted)]">оновлено {seg.lastUpdated.slice(5, 16).replace("T", " ")}</div>}
                 </div>
                 <a

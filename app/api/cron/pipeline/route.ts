@@ -8,6 +8,7 @@ import { pool } from "@/lib/db";
 import * as nodemailer from "nodemailer";
 import { validateEmailForOutreach, invalidateContactEmail, isHardBounceError } from "@/lib/emailHygiene";
 import { wrapEmailHtml, TEXT_SIGNATURE } from "@/lib/emailTemplate";
+import { JUNK_NAME_SQL, TIER_SQL } from "@/lib/leadQuality";
 
 export const maxDuration = 300; // 5 min for natural-paced sends
 
@@ -46,7 +47,7 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
     SELECT t.id, t.name, t.email FROM (
       SELECT DISTINCT ON (ac.artist_beatport_id)
         ac.artist_beatport_id as id, am.artist_name as name, ac.value as email,
-        ls.segment, am.first_seen
+        ls.segment, am.first_seen, ${TIER_SQL} AS tier
       FROM artist_contacts ac
       JOIN artist_metrics am ON ac.artist_beatport_id = am.artist_beatport_id
       LEFT JOIN lead_scores ls ON ls.artist_beatport_id = ac.artist_beatport_id
@@ -55,10 +56,11 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
         AND (lp.status ${touchNum === 1 ? "IS NULL OR lp.status = 'New'" : `= '${fromStatus}'`})
         ${minDays > 0 ? `AND lp.updated_at < now() - interval '${minDays} days'` : ""}
         ${touchNum === 1 ? "AND am.last_seen >= current_date - 14" : ""}
+        AND NOT ${JUNK_NAME_SQL}
         AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)
       ORDER BY ac.artist_beatport_id, ac.confidence DESC
     ) t
-    ORDER BY CASE t.segment
+    ORDER BY t.tier, CASE t.segment
       WHEN 'NEWCOMER' THEN 0 WHEN 'NEW_ENTRY' THEN 1 WHEN 'FAST_GROWING' THEN 2 ELSE 3 END,
       t.first_seen DESC NULLS LAST
     LIMIT 5
