@@ -14,31 +14,63 @@ type DialogMessage = { direction: "in" | "out"; subject: string; date: string; t
 
 const STATUS_UA: Record<string, string> = { "Responded": "Відповів", "In Progress": "В діалозі", "Won": "Виграно" };
 
+function Spinner({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-3 text-sm text-[var(--text-muted)]">
+      <span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--accent)] border-t-transparent" />
+      {label}
+    </div>
+  );
+}
+
 export function WarmDialogCard({ count, lastUpdated }: { count: number; lastUpdated: string | null }) {
   const [open, setOpen] = useState(false);
   const [leads, setLeads] = useState<SegmentRow[] | null>(null);
   const [selected, setSelected] = useState<SegmentRow | null>(null);
   const [dialog, setDialog] = useState<DialogMessage[] | null>(null);
   const [loadingDialog, setLoadingDialog] = useState(false);
+  const [dialogCache] = useState(() => new Map<string, DialogMessage[]>());
+
+  const fetchDialog = useCallback(async (artistId: string): Promise<DialogMessage[]> => {
+    const hit = dialogCache.get(artistId);
+    if (hit) return hit;
+    const data = await fetch(`/api/internal/lead-dialog?artistId=${encodeURIComponent(artistId)}`)
+      .then((r) => r.json())
+      .catch(() => null);
+    const msgs: DialogMessage[] = data?.messages ?? [];
+    dialogCache.set(artistId, msgs);
+    return msgs;
+  }, [dialogCache]);
 
   const openModal = useCallback(async () => {
     setOpen(true);
-    if (!leads) {
+    let rows = leads;
+    if (!rows) {
       const data = await fetch("/api/segments/email/list?type=warm").then((r) => r.json()).catch(() => null);
-      setLeads(data?.rows ?? []);
+      rows = data?.rows ?? [];
+      setLeads(rows);
     }
-  }, [leads]);
+    // Background prefetch: warm the server cache one by one so clicks are instant
+    (async () => {
+      for (const l of rows ?? []) {
+        if (!dialogCache.has(l.artist_beatport_id)) await fetchDialog(l.artist_beatport_id).catch(() => {});
+      }
+    })();
+  }, [leads, dialogCache, fetchDialog]);
 
   const openDialog = useCallback(async (lead: SegmentRow) => {
     setSelected(lead);
+    if (dialogCache.has(lead.artist_beatport_id)) {
+      setDialog(dialogCache.get(lead.artist_beatport_id)!);
+      setLoadingDialog(false);
+      return;
+    }
     setDialog(null);
     setLoadingDialog(true);
-    const data = await fetch(`/api/internal/lead-dialog?artistId=${encodeURIComponent(lead.artist_beatport_id)}`)
-      .then((r) => r.json())
-      .catch(() => null);
-    setDialog(data?.messages ?? []);
+    const msgs = await fetchDialog(lead.artist_beatport_id);
+    setDialog(msgs);
     setLoadingDialog(false);
-  }, []);
+  }, [dialogCache, fetchDialog]);
 
   return (
     <>
@@ -71,7 +103,7 @@ export function WarmDialogCard({ count, lastUpdated }: { count: number; lastUpda
               <div className="sticky top-0 border-b border-[var(--border)] bg-[var(--bg-card)] px-4 py-3 text-sm font-semibold">
                 🔥 Теплі ліди {leads ? `(${leads.length})` : ""}
               </div>
-              {!leads && <div className="p-4 text-sm text-[var(--text-muted)]">Завантажую…</div>}
+              {!leads && <div className="p-4"><Spinner label="Завантажую лідів…" /></div>}
               {leads?.map((l) => (
                 <button
                   key={l.artist_beatport_id}
@@ -95,7 +127,7 @@ export function WarmDialogCard({ count, lastUpdated }: { count: number; lastUpda
                 <button type="button" onClick={() => setOpen(false)} className="text-[var(--text-muted)] hover:text-[var(--text)]">✕</button>
               </div>
               <div className="flex-1 space-y-3 overflow-y-auto p-4">
-                {loadingDialog && <div className="text-sm text-[var(--text-muted)]">Тягну листування з Gmail…</div>}
+                {loadingDialog && <Spinner label="Тягну листування з Gmail (перший раз ~5-10с, далі миттєво)…" />}
                 {dialog && dialog.length === 0 && <div className="text-sm text-[var(--text-muted)]">Листів не знайдено за 180 днів.</div>}
                 {dialog?.map((m, i) => (
                   <div key={i} className={`max-w-[85%] ${m.direction === "out" ? "ml-auto" : ""}`}>
