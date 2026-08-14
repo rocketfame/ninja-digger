@@ -3,6 +3,7 @@ import { NavBar } from "@/app/components/NavBar";
 import { pool } from "@/lib/db";
 import { getSegmentStats } from "@/lib/emailSegments";
 import { STATUS_UA } from "@/lib/statusLabels";
+import { WarmDialogCard } from "@/app/components/WarmDialogCard";
 
 export const dynamic = "force-dynamic";
 
@@ -194,6 +195,9 @@ export default async function Home() {
         <div className="mb-6 grid gap-3 sm:grid-cols-3">
           {emailSegments.map((seg) => {
             const st = SEGMENT_STYLE[seg.type];
+            if (seg.type === "warm") {
+              return <WarmDialogCard key={seg.type} count={seg.count} lastUpdated={seg.lastUpdated} />;
+            }
             return (
               <div key={seg.type} className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
                 <div>
