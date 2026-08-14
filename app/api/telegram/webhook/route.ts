@@ -53,8 +53,9 @@ async function handleCommand(cmd: string): Promise<void> {
     case "/menu":
       await sendTelegramMessage(
         `🥷 <b>Lead Digger — меню</b>\n\n` +
-        `↩️ <i>Reply на нотифікацію про відповідь ліда = надіслати йому email.</i>\n` +
-        `🚫 Відмови ("not interested") обробляються автоматично.\n` +
+        `📬 <b>Як це працює:</b> коли артист відповість на наш лист — його повідомлення прийде сюди в чат.\n\n` +
+        `✍️ <b>Щоб відповісти артисту:</b> свайпни його повідомлення вліво (звичайний Reply у Telegram), напиши текст — і я відправлю його артисту на пошту від імені Max.\n\n` +
+        `🚫 Якщо артист пише "not interested" — я сам закрию його і більше не турбуватиму.\n` +
         `📈 Щоденний звіт приходить сам о 20:30.`,
         MENU_KEYBOARD
       );
@@ -140,7 +141,7 @@ export async function POST(request: Request) {
   const replyToId = msg.reply_to_message?.message_id;
   if (!replyToId) {
     await sendTelegramMessage(
-      "ℹ️ Щоб відповісти артисту — зроби <i>reply</i> (свайп вліво) на повідомлення з його відповіддю і напиши текст листа.\nКоманди: /help"
+      "ℹ️ Це повідомлення нікуди не піде — я відправляю листи тільки через Reply.\n\nЩоб написати артисту: свайпни вліво його повідомлення (з 🎉) і напиши текст. Меню: /menu"
     );
     return NextResponse.json({ ok: true });
   }
