@@ -9,7 +9,8 @@ const LOGO_URL = "https://cdn.shopify.com/s/files/1/0720/1007/2242/files/promoso
 const SERVICES = [
   { label: "Spotify Promo", url: "https://promosoundgroup.net/collections/spotify-promotion" },
   { label: "Beatport Promo", url: "https://promosoundgroup.net/collections/beatport-top-100-promotion" },
-  { label: "SoundCloud Promo", url: "https://promosoundgroup.net/collections/soundcloud-promotion" },
+  { label: "SoundCloud Promo", url: "https://promosoundgroup.net/collections/s-cloud-promotion" },
+  { label: "YouTube Promo", url: "https://promosoundgroup.net/collections/youtube-promotion" },
 ];
 
 function escapeHtml(s: string): string {
