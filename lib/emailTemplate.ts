@@ -11,6 +11,7 @@ const SERVICES = [
   { label: "Beatport Promo", url: "https://promosoundgroup.net/collections/beatport-top-100-promotion" },
   { label: "SoundCloud Promo", url: "https://promosoundgroup.net/collections/s-cloud-promotion" },
   { label: "YouTube Promo", url: "https://promosoundgroup.net/collections/youtube-promotion" },
+  { label: "More", url: "https://promosoundgroup.net/" },
 ];
 
 function escapeHtml(s: string): string {
@@ -52,9 +53,6 @@ export function wrapEmailHtml(bodyText: string): string {
               Music promotion for electronic artists — trusted by 100k+ musicians since 2013.
             </p>
             <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">${serviceLinks}</div>
-            <p style="margin:10px 0 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;color:#a3a3a3;">
-              <a href="https://promosoundgroup.net/" style="color:#a3a3a3;">promosoundgroup.net</a>
-            </p>
           </td></tr>
         </table>
       </td>
