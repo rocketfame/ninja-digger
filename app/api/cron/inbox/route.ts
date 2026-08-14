@@ -26,8 +26,8 @@ const TECHNICAL_SENDER_RE = /(no-?reply|do-?not-?reply|noreply|notifications?@|n
 /** Statuses that a reply upgrades to Responded. */
 const REPLYABLE = ["Attempt 1", "Attempt 2", "No Response", "Contacted", "Cold"];
 const REPLY_EXCERPT_CHARS = 700;
-/** Opt-out / rejection phrasing → lead is closed and email is blacklisted. */
-const OPT_OUT_RE = /(not interested|no,? thanks?|not for me|stop (emailing|contacting|sending)|unsubscribe|remove me|take me off|don'?t (contact|email|write)|no longer interested|leave me alone|не цікаво|не интересно|nicht interessiert|kein interesse|no me interesa|pas intéressé)/i;
+/** Opt-out / rejection / negative context → lead is closed and email is blacklisted. */
+const OPT_OUT_RE = /(not interested|no,? thanks?|not for me|stop (emailing|contacting|sending|spamming)|unsubscribe|remove (me|us)|take (me|us) off|don'?t (contact|email|write|message)|no longer interested|leave (me|us) alone|stop spam|this is spam|how did you get my|delete my (data|email|info)|gdpr request|fuck (off|you)|piss off|never (email|contact) (me|us)|report(ing)? (you|this)|не цікаво|не интересно|nicht interessiert|kein interesse|no me interesa|pas intéressé)/i;
 
 async function downloadText(client: ImapFlow, uid: number): Promise<string | null> {
   // Part "1" is the first MIME part (usually text/plain); fall back to full text
