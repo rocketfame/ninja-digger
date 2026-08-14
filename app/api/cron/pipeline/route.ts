@@ -7,10 +7,10 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import * as nodemailer from "nodemailer";
 import { validateEmailForOutreach, invalidateContactEmail, isHardBounceError } from "@/lib/emailHygiene";
+import { wrapEmailHtml, TEXT_SIGNATURE } from "@/lib/emailTemplate";
 
 export const maxDuration = 300; // 5 min for natural-paced sends
 
-const SIGNATURE = `\n\n--\nWith Regards, your Promosound.\nSPOTIFY PROMO: https://promosoundgroup.net/collections/spotify-promotion\nBEATPORT PROMO: https://promosoundgroup.net/collections/beatport-top-100-promotion\nSOUNDCLOUD PROMO: https://promosoundgroup.net/collections/soundcloud-promotion\nPROMOSOUND: https://promosoundgroup.net/`;
 
 const TOUCHES = [
   { // Touch 1
@@ -88,12 +88,14 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
       if (valid.length === 0) continue; // no deliverable address — lead skipped, no status change
       const primary = valid[0];
       try {
+        const bodyText = touch.bodies[v](lead.name);
         await transporter.sendMail({
           from: `"Max from PromoSound" <${user}>`,
           to: primary,
           cc: valid.length > 1 ? valid.slice(1).join(", ") : undefined,
           subject: touch.subjects[v],
-          text: touch.bodies[v](lead.name) + SIGNATURE,
+          text: bodyText + TEXT_SIGNATURE,
+          html: wrapEmailHtml(bodyText),
         });
       } catch (sendErr) {
         if (isHardBounceError(sendErr)) {

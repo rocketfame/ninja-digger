@@ -11,6 +11,7 @@ import * as nodemailer from "nodemailer";
 import { pool } from "@/lib/db";
 import { sendTelegramMessage, tgEscape, answerCallbackQuery, type InlineButton } from "@/lib/telegram";
 import { buildStats, buildDailyReport } from "@/lib/reports";
+import { wrapEmailHtml, TEXT_SIGNATURE } from "@/lib/emailTemplate";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -36,7 +37,6 @@ const MENU_KEYBOARD: InlineButton[][] = [
   [{ text: "🌐 Дашборд", url: "https://ninja-digger.vercel.app/" }, { text: "👥 Ліди", url: "https://ninja-digger.vercel.app/leads" }],
 ];
 
-const REPLY_SIGNATURE = `\n\nBest,\nMax | PromoSound\nhttps://promosoundgroup.net/`;
 
 async function setSetting(key: string, value: string): Promise<void> {
   await pool.query(
@@ -173,7 +173,8 @@ export async function POST(request: Request) {
       from: `"Max from PromoSound" <${user}>`,
       to: lead.email,
       subject,
-      text: msg.text + REPLY_SIGNATURE,
+      text: msg.text + TEXT_SIGNATURE,
+      html: wrapEmailHtml(msg.text + "\n\nBest,\nMax"),
     });
     await pool.query(
       `INSERT INTO lead_profiles (artist_beatport_id, status, updated_at) VALUES ($1, 'In Progress', now())

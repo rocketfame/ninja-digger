@@ -164,11 +164,11 @@ export default async function Home() {
             </div>
             <div>
               <div className="text-3xl font-bold tabular-nums text-green-400">{s.sent.today}</div>
-              <div className="text-xs text-[var(--text-muted)]">Сьогодні</div>
+              <div className="text-xs text-[var(--text-muted)]">Сьогодні · {new Date().toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", timeZone: "UTC" })}</div>
             </div>
             <div>
               <div className="text-3xl font-bold tabular-nums">{s.sent.yesterday}</div>
-              <div className="text-xs text-[var(--text-muted)]">Вчора</div>
+              <div className="text-xs text-[var(--text-muted)]">Вчора · {new Date(Date.now() - 86400e3).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", timeZone: "UTC" })}</div>
             </div>
             <div>
               <div className="text-3xl font-bold tabular-nums text-red-400">{s.bounced}</div>
