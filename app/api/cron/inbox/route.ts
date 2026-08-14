@@ -21,7 +21,9 @@ const LOOKBACK_DAYS = 3;
 const BOUNCE_FROM_RE = /^(mailer-daemon|postmaster|mail delivery (subsystem|system))/i;
 const EMAIL_IN_BODY_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 /** Auto-responders and system mail — not a real human reply. */
-const AUTO_REPLY_SUBJECT_RE = /^(automatic reply|auto.?reply|autosvar|out of office|ooo[:\s]|abwesenheit|réponse automatique|respuesta automática|delivery status|undeliverable|vacation)/i;
+const AUTO_REPLY_SUBJECT_RE = /^(automatic reply|auto.?reply|autosvar|out of office|ooo[:\s]|abwesenheit|réponse automatique|respuesta automática|delivery status|undeliverable|vacation|slight delay|delay(ed)? (in )?respon|email acknowledgement|thank you for (your email|contacting|reaching out))/i;
+/** Auto-responder phrasing inside the body (subject often looks like a normal Re:). */
+const AUTO_REPLY_BODY_RE = /(this is an auto.?respon|expect a (slight )?delay|delay in (my )?respon|out of (the )?office|currently (traveling|travelling|on tour|away|on holiday|on vacation)|in the [A-Z]{2,4} time ?zone|limited access to (my )?email|will (get back|respond|reply) to you (as soon as|when|upon)|автоматична відповідь|автоответчик)/i;
 const TECHNICAL_SENDER_RE = /(no-?reply|do-?not-?reply|noreply|notifications?@|newsletter@|updates@|support@.*\.(zendesk|freshdesk|intercom)\.|calendar-notification|drive-shares|@docs\.google\.com|@calendar\.google\.com)/i;
 /** Statuses that a reply upgrades to Responded. */
 const REPLYABLE = ["Attempt 1", "Attempt 2", "No Response", "Contacted", "Cold"];
@@ -172,6 +174,23 @@ export async function GET(request: Request) {
           const subject = subjectByAddr.get(addrKey) ?? "";
           const uid = uidByAddr.get(addrKey);
           const excerpt = uid ? await downloadText(client, uid) : null;
+
+          // Body-level auto-responder ("slight delay", "this is an autoresponder"):
+          // not a real reply — revert the status transition, snooze follow-ups, no TG
+          if (excerpt && AUTO_REPLY_BODY_RE.test(excerpt)) {
+            await pool.query(
+              `UPDATE lead_profiles SET status = 'No Response', updated_at = now() + interval '5 days'
+               WHERE artist_beatport_id = $1 AND status = 'Responded'`,
+              [row.artist_beatport_id]
+            );
+            await pool.query(
+              `DELETE FROM outreach_events WHERE artist_beatport_id = $1 AND template_id = 'reply' AND sent_at > now() - interval '5 minutes'`,
+              [row.artist_beatport_id]
+            ).catch(() => {});
+            replies--;
+            console.log(`[cron/inbox] body auto-reply from ${row.value} — skipped, follow-ups snoozed`);
+            continue;
+          }
 
           // Opt-out: close the lead, blacklist the email everywhere, notify differently
           if (excerpt && OPT_OUT_RE.test(excerpt)) {
