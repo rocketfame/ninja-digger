@@ -100,7 +100,12 @@ export async function GET(request: Request) {
           // own mail / technical senders — ignore
         } else if (AUTO_REPLY_SUBJECT_RE.test(subject.trim())) {
           autoReplyAddrs.push(fromAddr); // OOO etc. — snooze follow-ups, not a reply
-        } else {
+        } else if (
+          // Only genuine replies to OUR emails count: threaded reply (In-Reply-To)
+          // or a Re: on one of our outreach subjects. Cold inbound/spam is ignored.
+          Boolean(msg.envelope?.inReplyTo) ||
+          (/^re:/i.test(subject) && /(chart|beatport|promosound|follow|close the loop|quick thought|reach out|momentum)/i.test(subject))
+        ) {
           replyFrom.push({ addr: fromAddr, subject, uid: msg.uid });
         }
       }
@@ -178,6 +183,26 @@ export async function GET(request: Request) {
           // Body-level auto-responder ("slight delay", "this is an autoresponder"):
           // not a real reply — revert the status transition, snooze follow-ups, no TG
           if (excerpt && AUTO_REPLY_BODY_RE.test(excerpt)) {
+            // "No longer monitored, write to X" — harvest the redirect address
+            if (/(no longer (monitored|in use|active|checked)|direct (all )?(future )?correspondence|please (contact|email|write to|reach))/i.test(excerpt)) {
+              const redirects = (excerpt.match(EMAIL_IN_BODY_RE) ?? [])
+                .map((e) => e.toLowerCase())
+                .filter((e) => e !== addrKey && e !== user.toLowerCase());
+              for (const newEmail of redirects.slice(0, 2)) {
+                await pool.query(
+                  `INSERT INTO artist_contacts (artist_beatport_id, type, value, confidence, status, source_context)
+                   VALUES ($1, 'email', $2, 0.9, 'ok', 'auto-reply redirect')
+                   ON CONFLICT (artist_beatport_id, type, LOWER(TRIM(value)))
+                   DO UPDATE SET confidence = GREATEST(artist_contacts.confidence, 0.9)`,
+                  [row.artist_beatport_id, newEmail]
+                ).catch(() => {});
+                await invalidateContactEmail(row.value, "auto-reply: address no longer monitored");
+                await sendTelegramMessage(
+                  `📮 <b>${tgEscape(name)}</b>: стара адреса не моніториться, знайшов нову в автовідповіді → <b>${tgEscape(newEmail)}</b> (додав до ліда)`
+                );
+                console.log(`[cron/inbox] redirect harvested for ${row.artist_beatport_id}: ${newEmail}`);
+              }
+            }
             await pool.query(
               `UPDATE lead_profiles SET status = 'No Response', updated_at = now() + interval '5 days'
                WHERE artist_beatport_id = $1 AND status = 'Responded'`,
