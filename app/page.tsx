@@ -2,6 +2,7 @@ import Link from "next/link";
 import { NavBar } from "@/app/components/NavBar";
 import { pool } from "@/lib/db";
 import { getSegmentStats } from "@/lib/emailSegments";
+import { STATUS_UA } from "@/lib/statusLabels";
 
 export const dynamic = "force-dynamic";
 
@@ -61,7 +62,7 @@ function Donut({ data }: { data: StatusRow[] }) {
         {data.map((d) => (
           <div key={d.status} className="flex items-center gap-2 text-xs">
             <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: STATUS_COLORS[d.status] ?? "#6b7280" }} />
-            <span className="text-[var(--text-muted)]">{d.status}</span>
+            <span className="text-[var(--text-muted)]">{STATUS_UA[d.status] ?? d.status}</span>
             <span className="tabular-nums font-semibold">{d.count}</span>
             <span className="text-[10px] text-[var(--text-muted)]">({((d.count / total) * 100).toFixed(0)}%)</span>
           </div>
@@ -124,7 +125,7 @@ async function getStats() {
       `SELECT d.date::text AS date,
               COALESCE(SUM(CASE WHEN oe.template_id LIKE 'email_touch_%' THEN 1 ELSE 0 END), 0)::text AS sent,
               COALESCE(SUM(CASE WHEN oe.outcome = 'replied' THEN 1 ELSE 0 END), 0)::text AS replied
-       FROM generate_series(CURRENT_DATE - 13, CURRENT_DATE, '1 day'::interval) AS d(date)
+       FROM (SELECT generate_series(CURRENT_DATE - 13, CURRENT_DATE, '1 day'::interval)::date AS date) d
        LEFT JOIN outreach_events oe ON oe.sent_at::date = d.date AND oe.channel = 'email'
        GROUP BY d.date ORDER BY d.date`
     ).catch(() => ({ rows: [] as { date: string; sent: string; replied: string }[] }));
@@ -180,13 +181,39 @@ export default async function Home() {
             </div>
             <div>
               <div className="text-3xl font-bold tabular-nums text-red-400">{s.bounced}</div>
-              <div className="text-xs text-[var(--text-muted)]">Bounced</div>
+              <div className="text-xs text-[var(--text-muted)]">Відбиті (bounce)</div>
             </div>
             <div>
               <div className="text-3xl font-bold tabular-nums">{s.bp.work}</div>
               <div className="text-xs text-[var(--text-muted)]">В роботі (всього)</div>
             </div>
           </div>
+        </div>
+
+        {/* Email segments — compact strip */}
+        <div className="mb-6 grid gap-3 sm:grid-cols-3">
+          {emailSegments.map((seg) => {
+            const st = SEGMENT_STYLE[seg.type];
+            return (
+              <div key={seg.type} className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
+                <div>
+                  <div className="text-xs text-[var(--text-muted)]">{st.icon} {seg.label}</div>
+                  <div className="text-2xl font-bold tabular-nums leading-tight" style={{ color: st.color }}>{seg.count}</div>
+                  {seg.lastUpdated && <div className="text-[9px] text-[var(--text-muted)]">оновлено {seg.lastUpdated.slice(5, 16).replace("T", " ")}</div>}
+                </div>
+                <a
+                  href={`/api/segments/email/export?type=${seg.type}`}
+                  title="Завантажити CSV"
+                  download
+                  className="rounded-md border border-[var(--border)] p-2 text-[var(--text-muted)] transition-colors hover:border-[var(--accent)]/60 hover:text-[var(--text)]"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" />
+                  </svg>
+                </a>
+              </div>
+            );
+          })}
         </div>
 
         {/* Funnel + status donut */}
@@ -244,39 +271,6 @@ export default async function Home() {
           <div className="mt-2 flex gap-4 text-[10px] text-[var(--text-muted)]">
             <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-[var(--accent)]" />листи</span>
             <span><span className="mr-1 font-bold text-green-400">+N</span>відповіді</span>
-          </div>
-        </div>
-
-        {/* Email segments */}
-        <div className="mb-6 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-5">
-          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-[var(--text-muted)]">Email-сегменти бази</h2>
-          <div className="grid gap-4 sm:grid-cols-3">
-            {emailSegments.map((seg) => {
-              const st = SEGMENT_STYLE[seg.type];
-              return (
-                <div key={seg.type} className="rounded-lg border border-[var(--border)] bg-[var(--bg-page)] p-4">
-                  <div className="mb-1 flex items-center gap-2 text-sm font-medium">
-                    <span>{st.icon}</span>
-                    <span>{seg.label}</span>
-                  </div>
-                  <div className="text-3xl font-bold tabular-nums" style={{ color: st.color }}>{seg.count}</div>
-                  <div className="mb-3 text-[10px] text-[var(--text-muted)]">
-                    {st.hint}
-                    {seg.lastUpdated ? ` · оновлено ${seg.lastUpdated.slice(0, 16).replace("T", " ")}` : ""}
-                  </div>
-                  <a
-                    href={`/api/segments/email/export?type=${seg.type}`}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--text-muted)] transition-colors hover:border-[var(--accent)]/60 hover:text-[var(--text)]"
-                    download
-                  >
-                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" />
-                    </svg>
-                    Завантажити CSV
-                  </a>
-                </div>
-              );
-            })}
           </div>
         </div>
 

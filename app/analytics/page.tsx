@@ -1,5 +1,6 @@
 import { pool } from "@/lib/db";
 import { NavBar } from "@/app/components/NavBar";
+import { STATUS_UA } from "@/lib/statusLabels";
 
 export const dynamic = "force-dynamic";
 
@@ -73,7 +74,7 @@ export default async function AnalyticsPage() {
             <div className="text-[10px] text-[var(--text-muted)]">Won: {d.won}</div>
           </div>
           <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-4">
-            <div className="text-xs text-[var(--text-muted)] mb-1">Bounced</div>
+            <div className="text-xs text-[var(--text-muted)] mb-1">Відбиті (bounce)</div>
             <div className="text-3xl font-bold tabular-nums text-red-400">{d.bounced}</div>
           </div>
         </div>
@@ -104,7 +105,7 @@ export default async function AnalyticsPage() {
             <div className="space-y-1">
               {d.statuses.map((s) => (
                 <div key={s.status} className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2"><div className="h-2 w-2 rounded-full" style={{ backgroundColor: SC[s.status] ?? "#6b7280" }} /><span>{s.status}</span></div>
+                  <div className="flex items-center gap-2"><div className="h-2 w-2 rounded-full" style={{ backgroundColor: SC[s.status] ?? "#6b7280" }} /><span>{STATUS_UA[s.status] ?? s.status}</span></div>
                   <span className="tabular-nums font-medium">{s.count}</span>
                 </div>
               ))}
