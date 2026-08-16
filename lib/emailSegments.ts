@@ -154,7 +154,18 @@ export async function getSegmentStats(): Promise<SegmentStats[]> {
     ),
   ]);
 
+  const allGems = await q(
+    `SELECT COUNT(DISTINCT ac.artist_beatport_id)::text c, NULL::text u
+     FROM artist_contacts ac
+     JOIN artist_metrics am ON am.artist_beatport_id = ac.artist_beatport_id
+     WHERE ac.type='email' AND (ac.status IS NULL OR ac.status='ok')
+       AND LOWER(TRIM(ac.value)) NOT IN (SELECT LOWER(email) FROM email_blacklist)
+       AND NOT ${JUNK_NAME_SQL}
+       AND ${TIER_SQL} = 'A'`
+  );
+
   return [
+    { type: "gems", label: SEGMENT_LABELS.gems, ...allGems },
     { type: "no_reply", label: SEGMENT_LABELS.no_reply, ...noReply, gems: gemsRow.count },
     { type: "warm", label: SEGMENT_LABELS.warm, ...warm },
     { type: "dead", label: SEGMENT_LABELS.dead, ...dead },

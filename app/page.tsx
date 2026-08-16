@@ -149,6 +149,7 @@ async function getStats() {
 }
 
 const SEGMENT_STYLE: Record<string, { color: string; icon: string; hint: string }> = {
+  gems: { color: "#fbbf24", icon: "💎", hint: "топ-30 чарту, активні, з email" },
   no_reply: { color: "#60a5fa", icon: "📨", hint: "для повторних розсилок" },
   warm: { color: "#4ade80", icon: "🔥", hint: "відповідали — працюємо" },
   dead: { color: "#f87171", icon: "🚫", hint: "suppression-лист" },
@@ -232,28 +233,14 @@ export default async function Home() {
               <div className="text-[10px] text-[var(--text-muted)]">з них зараз у чартах: {base.activeArtists.toLocaleString("uk-UA")}</div>
             </div>
             <div>
-              <a href="/api/segments/email/export?type=all_email" download className="group inline-flex items-center gap-1.5">
-                <span className="text-2xl font-bold tabular-nums text-[#60a5fa]">{base.withEmail}</span>
-                <span className="text-xs text-[var(--text-muted)] group-hover:text-[#60a5fa]">⬇ CSV</span>
-              </a>
+              <div className="text-2xl font-bold tabular-nums text-[#60a5fa]">{base.withEmail}</div>
               <div className="text-xs text-[var(--text-muted)]">з робочим email</div>
-              <div className="text-[10px] text-[var(--text-muted)]">
-                ще не контактовані: <a href="/api/segments/email/export?type=not_contacted" download className="underline decoration-dotted hover:text-[var(--text)]">{base.notContacted} ⬇</a>
-              </div>
+              <div className="text-[10px] text-[var(--text-muted)]">ще не контактовані: {base.notContacted}</div>
             </div>
             <div>
-              <a href="/api/segments/email/export?type=gems" download className="group inline-flex items-center gap-1.5">
-                <span className="text-2xl font-bold tabular-nums text-amber-400">💎 {base.gems}</span>
-                <span className="text-xs text-[var(--text-muted)] group-hover:text-amber-400">⬇ CSV</span>
-              </a>
+              <div className="text-2xl font-bold tabular-nums text-amber-400">💎 {base.gems}</div>
               <div className="text-xs text-[var(--text-muted)]">цінні (топ-30 чарту, активні)</div>
-              <div className="text-[10px] text-[var(--text-muted)]">
-                <a href="/api/segments/email/export?type=all_email&role=personal" download className="underline decoration-dotted hover:text-[var(--text)]">👤 {base.rolePersonal}</a>
-                {" · "}
-                <a href="/api/segments/email/export?type=all_email&role=booking" download className="underline decoration-dotted hover:text-[var(--text)]">📅 {base.roleBooking}</a>
-                {" · "}
-                <a href="/api/segments/email/export?type=all_email&role=management" download className="underline decoration-dotted hover:text-[var(--text)]">💼 {base.roleMgmt}</a>
-              </div>
+              <div className="text-[10px] text-[var(--text-muted)]">👤 {base.rolePersonal} · 📅 {base.roleBooking} · 💼 {base.roleMgmt}</div>
             </div>
             <div>
               <div className="text-2xl font-bold tabular-nums text-red-400">{base.deadContacts + base.blacklisted}</div>
@@ -264,7 +251,7 @@ export default async function Home() {
         </div>
 
         {/* Email segments — compact strip */}
-        <div className="mb-6 grid gap-3 sm:grid-cols-3">
+        <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {emailSegments.map((seg) => {
             const st = SEGMENT_STYLE[seg.type];
             if (seg.type === "warm") {
@@ -274,10 +261,7 @@ export default async function Home() {
               <div key={seg.type} className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
                 <div>
                   <div className="text-xs text-[var(--text-muted)]">{st.icon} {seg.label}</div>
-                  <div className="text-2xl font-bold tabular-nums leading-tight" style={{ color: st.color }}>
-                    {seg.count}
-                    {seg.gems != null && <span className="ml-2 text-sm font-semibold text-amber-400">💎 {seg.gems}</span>}
-                  </div>
+                  <div className="text-2xl font-bold tabular-nums leading-tight" style={{ color: st.color }}>{seg.count}</div>
                   {seg.lastUpdated && <div className="text-[9px] text-[var(--text-muted)]">оновлено {seg.lastUpdated.slice(5, 16).replace("T", " ")}</div>}
                 </div>
                 <a
