@@ -154,9 +154,39 @@ const SEGMENT_STYLE: Record<string, { color: string; icon: string; hint: string 
   dead: { color: "#f87171", icon: "🚫", hint: "suppression-лист" },
 };
 
+async function getBaseStats() {
+  const q = (sql: string) => pool.query(sql).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
+  const VALID_EMAIL = `ac.type='email' AND (ac.status IS NULL OR ac.status='ok')
+    AND LOWER(TRIM(ac.value)) NOT IN (SELECT LOWER(email) FROM email_blacklist)`;
+  const [totalArtists, activeArtists, withContact, withEmail, gems, roleBooking, rolePersonal, roleMgmt, notContacted, blacklisted, deadContacts, sentEvents, bouncedMailed] = await Promise.all([
+    q("SELECT COUNT(*)::int c FROM lead_scores"),
+    q("SELECT COUNT(*)::int c FROM artist_metrics WHERE last_seen >= current_date - 14"),
+    q("SELECT COUNT(DISTINCT artist_beatport_id)::int c FROM artist_contacts"),
+    q(`SELECT COUNT(DISTINCT ac.artist_beatport_id)::int c FROM artist_contacts ac WHERE ${VALID_EMAIL}`),
+    q(`SELECT COUNT(DISTINCT ac.artist_beatport_id)::int c FROM artist_contacts ac
+       JOIN artist_metrics am ON am.artist_beatport_id = ac.artist_beatport_id
+       WHERE ${VALID_EMAIL} AND am.best_position <= 30 AND am.total_days_in_charts >= 3 AND am.last_seen >= current_date - 30`),
+    q(`SELECT COUNT(DISTINCT ac.artist_beatport_id)::int c FROM artist_contacts ac WHERE ${VALID_EMAIL} AND ac.email_type='booking'`),
+    q(`SELECT COUNT(DISTINCT ac.artist_beatport_id)::int c FROM artist_contacts ac WHERE ${VALID_EMAIL} AND ac.email_type='personal'`),
+    q(`SELECT COUNT(DISTINCT ac.artist_beatport_id)::int c FROM artist_contacts ac WHERE ${VALID_EMAIL} AND ac.email_type='management'`),
+    q(`SELECT COUNT(DISTINCT ac.artist_beatport_id)::int c FROM artist_contacts ac
+       LEFT JOIN lead_profiles lp ON lp.artist_beatport_id = ac.artist_beatport_id
+       WHERE ${VALID_EMAIL} AND (lp.status IS NULL OR lp.status='New')`),
+    q("SELECT COUNT(*)::int c FROM email_blacklist"),
+    q("SELECT COUNT(*)::int c FROM artist_contacts WHERE type='email' AND status IN ('bounced','blocked')"),
+    q("SELECT COUNT(*)::int c FROM outreach_events WHERE channel='email' AND template_id LIKE 'email_touch_%'"),
+    q(`SELECT COUNT(DISTINCT ac.value)::int c FROM artist_contacts ac
+       WHERE ac.type='email' AND ac.status='bounced'
+         AND EXISTS (SELECT 1 FROM outreach_events oe WHERE LOWER(oe.contact_value) = LOWER(TRIM(ac.value)))`),
+  ]);
+  return { totalArtists, activeArtists, withContact, withEmail, gems, roleBooking, rolePersonal, roleMgmt, notContacted, blacklisted, deadContacts, sentEvents, bouncedMailed };
+}
+
 export default async function Home() {
   const s = await getStats();
   const emailSegments = await getSegmentStats().catch(() => []);
+  const base = await getBaseStats();
+  const honestBounceRate = base.sentEvents > 0 ? ((base.bouncedMailed / base.sentEvents) * 100).toFixed(1) : null;
 
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
@@ -182,11 +212,39 @@ export default async function Home() {
             </div>
             <div>
               <div className="text-3xl font-bold tabular-nums text-red-400">{s.bounced}</div>
-              <div className="text-xs text-[var(--text-muted)]">Відбиті (bounce)</div>
+              <div className="text-xs text-[var(--text-muted)]">Вибракувано адрес</div>
+              <div className="text-[9px] text-[var(--text-muted)]">bounce + гігієна (мертві домени)</div>
             </div>
             <div>
               <div className="text-3xl font-bold tabular-nums">{s.bp.work}</div>
               <div className="text-xs text-[var(--text-muted)]">В роботі (всього)</div>
+            </div>
+          </div>
+        </div>
+
+        {/* База лідів — головні числа простою мовою */}
+        <div className="mb-6 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-5">
+          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-[var(--text-muted)]">База лідів — хто в нас є</h2>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+            <div>
+              <div className="text-2xl font-bold tabular-nums">{base.totalArtists.toLocaleString("uk-UA")}</div>
+              <div className="text-xs text-[var(--text-muted)]">артистів у базі всього</div>
+              <div className="text-[10px] text-[var(--text-muted)]">з них зараз у чартах: {base.activeArtists.toLocaleString("uk-UA")}</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold tabular-nums text-[#60a5fa]">{base.withEmail}</div>
+              <div className="text-xs text-[var(--text-muted)]">з робочим email</div>
+              <div className="text-[10px] text-[var(--text-muted)]">ще не контактовані: {base.notContacted}</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold tabular-nums text-amber-400">💎 {base.gems}</div>
+              <div className="text-xs text-[var(--text-muted)]">цінні (топ-30 чарту, активні)</div>
+              <div className="text-[10px] text-[var(--text-muted)]">👤 {base.rolePersonal} · 📅 {base.roleBooking} · 💼 {base.roleMgmt}</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold tabular-nums text-red-400">{base.deadContacts + base.blacklisted}</div>
+              <div className="text-xs text-[var(--text-muted)]">мертві адреси + чорний список</div>
+              <div className="text-[10px] text-[var(--text-muted)]">биті: {base.deadContacts} · blacklist: {base.blacklisted}</div>
             </div>
           </div>
         </div>
@@ -242,7 +300,7 @@ export default async function Home() {
             />
             <div className="mt-4 flex gap-6 border-t border-[var(--border)] pt-3 text-xs text-[var(--text-muted)]">
               <span>Reply rate: <b className="text-green-400">{s.funnel.contacted > 0 ? `${((s.funnel.replied / s.funnel.contacted) * 100).toFixed(1)}%` : "—"}</b></span>
-              <span>Bounce rate: <b className="text-red-400">{s.funnel.contacted > 0 ? `${((s.bounced / s.funnel.contacted) * 100).toFixed(1)}%` : "—"}</b></span>
+              <span>Bounce rate: <b className="text-red-400">{honestBounceRate ?? "—"}%</b> <span className="text-[10px]">(відбиті з реально надісланих)</span></span>
             </div>
           </div>
 
