@@ -359,10 +359,11 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     ok: true,
-    scanned: { bounceMessages: bounceUids.length, inboxSenders: replyFrom.length, autoReplies: autoReplyAddrs.length },
+    scanned: { bounceMessages: bounceUids.length, inboxSenders: replyFrom.length, autoReplies: autoReplies.length },
     bouncedMarked,
     replies,
     snoozed,
+    harvested,
     ts: new Date().toISOString(),
   });
 }
