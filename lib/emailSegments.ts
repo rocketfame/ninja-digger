@@ -24,6 +24,7 @@ export type SegmentRow = {
   artist_beatport_id: string;
   artist_name: string | null;
   email: string;
+  role: string | null;
   lead_status: string;
   chart_segment: string | null;
   tier: string | null;
@@ -34,7 +35,7 @@ export type SegmentRow = {
 export async function getSegmentRows(type: EmailSegmentType): Promise<SegmentRow[]> {
   if (type === "dead") {
     const res = await pool.query<SegmentRow>(
-      `SELECT ac.artist_beatport_id, am.artist_name, LOWER(TRIM(ac.value)) AS email,
+      `SELECT ac.artist_beatport_id, am.artist_name, LOWER(TRIM(ac.value)) AS email, ac.email_type AS role,
               COALESCE(lp.status, CASE WHEN ac.status = 'bounced' THEN 'bounced' ELSE 'blacklisted' END) AS lead_status,
               ls.segment AS chart_segment, ${TIER_SQL} AS tier, am.first_seen::text, am.last_seen::text
        FROM artist_contacts ac
@@ -54,7 +55,7 @@ export async function getSegmentRows(type: EmailSegmentType): Promise<SegmentRow
   const res = await pool.query<SegmentRow>(
     `SELECT * FROM (
        SELECT DISTINCT ON (ac.artist_beatport_id)
-              ac.artist_beatport_id, am.artist_name, LOWER(TRIM(ac.value)) AS email,
+              ac.artist_beatport_id, am.artist_name, LOWER(TRIM(ac.value)) AS email, ac.email_type AS role,
               lp.status AS lead_status, ls.segment AS chart_segment,
               ${TIER_SQL} AS tier, am.first_seen::text, am.last_seen::text
        FROM lead_profiles lp

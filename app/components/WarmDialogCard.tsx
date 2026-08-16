@@ -6,8 +6,17 @@ type SegmentRow = {
   artist_beatport_id: string;
   artist_name: string | null;
   email: string;
+  role: string | null;
   lead_status: string;
   tier: string | null;
+};
+
+const ROLE_UA: Record<string, string> = {
+  personal: "👤 особистий",
+  booking: "📅 букінг",
+  management: "💼 менеджмент",
+  generic: "📇 загальний",
+  unknown: "",
 };
 
 type DialogMessage = { direction: "in" | "out"; subject: string; date: string; text: string };
@@ -113,7 +122,10 @@ export function WarmDialogCard({ count, lastUpdated }: { count: number; lastUpda
                 >
                   <div className="text-sm font-medium">{l.artist_name ?? l.artist_beatport_id} {l.tier === "A" ? "💎" : ""}</div>
                   <div className="truncate text-[10px] text-[var(--text-muted)]">{l.email}</div>
-                  <div className="text-[10px] text-green-400">{STATUS_UA[l.lead_status] ?? l.lead_status}</div>
+                  <div className="text-[10px] text-green-400">
+                    {STATUS_UA[l.lead_status] ?? l.lead_status}
+                    {l.role && ROLE_UA[l.role] ? <span className="ml-1.5 text-[var(--text-muted)]">{ROLE_UA[l.role]}</span> : null}
+                  </div>
                 </button>
               ))}
             </div>

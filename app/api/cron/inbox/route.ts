@@ -13,6 +13,18 @@ import { ImapFlow } from "imapflow";
 import { pool } from "@/lib/db";
 import { invalidateContactEmail } from "@/lib/emailHygiene";
 import { sendTelegramMessage, tgEscape } from "@/lib/telegram";
+import { classifyEmail } from "@/lib/enrichClassify";
+
+/** Role from the text right before the email ("Bookings: x@y") or from the address itself. */
+function detectRole(body: string, email: string, artistName: string | null): string {
+  const idx = body.toLowerCase().indexOf(email);
+  const before = idx > 0 ? body.slice(Math.max(0, idx - 48), idx).toLowerCase() : "";
+  if (/booking/.test(before)) return "booking";
+  if (/manag|mgmt/.test(before)) return "management";
+  if (/paperwork|admin|account|invoice|advanc/.test(before)) return "generic";
+  if (/press|promo/.test(before)) return "booking";
+  return classifyEmail(email, artistName ?? "").type;
+}
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -77,8 +89,9 @@ export async function GET(request: Request) {
   let bouncedMarked = 0;
   let replies = 0;
   let snoozed = 0;
+  let harvested = 0;
   const replyFrom: { addr: string; subject: string; uid: number }[] = [];
-  const autoReplyAddrs: string[] = [];
+  const autoReplies: { addr: string; uid: number }[] = [];
   const bounceUids: number[] = [];
 
   try {
@@ -99,7 +112,7 @@ export async function GET(request: Request) {
         } else if (fromAddr === user.toLowerCase() || TECHNICAL_SENDER_RE.test(fromAddr)) {
           // own mail / technical senders — ignore
         } else if (AUTO_REPLY_SUBJECT_RE.test(subject.trim())) {
-          autoReplyAddrs.push(fromAddr); // OOO etc. — snooze follow-ups, not a reply
+          autoReplies.push({ addr: fromAddr, uid: msg.uid }); // OOO etc. — snooze, harvest contacts
         } else if (
           // Only genuine replies to OUR emails count: threaded reply (In-Reply-To)
           // or a Re: on one of our outreach subjects. Cold inbound/spam is ignored.
@@ -112,7 +125,8 @@ export async function GET(request: Request) {
 
       // Auto-responder (out of office): postpone the next touch by 5 days so we
       // don't follow up into an empty inbox
-      if (autoReplyAddrs.length > 0) {
+      if (autoReplies.length > 0) {
+        const addrs = [...new Set(autoReplies.map((a) => a.addr))];
         const res = await pool.query(
           `UPDATE lead_profiles lp SET updated_at = now() + interval '5 days'
            FROM artist_contacts ac
@@ -120,10 +134,52 @@ export async function GET(request: Request) {
              AND LOWER(TRIM(ac.value)) = ANY($1::text[])
              AND lp.status IN ('Attempt 1', 'Attempt 2')
              AND lp.updated_at < now() + interval '4 days'`,
-          [[...new Set(autoReplyAddrs)]]
+          [addrs]
         ).catch(() => ({ rowCount: 0 }));
         snoozed = res.rowCount ?? 0;
         if (snoozed > 0) console.log(`[cron/inbox] snoozed follow-ups for ${snoozed} lead(s) (auto-reply/OOO)`);
+
+        // Harvest extra contacts from OOO bodies ("for urgent: booking@...") —
+        // agencies often list real booking/management addresses there
+        const knownMap = new Map<string, { artist: string; name: string | null }>();
+        const known = await pool.query<{ email: string; artist_beatport_id: string; artist_name: string | null }>(
+          `SELECT DISTINCT LOWER(TRIM(ac.value)) AS email, ac.artist_beatport_id, am.artist_name
+           FROM artist_contacts ac
+           LEFT JOIN artist_metrics am ON am.artist_beatport_id = ac.artist_beatport_id
+           WHERE ac.type = 'email' AND LOWER(TRIM(ac.value)) = ANY($1::text[])`,
+          [addrs]
+        ).catch(() => ({ rows: [] as { email: string; artist_beatport_id: string; artist_name: string | null }[] }));
+        for (const r of known.rows) knownMap.set(r.email, { artist: r.artist_beatport_id, name: r.artist_name });
+
+        for (const ar of autoReplies) {
+          const lead = knownMap.get(ar.addr);
+          if (!lead) continue;
+          const body = await downloadText(client, ar.uid);
+          if (!body) continue;
+          const found = [...new Set(
+            (body.match(EMAIL_IN_BODY_RE) ?? [])
+              .map((e) => e.toLowerCase())
+              .filter((e) => e !== ar.addr && e !== user.toLowerCase() && !e.includes("googlemail.com"))
+          )].slice(0, 4);
+          if (found.length === 0) continue;
+          const withRoles: string[] = [];
+          for (const newEmail of found) {
+            const role = detectRole(body.toLowerCase(), newEmail, lead.name);
+            await pool.query(
+              `INSERT INTO artist_contacts (artist_beatport_id, type, value, confidence, status, email_type, source_context)
+               VALUES ($1, 'email', $2, 0.8, 'ok', $3, 'auto-reply harvest')
+               ON CONFLICT (artist_beatport_id, type, LOWER(TRIM(value)))
+               DO UPDATE SET confidence = GREATEST(artist_contacts.confidence, 0.8), email_type = $3`,
+              [lead.artist, newEmail, role]
+            ).catch(() => {});
+            withRoles.push(`${newEmail} (${role})`);
+          }
+          harvested += found.length;
+          await sendTelegramMessage(
+            `📮 <b>${tgEscape(lead.name ?? lead.artist)}</b>: в автовідповіді знайшов контакти — ${withRoles.map(tgEscape).join(", ")} (додав до ліда)`
+          );
+          console.log(`[cron/inbox] harvested ${found.length} contact(s) from OOO for ${lead.artist}`);
+        }
       }
 
       // Pass 2: bounce bodies → failed recipient addresses
