@@ -9,12 +9,15 @@
 import { pool } from "@/lib/db";
 import { JUNK_NAME_SQL, TIER_SQL } from "@/lib/leadQuality";
 
-export type EmailSegmentType = "no_reply" | "warm" | "dead";
+export type EmailSegmentType = "no_reply" | "warm" | "dead" | "all_email" | "not_contacted" | "gems";
 
 export const SEGMENT_LABELS: Record<EmailSegmentType, string> = {
   no_reply: "Не відповіли (чиста доставка)",
   warm: "Теплі (відповідали)",
   dead: "Помилки та відписки",
+  all_email: "Всі з робочим email",
+  not_contacted: "Ще не контактовані",
+  gems: "Перлини (топ-30, активні)",
 };
 
 const NO_REPLY_STATUSES = ["Attempt 1", "Attempt 2", "No Response", "Cold", "Contacted"];
@@ -32,7 +35,35 @@ export type SegmentRow = {
   last_seen: string | null;
 };
 
-export async function getSegmentRows(type: EmailSegmentType): Promise<SegmentRow[]> {
+export async function getSegmentRows(type: EmailSegmentType, role?: string | null): Promise<SegmentRow[]> {
+  // Base-inventory segments: all valid emails / never contacted / tier-A gems,
+  // optionally narrowed to a contact role (personal/booking/management/generic)
+  if (type === "all_email" || type === "not_contacted" || type === "gems") {
+    const extra =
+      type === "not_contacted" ? `AND (lp.status IS NULL OR lp.status = 'New')` :
+      type === "gems" ? `AND ${TIER_SQL} = 'A'` : "";
+    const roleCond = role ? `AND ac.email_type = $1` : "";
+    const res = await pool.query<SegmentRow>(
+      `SELECT * FROM (
+         SELECT DISTINCT ON (ac.artist_beatport_id)
+                ac.artist_beatport_id, am.artist_name, LOWER(TRIM(ac.value)) AS email, ac.email_type AS role,
+                COALESCE(lp.status, 'New') AS lead_status, ls.segment AS chart_segment,
+                ${TIER_SQL} AS tier, am.first_seen::text, am.last_seen::text
+         FROM artist_contacts ac
+         LEFT JOIN artist_metrics am ON am.artist_beatport_id = ac.artist_beatport_id
+         LEFT JOIN lead_profiles lp ON lp.artist_beatport_id = ac.artist_beatport_id
+         LEFT JOIN lead_scores ls ON ls.artist_beatport_id = ac.artist_beatport_id
+         WHERE ac.type = 'email' AND (ac.status IS NULL OR ac.status = 'ok')
+           AND LOWER(TRIM(ac.value)) NOT IN (SELECT LOWER(email) FROM email_blacklist)
+           AND NOT ${JUNK_NAME_SQL}
+           ${extra} ${roleCond}
+         ORDER BY ac.artist_beatport_id, ac.confidence DESC
+       ) t
+       ORDER BY t.tier, t.last_seen DESC NULLS LAST`,
+      role ? [role] : []
+    );
+    return res.rows;
+  }
   if (type === "dead") {
     const res = await pool.query<SegmentRow>(
       `SELECT ac.artist_beatport_id, am.artist_name, LOWER(TRIM(ac.value)) AS email, ac.email_type AS role,

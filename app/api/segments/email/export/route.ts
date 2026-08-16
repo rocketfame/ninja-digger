@@ -9,7 +9,8 @@ import { getSegmentRows, type EmailSegmentType } from "@/lib/emailSegments";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const TYPES: EmailSegmentType[] = ["no_reply", "warm", "dead"];
+const TYPES: EmailSegmentType[] = ["no_reply", "warm", "dead", "all_email", "not_contacted", "gems"];
+const ROLES = ["personal", "booking", "management", "generic", "unknown"];
 
 function csvCell(v: string | null): string {
   const s = v ?? "";
@@ -22,7 +23,9 @@ export async function GET(request: Request) {
   if (!type || !TYPES.includes(type)) {
     return NextResponse.json({ error: "type must be one of: " + TYPES.join(", ") }, { status: 400 });
   }
-  const rows = await getSegmentRows(type);
+  const roleParam = searchParams.get("role");
+  const role = roleParam && ROLES.includes(roleParam) ? roleParam : null;
+  const rows = await getSegmentRows(type, role);
   const header = "email,artist_name,role,tier,artist_beatport_id,lead_status,chart_segment,first_seen,last_seen";
   const body = rows
     .map((r) => [r.email, r.artist_name, r.role ?? "unknown", r.tier, r.artist_beatport_id, r.lead_status, r.chart_segment, r.first_seen?.slice(0, 10) ?? "", r.last_seen?.slice(0, 10) ?? ""].map(csvCell).join(","))
@@ -31,7 +34,7 @@ export async function GET(request: Request) {
   return new NextResponse(header + "\n" + body + "\n", {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="ninja-digger-${type}-${date}.csv"`,
+      "Content-Disposition": `attachment; filename="ninja-digger-${type}${role ? `-${role}` : ""}-${date}.csv"`,
     },
   });
 }

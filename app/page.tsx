@@ -232,14 +232,28 @@ export default async function Home() {
               <div className="text-[10px] text-[var(--text-muted)]">з них зараз у чартах: {base.activeArtists.toLocaleString("uk-UA")}</div>
             </div>
             <div>
-              <div className="text-2xl font-bold tabular-nums text-[#60a5fa]">{base.withEmail}</div>
+              <a href="/api/segments/email/export?type=all_email" download className="group inline-flex items-center gap-1.5">
+                <span className="text-2xl font-bold tabular-nums text-[#60a5fa]">{base.withEmail}</span>
+                <span className="text-xs text-[var(--text-muted)] group-hover:text-[#60a5fa]">⬇ CSV</span>
+              </a>
               <div className="text-xs text-[var(--text-muted)]">з робочим email</div>
-              <div className="text-[10px] text-[var(--text-muted)]">ще не контактовані: {base.notContacted}</div>
+              <div className="text-[10px] text-[var(--text-muted)]">
+                ще не контактовані: <a href="/api/segments/email/export?type=not_contacted" download className="underline decoration-dotted hover:text-[var(--text)]">{base.notContacted} ⬇</a>
+              </div>
             </div>
             <div>
-              <div className="text-2xl font-bold tabular-nums text-amber-400">💎 {base.gems}</div>
+              <a href="/api/segments/email/export?type=gems" download className="group inline-flex items-center gap-1.5">
+                <span className="text-2xl font-bold tabular-nums text-amber-400">💎 {base.gems}</span>
+                <span className="text-xs text-[var(--text-muted)] group-hover:text-amber-400">⬇ CSV</span>
+              </a>
               <div className="text-xs text-[var(--text-muted)]">цінні (топ-30 чарту, активні)</div>
-              <div className="text-[10px] text-[var(--text-muted)]">👤 {base.rolePersonal} · 📅 {base.roleBooking} · 💼 {base.roleMgmt}</div>
+              <div className="text-[10px] text-[var(--text-muted)]">
+                <a href="/api/segments/email/export?type=all_email&role=personal" download className="underline decoration-dotted hover:text-[var(--text)]">👤 {base.rolePersonal}</a>
+                {" · "}
+                <a href="/api/segments/email/export?type=all_email&role=booking" download className="underline decoration-dotted hover:text-[var(--text)]">📅 {base.roleBooking}</a>
+                {" · "}
+                <a href="/api/segments/email/export?type=all_email&role=management" download className="underline decoration-dotted hover:text-[var(--text)]">💼 {base.roleMgmt}</a>
+              </div>
             </div>
             <div>
               <div className="text-2xl font-bold tabular-nums text-red-400">{base.deadContacts + base.blacklisted}</div>
