@@ -36,22 +36,24 @@ export async function GET(request: Request) {
     ? await pool.query<{ permalink: string }>(
         `SELECT permalink FROM sc_seed_accounts
          WHERE active = true AND (completed_at IS NULL OR completed_at < now() - interval '14 days')
-         ORDER BY completed_at NULLS FIRST, last_harvested_at ASC NULLS FIRST LIMIT 3`)
+         ORDER BY completed_at NULLS FIRST, last_harvested_at ASC NULLS FIRST LIMIT 6`)
     : { rows: [] as { permalink: string }[] };
 
+  // Harvest FIRST and take the bigger share of the time budget — it's the only
+  // step that adds new leads. verify/enrich only groom existing rows, so keep
+  // them lean so a run never starves harvest or times out.
   const results = [];
   for (const s of seeds.rows) {
     const r = await harvestSeedFollowers(s.permalink, 2);
     results.push({ seed: s.permalink, ...r });
   }
   // Deep-verify a slice of tier-A gems each run (latest-track check)
-  const verified = await verifyActiveArtists(50);
-  // Enrich email-less A/B/promoter artists via their public funnel — bigger
-  // batch so the gold gets contacts steadily, not a trickle
+  const verified = await verifyActiveArtists(15);
   // Fill in real track_count for Re-Ex promoters so repost channels (analytics)
   // separate from real artists (outreach leads).
-  const promoterProfiles = await refreshPromoterProfiles(15);
-  const enriched = await enrichScBatch(25);
+  const promoterProfiles = await refreshPromoterProfiles(8);
+  // Enrich email-less A/B/promoter artists via their public funnel.
+  const enriched = await enrichScBatch(12);
   // Dynamic bloat control: keep the regenerable HTML cache tightly bounded so it
   // never balloons between daily truncates (it was the #1 space hog at 172MB).
   await pool.query("DELETE FROM url_cache WHERE fetched_at < now() - interval '6 hours'").catch(() => {});
