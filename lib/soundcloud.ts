@@ -12,7 +12,7 @@ const JUNK_EMAIL_RE = /(no-?reply|example\.|\.png|\.jpg|sentry|soundcloud\.com)/
 
 let cachedClientId: { id: string; at: number } | null = null;
 
-async function getClientId(): Promise<string | null> {
+export async function getClientId(): Promise<string | null> {
   if (cachedClientId && Date.now() - cachedClientId.at < 3600e3) return cachedClientId.id;
   try {
     const page = await fetch("https://soundcloud.com/discover", { headers: { "User-Agent": UA } }).then((r) => r.text());
@@ -38,6 +38,14 @@ type ScUser = {
   track_count: number; followers_count: number; followings_count: number; likes_count: number;
   reposts_count: number; verified: boolean; created_at: string | null; last_modified: string | null;
 };
+
+/** Fetch a user's current SoundCloud bio/description (where booking emails live). */
+export async function fetchScDescription(soundcloudId: string | number): Promise<string | null> {
+  const clientId = await getClientId();
+  if (!clientId) return null;
+  const u = await api<{ description: string | null }>(`/users/${soundcloudId}`, clientId);
+  return u?.description ?? null;
+}
 
 async function api<T>(path: string, clientId: string): Promise<T | null> {
   try {

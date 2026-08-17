@@ -32,7 +32,7 @@ export function EnrichButton() {
     <div className="mt-3">
       <button type="button" onClick={run} disabled={loading}
         className="w-full rounded-xl border border-[var(--border)] px-4 py-2.5 text-sm font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--accent)]/60 hover:text-[var(--text)] disabled:opacity-50">
-        {loading ? "Шукаю контакти…" : "🔎 Знайти більше email"}
+        {loading ? "Шукаю контакти…" : "Знайти більше email"}
       </button>
       {msg && <div className="mt-2 text-[11px] text-[var(--text-muted)]">{msg}</div>}
     </div>

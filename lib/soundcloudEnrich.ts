@@ -5,6 +5,7 @@
  */
 
 import { pool } from "@/lib/db";
+import { fetchScDescription } from "@/lib/soundcloud";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
@@ -58,9 +59,26 @@ function linksFromDescription(desc: string): string[] {
 
 /** Enrich one SC artist. Returns the found email, or null. */
 export async function enrichScArtist(a: { soundcloud_id: string; username: string; description: string | null; instagram?: string | null }): Promise<string | null> {
+  // 0. If we have no bio yet (Re-Ex promoters), fetch it — booking emails live here
+  let description = a.description;
+  if (!description) {
+    description = await fetchScDescription(a.soundcloud_id).catch(() => null);
+    if (description) {
+      await pool.query(`UPDATE sc_artists SET description=$1 WHERE soundcloud_id=$2 AND description IS NULL`, [description, a.soundcloud_id]).catch(() => {});
+    }
+  }
+  // Direct email in the bio is the highest-yield source
+  if (description) {
+    const bioEmail = extractEmail(description);
+    if (bioEmail) {
+      await pool.query(`UPDATE sc_artists SET email=$1, email_source='bio', updated_at=now() WHERE soundcloud_id=$2 AND email IS NULL`, [bioEmail, a.soundcloud_id]);
+      return bioEmail;
+    }
+  }
+
   const candidates: string[] = [];
   // 1. links from the SC bio (Linktree, website, IG...)
-  if (a.description) candidates.push(...linksFromDescription(a.description));
+  if (description) candidates.push(...linksFromDescription(description));
   // 2. direct probes by username
   const slug = a.username.toLowerCase().replace(/[^a-z0-9]/g, "");
   candidates.push(`https://linktr.ee/${slug}`, `https://${slug}.bandcamp.com`, `https://beacons.ai/${slug}`);
@@ -108,7 +126,7 @@ export async function enrichScArtist(a: { soundcloud_id: string; username: strin
 export async function enrichScBatch(limit = 8): Promise<{ processed: number; found: number }> {
   const rows = (await pool.query<{ soundcloud_id: string; username: string; description: string | null; instagram: string | null }>(
     `SELECT soundcloud_id, username, description, instagram FROM sc_artists
-     WHERE email IS NULL AND (is_promoter = true OR (tier IN ('A','B') AND description IS NOT NULL))
+     WHERE email IS NULL AND (is_promoter = true OR tier IN ('A','B'))
      ORDER BY is_promoter DESC, tier, followers_count DESC LIMIT $1`, [limit]
   )).rows;
   let found = 0;

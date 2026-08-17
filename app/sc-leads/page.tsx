@@ -11,10 +11,10 @@ export const dynamic = "force-dynamic";
 type SP = { tier?: string; withEmail?: string; activity?: string; promoter?: string };
 
 const ACTIVITY = [
-  { key: "hot", emoji: "🔥", label: "Активні", sub: "останні 6 міс", color: "#22c55e" },
-  { key: "warm", emoji: "🌤", label: "Пригасають", sub: "6–12 міс", color: "#fbbf24" },
-  { key: "cool", emoji: "💤", label: "Давно тихо", sub: "12–18 міс", color: "#60a5fa" },
-  { key: "dormant", emoji: "🪦", label: "Сплячі", sub: "понад 18 міс", color: "#6b7280" },
+  { key: "hot", label: "Активні", sub: "останні 6 міс", color: "#22c55e" },
+  { key: "warm", label: "Пригасають", sub: "6–12 міс", color: "#fbbf24" },
+  { key: "cool", label: "Давно тихо", sub: "12–18 міс", color: "#60a5fa" },
+  { key: "dormant", label: "Сплячі", sub: "понад 18 міс", color: "#6b7280" },
 ] as const;
 
 async function getData(sp: SP) {
@@ -84,8 +84,11 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
                   return (
                     <Link key={a.key} href={qs({ activity: on ? undefined : a.key })}
                       className={chip(on)} style={on ? { boxShadow: `inset 0 0 0 2px ${a.color}`, background: `${a.color}1a` } : undefined}>
-                      <div className="text-2xl font-bold tabular-nums" style={{ color: a.color }}>{d.actMap.get(a.key) ?? 0}</div>
-                      <div className="mt-0.5 text-sm font-medium">{a.emoji} {a.label}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: a.color }} />
+                        <span className="text-2xl font-bold tabular-nums" style={{ color: a.color }}>{d.actMap.get(a.key) ?? 0}</span>
+                      </div>
+                      <div className="mt-0.5 text-sm font-medium">{a.label}</div>
                       <div className="text-[11px] text-[var(--text-muted)]">{a.sub}</div>
                     </Link>
                   );
@@ -102,7 +105,7 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
               <div className="flex flex-wrap gap-2.5">
                 {[
                   { t: "", label: "Усі", hint: null, color: "var(--accent)" },
-                  { t: "A", label: "💎 Перлини", hint: d.tierMap.get("A") ?? 0, color: "#fbbf24" },
+                  { t: "A", label: "Перлини", hint: d.tierMap.get("A") ?? 0, color: "#fbbf24" },
                   { t: "B", label: "Середні", hint: d.tierMap.get("B") ?? 0, color: "#60a5fa" },
                   { t: "C", label: "Слабкі", hint: d.tierMap.get("C") ?? 0, color: "#6b7280" },
                 ].map((o) => {
@@ -128,12 +131,12 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
                 <Link href={qs({ withEmail: sp.withEmail === "1" ? undefined : "1" })}
                   className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${sp.withEmail === "1" ? "border-transparent" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}
                   style={sp.withEmail === "1" ? { boxShadow: "inset 0 0 0 2px #60a5fa", background: "#60a5fa1a" } : undefined}>
-                  📧 Лише з email
+                  Лише з email
                 </Link>
                 <Link href={qs({ promoter: sp.promoter === "1" ? undefined : "1" })}
                   className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${sp.promoter === "1" ? "border-transparent" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}
                   style={sp.promoter === "1" ? { boxShadow: "inset 0 0 0 2px #22c55e", background: "#22c55e1a" } : undefined}>
-                  🔥 Платять за промо · {d.promoters}
+                  Платять за промо · {d.promoters}
                 </Link>
               </div>
               <p className="mt-2 text-[11px] text-[var(--text-muted)]">«Платять за промо» — активні артисти з RepostExchange, найвищий намір купити просування.</p>

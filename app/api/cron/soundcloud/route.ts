@@ -28,9 +28,10 @@ export async function GET(request: Request) {
     results.push({ seed: s.permalink, ...r });
   }
   // Deep-verify a slice of tier-A gems each run (latest-track check)
-  const verified = await verifyActiveArtists(40);
-  // Enrich a slice of email-less A/B artists via their public funnel
-  const enriched = await enrichScBatch(10);
+  const verified = await verifyActiveArtists(50);
+  // Enrich email-less A/B/promoter artists via their public funnel — bigger
+  // batch so the gold gets contacts steadily, not a trickle
+  const enriched = await enrichScBatch(25);
   return NextResponse.json({ ok: true, results, verified, enriched, ts: new Date().toISOString() });
 }
 
