@@ -16,15 +16,27 @@ export async function GET(request: Request) {
   if (secret && request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const seeds = await pool.query<{ permalink: string }>(
-    `SELECT permalink FROM sc_seed_accounts WHERE active = true
-     ORDER BY last_harvested_at ASC NULLS FIRST LIMIT 1`
-  );
-  if (seeds.rows.length === 0) return NextResponse.json({ ok: true, message: "no active seeds" });
+  // Overflow guard: the Neon free tier caps at 512MB and a full DB once killed
+  // ingestion. Above the safe line we stop adding rows (harvest) but still run
+  // enrich/verify, which only update existing rows.
+  const SAFE_MB = 460;
+  const dbMb = Number((await pool.query<{ mb: number }>(
+    `SELECT (pg_database_size(current_database())/1048576.0)::numeric(10,1) AS mb`
+  )).rows[0].mb);
+  const harvestOk = dbMb < SAFE_MB;
+
+  // Rotate through the least-recently-harvested seeds. 773+ promoter channels
+  // now seed the pipeline, so we take a few per run (2 pages each) to spread
+  // coverage without exhausting any single one or flooding the DB.
+  const seeds = harvestOk
+    ? await pool.query<{ permalink: string }>(
+        `SELECT permalink FROM sc_seed_accounts WHERE active = true
+         ORDER BY last_harvested_at ASC NULLS FIRST LIMIT 3`)
+    : { rows: [] as { permalink: string }[] };
 
   const results = [];
   for (const s of seeds.rows) {
-    const r = await harvestSeedFollowers(s.permalink, 4);
+    const r = await harvestSeedFollowers(s.permalink, 2);
     results.push({ seed: s.permalink, ...r });
   }
   // Deep-verify a slice of tier-A gems each run (latest-track check)
@@ -32,7 +44,7 @@ export async function GET(request: Request) {
   // Enrich email-less A/B/promoter artists via their public funnel — bigger
   // batch so the gold gets contacts steadily, not a trickle
   const enriched = await enrichScBatch(25);
-  return NextResponse.json({ ok: true, results, verified, enriched, ts: new Date().toISOString() });
+  return NextResponse.json({ ok: true, dbMb, harvestOk, results, verified, enriched, ts: new Date().toISOString() });
 }
 
 // Manual trigger with a bigger page budget (POST from the /sc-leads button)

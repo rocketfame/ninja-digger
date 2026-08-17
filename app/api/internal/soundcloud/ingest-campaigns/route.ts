@@ -64,6 +64,18 @@ export async function POST(request: Request) {
        email, email ? "bio" : null]
     );
     upserted += res.rowCount ?? 0;
+
+    // A campaign-runner is an active promo channel — seed it so we harvest its
+    // followers (self-promoting artists) with our own SoundCloud tools. Follower
+    // cap protects the 512MB tier from a single mega-channel.
+    const followers = s.Followers ?? 0;
+    if (s.Permalink && followers >= 30 && followers <= 50000) {
+      await pool.query(
+        `INSERT INTO sc_seed_accounts (permalink, soundcloud_id, username, followers_count, active)
+         VALUES ($1,$2,$3,$4,true) ON CONFLICT (permalink) DO NOTHING`,
+        [s.Permalink, s.ExternalId, s.Name, followers]
+      ).catch(() => {});
+    }
   }
   // Daily market-pulse snapshot (active campaigns today)
   if (totalActive > 0) {
