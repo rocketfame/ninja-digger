@@ -21,24 +21,29 @@ async function getData(sp: SP) {
   const num = (sql: string, p: unknown[] = []) => pool.query(sql, p).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
   const q = (sql: string, p: unknown[] = []) => pool.query(sql, p).then((r) => r.rows).catch(() => []);
 
-  const conds: string[] = [];
+  // A lead must have its own tracks. Accounts with 0 tracks are repost/promo
+  // channels — kept for analytics, never shown as outreach leads. The promoter
+  // toggle flips into that analytics view (repost channels only).
+  const HAS_TRACKS = "track_count >= 1";
+  const analytics = sp.promoter === "1";
+  const conds: string[] = [analytics ? "is_promoter = true AND track_count = 0" : HAS_TRACKS];
   const params: string[] = [];
   if (sp.tier && ["A", "B", "C"].includes(sp.tier)) { params.push(sp.tier); conds.push(`tier=$${params.length}`); }
   if (sp.withEmail === "1") conds.push("email IS NOT NULL");
   if (sp.activity && ACTIVITY.some((a) => a.key === sp.activity)) conds.push(`${SC_ACTIVITY_SQL}='${sp.activity}'`);
-  if (sp.promoter === "1") conds.push("is_promoter = true");
-  const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+  const where = `WHERE ${conds.join(" AND ")}`;
 
   const [total, promoters, reexDays, seed, actRows, tierRows, segCount, segEmail, preview] = await Promise.all([
-    num("SELECT COUNT(*)::int c FROM sc_artists"),
-    num("SELECT COUNT(*)::int c FROM sc_artists WHERE is_promoter=true"),
+    num(`SELECT COUNT(*)::int c FROM sc_artists WHERE ${HAS_TRACKS}`),
+    // Analytics bucket: repost channels (0 own tracks) — insight into their model
+    num("SELECT COUNT(*)::int c FROM sc_artists WHERE is_promoter=true AND track_count=0"),
     pool.query<{ day: string; active_campaigns: number }>("SELECT day::text, active_campaigns FROM reex_daily ORDER BY day DESC LIMIT 2").then((r) => r.rows).catch(() => []),
     pool.query("SELECT permalink, followers_count FROM sc_seed_accounts WHERE active=true ORDER BY id LIMIT 1").then((r) => r.rows[0]).catch(() => null),
-    q(`SELECT ${SC_ACTIVITY_SQL} AS a, COUNT(email)::int e FROM sc_artists GROUP BY 1`) as Promise<{ a: string; e: number }[]>,
-    q(`SELECT COALESCE(tier,'C') AS t, COUNT(email)::int e FROM sc_artists GROUP BY 1`) as Promise<{ t: string; e: number }[]>,
+    q(`SELECT ${SC_ACTIVITY_SQL} AS a, COUNT(email)::int e FROM sc_artists WHERE ${HAS_TRACKS} GROUP BY 1`) as Promise<{ a: string; e: number }[]>,
+    q(`SELECT COALESCE(tier,'C') AS t, COUNT(email)::int e FROM sc_artists WHERE ${HAS_TRACKS} GROUP BY 1`) as Promise<{ t: string; e: number }[]>,
     num(`SELECT COUNT(*)::int c FROM sc_artists ${where}`, params),
-    num(`SELECT COUNT(*)::int c FROM sc_artists ${where}${where ? " AND" : " WHERE"} email IS NOT NULL`, params),
-    q(`SELECT username, full_name, email FROM sc_artists ${where}${where ? " AND" : " WHERE"} email IS NOT NULL ORDER BY tier, followers_count DESC LIMIT 5`, params) as Promise<{ username: string; full_name: string | null; email: string | null }[]>,
+    num(`SELECT COUNT(*)::int c FROM sc_artists ${where} AND email IS NOT NULL`, params),
+    q(`SELECT username, full_name, email FROM sc_artists ${where} AND email IS NOT NULL ORDER BY tier, followers_count DESC LIMIT 5`, params) as Promise<{ username: string; full_name: string | null; email: string | null }[]>,
   ]);
   return { total, promoters, reexDays, seed, segCount, segEmail, preview, actMap: new Map(actRows.map((r) => [r.a, r.e])), tierMap: new Map(tierRows.map((r) => [r.t, r.e])) };
 }
@@ -51,7 +56,8 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
     const parts = Object.entries(m).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`);
     return `/sc-leads${parts.length ? `?${parts.join("&")}` : ""}`;
   };
-  const exportUrl = `/api/segments/soundcloud/export${qs({}).replace("/sc-leads", "")}`;
+  // Promoter toggle = analytics export (repost channels), otherwise real leads.
+  const exportUrl = `/api/segments/soundcloud/export${qs({}).replace("/sc-leads", "").replace("promoter=1", "analytics=1")}`;
   const hasFilter = Boolean(sp.tier || sp.activity || sp.withEmail === "1");
 
   const chip = (active: boolean, accent = "var(--accent)") =>
@@ -136,10 +142,10 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
                 <Link href={qs({ promoter: sp.promoter === "1" ? undefined : "1" })}
                   className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${sp.promoter === "1" ? "border-transparent" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}
                   style={sp.promoter === "1" ? { boxShadow: "inset 0 0 0 2px #22c55e", background: "#22c55e1a" } : undefined}>
-                  Платять за промо · {d.promoters}
+                  Репост-канали (аналітика) · {d.promoters}
                 </Link>
               </div>
-              <p className="mt-2 text-[11px] text-[var(--text-muted)]">«Платять за промо» — активні артисти з RepostExchange, найвищий намір купити просування.</p>
+              <p className="mt-2 text-[11px] text-[var(--text-muted)]">Репост-канали з RepostExchange без власних треків — не ліди, тримаємо для аналітики їхньої моделі промо.</p>
             </section>
 
             {/* RepostExchange sync — highest-intent source */}

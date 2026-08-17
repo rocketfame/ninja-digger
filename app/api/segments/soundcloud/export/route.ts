@@ -18,8 +18,14 @@ export async function GET(request: Request) {
   const tier = searchParams.get("tier");
   const withEmail = searchParams.get("withEmail") === "1";
   const activity = searchParams.get("activity");
+  // Analytics mode: repost/promo channels with no own tracks (kept for future
+  // insight into their model, NOT outreach). Default = real artists only.
+  const analytics = searchParams.get("analytics") === "1";
   const conds: string[] = [];
   const params: string[] = [];
+  // A lead must have its own tracks — accounts with 0 tracks are repost channels,
+  // useless for artist outreach. Analytics mode flips to exactly those.
+  conds.push(analytics ? "track_count = 0 AND is_promoter = true" : "track_count >= 1");
   if (tier && ["A", "B", "C"].includes(tier)) { params.push(tier); conds.push(`tier = $${params.length}`); }
   if (withEmail) conds.push(`email IS NOT NULL`);
   if (activity && activity in SC_ACTIVITY) conds.push(`${SC_ACTIVITY_SQL} = '${activity}'`);

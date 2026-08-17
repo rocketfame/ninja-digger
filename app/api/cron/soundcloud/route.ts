@@ -5,7 +5,7 @@
 
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { harvestSeedFollowers, verifyActiveArtists } from "@/lib/soundcloud";
+import { harvestSeedFollowers, verifyActiveArtists, refreshPromoterProfiles } from "@/lib/soundcloud";
 import { enrichScBatch } from "@/lib/soundcloudEnrich";
 import { defendDbSpace } from "@/lib/dbGuard";
 
@@ -48,11 +48,14 @@ export async function GET(request: Request) {
   const verified = await verifyActiveArtists(50);
   // Enrich email-less A/B/promoter artists via their public funnel — bigger
   // batch so the gold gets contacts steadily, not a trickle
+  // Fill in real track_count for Re-Ex promoters so repost channels (analytics)
+  // separate from real artists (outreach leads).
+  const promoterProfiles = await refreshPromoterProfiles(15);
   const enriched = await enrichScBatch(25);
   // Dynamic bloat control: keep the regenerable HTML cache tightly bounded so it
   // never balloons between daily truncates (it was the #1 space hog at 172MB).
   await pool.query("DELETE FROM url_cache WHERE fetched_at < now() - interval '6 hours'").catch(() => {});
-  return NextResponse.json({ ok: true, dbMb, harvestOk, guard, results, verified, enriched, ts: new Date().toISOString() });
+  return NextResponse.json({ ok: true, dbMb, harvestOk, guard, results, verified, promoterProfiles, enriched, ts: new Date().toISOString() });
 }
 
 // Manual trigger with a bigger page budget (POST from the /sc-leads button)

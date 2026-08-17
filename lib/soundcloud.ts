@@ -144,6 +144,38 @@ export async function verifyActiveArtists(limit = 60): Promise<{ checked: number
 // flooding the DB. Deep followers are older and mostly stale.
 const PER_SEED_CAP = 1000;
 
+/** Fetch real profile data for Re-Ex promoters we ingested without it, so
+ * repost/promo channels (0 own tracks — analytics only) can be told apart from
+ * real artists (track_count >= 1 — outreach leads). Recomputes tier from the
+ * fetched track_count so forced-A repost channels drop out of the lead pool. */
+export async function refreshPromoterProfiles(limit = 15): Promise<{ checked: number; withTracks: number }> {
+  const clientId = await getClientId();
+  if (!clientId) return { checked: 0, withTracks: 0 };
+  const rows = (await pool.query<{ soundcloud_id: string }>(
+    `SELECT soundcloud_id FROM sc_artists
+     WHERE is_promoter = true AND profile_refreshed_at IS NULL
+     ORDER BY followers_count DESC LIMIT $1`, [limit]
+  )).rows;
+  let withTracks = 0;
+  for (const r of rows) {
+    const u = await api<ScUser>(`/users/${r.soundcloud_id}`, clientId);
+    if (!u) {
+      await pool.query(`UPDATE sc_artists SET profile_refreshed_at=now() WHERE soundcloud_id=$1`, [r.soundcloud_id]).catch(() => {});
+      continue;
+    }
+    if ((u.track_count ?? 0) >= 1) withTracks++;
+    await pool.query(
+      `UPDATE sc_artists SET track_count=$1, followers_count=$2, followings_count=$3, likes_count=$4,
+         reposts_count=$5, last_modified=$6, city=COALESCE(city,$7), country_code=COALESCE(country_code,$8),
+         tier=$9, is_active=$10, profile_refreshed_at=now(), updated_at=now()
+       WHERE soundcloud_id=$11`,
+      [u.track_count ?? 0, u.followers_count ?? 0, u.followings_count ?? 0, u.likes_count ?? 0, u.reposts_count ?? 0,
+       u.last_modified, u.city, u.country_code, tierFor(u), isAlive(u), r.soundcloud_id]
+    ).catch(() => {});
+  }
+  return { checked: rows.length, withTracks };
+}
+
 /** Harvest one page of a seed account's followers; resumable via stored cursor.
  * Once a seed reaches PER_SEED_CAP (or runs out) it's marked completed and drops
  * to the back of the queue; a completed seed is only revisited for NEW followers
