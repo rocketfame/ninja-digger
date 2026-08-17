@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { harvestSeedFollowers, verifyActiveArtists } from "@/lib/soundcloud";
+import { enrichScBatch } from "@/lib/soundcloudEnrich";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -27,8 +28,10 @@ export async function GET(request: Request) {
     results.push({ seed: s.permalink, ...r });
   }
   // Deep-verify a slice of tier-A gems each run (latest-track check)
-  const verified = await verifyActiveArtists(60);
-  return NextResponse.json({ ok: true, results, verified, ts: new Date().toISOString() });
+  const verified = await verifyActiveArtists(40);
+  // Enrich a slice of email-less A/B artists via their public funnel
+  const enriched = await enrichScBatch(10);
+  return NextResponse.json({ ok: true, results, verified, enriched, ts: new Date().toISOString() });
 }
 
 // Manual trigger with a bigger page budget (POST from the /sc-leads button)

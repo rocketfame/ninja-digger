@@ -2,6 +2,7 @@ import Link from "next/link";
 import { NavBar } from "@/app/components/NavBar";
 import { pool } from "@/lib/db";
 import { SeedControl } from "./SeedControl";
+import { EnrichButton } from "./EnrichButton";
 import { SC_ACTIVITY_SQL } from "@/lib/scActivity";
 
 export const dynamic = "force-dynamic";
@@ -57,14 +58,11 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
       <NavBar />
       <main className="mx-auto max-w-5xl px-4 py-8">
         {/* Header */}
-        <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">SoundCloud Leads</h1>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
-              {d.total.toLocaleString("uk-UA")} артистів у базі{d.seed ? ` · джерело @${d.seed.permalink}` : ""}
-            </p>
-          </div>
-          <SeedControl seed={d.seed?.permalink ?? null} />
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold tracking-tight">SoundCloud Leads</h1>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
+            {d.total.toLocaleString("uk-UA")} артистів у базі{d.seed ? ` · джерело @${d.seed.permalink} (${d.seed.followers_count?.toLocaleString("uk-UA")} фоловерів)` : ""}
+          </p>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -128,22 +126,26 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
                 📧 Лише з email у профілі
               </Link>
             </section>
+
+            {/* Add source — fills the space, prettier search */}
+            <SeedControl seed={d.seed?.permalink ?? null} />
           </div>
 
           {/* Right: sticky result */}
           <aside className="lg:sticky lg:top-6 lg:self-start">
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6 text-center">
-              <div className="text-xs uppercase tracking-wider text-[var(--text-muted)]">У вибраному сегменті</div>
-              <div className="my-2 text-5xl font-bold tabular-nums text-[var(--accent)]">{d.segCount.toLocaleString("uk-UA")}</div>
+              <div className="text-xs uppercase tracking-wider text-[var(--text-muted)]">Готові до розсилки</div>
+              <div className="my-2 text-5xl font-bold tabular-nums text-[var(--accent)]">{d.segEmail.toLocaleString("uk-UA")}</div>
               <div className="text-sm text-[var(--text-muted)]">
-                артистів · <span className="font-semibold text-[#60a5fa]">{d.segEmail}</span> з email
+                з email · всього в сегменті <span className="font-semibold text-[var(--text)]">{d.segCount.toLocaleString("uk-UA")}</span>
               </div>
 
-              <a href={exportUrl} download
+              <a href={`${exportUrl}${exportUrl.includes("?") ? "&" : "?"}withEmail=1`} download
                 className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-5 py-3.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[var(--accent-hover)]">
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" /></svg>
-                Завантажити CSV
+                Завантажити {d.segEmail} з email
               </a>
+              <EnrichButton />
               {hasFilter && (
                 <Link href="/sc-leads" className="mt-3 inline-block text-xs text-[var(--text-muted)] underline hover:text-[var(--text)]">
                   скинути фільтри
