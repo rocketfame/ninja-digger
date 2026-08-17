@@ -19,6 +19,15 @@ const NAV_ITEMS = [
     label: "Beatport Leads",
   },
   {
+    href: "/sc-leads",
+    label: "SoundCloud Leads",
+    icon: (
+      <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 18V5l12-2v13M9 9l12-2M6 21a3 3 0 100-6 3 3 0 000 6z" />
+      </svg>
+    ),
+  },
+  {
     href: "/analytics",
     label: "Аналітика",
     icon: (
