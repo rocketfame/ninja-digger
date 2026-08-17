@@ -2,138 +2,169 @@ import Link from "next/link";
 import { NavBar } from "@/app/components/NavBar";
 import { pool } from "@/lib/db";
 import { SeedControl } from "./SeedControl";
-import { SC_ACTIVITY, SC_ACTIVITY_SQL, type ScActivityKey } from "@/lib/scActivity";
+import { SC_ACTIVITY_SQL } from "@/lib/scActivity";
 
 export const dynamic = "force-dynamic";
 
 type SP = { tier?: string; withEmail?: string; activity?: string };
 
+const ACTIVITY = [
+  { key: "hot", emoji: "🔥", label: "Активні", sub: "останні 6 міс", color: "#22c55e" },
+  { key: "warm", emoji: "🌤", label: "Пригасають", sub: "6–12 міс", color: "#fbbf24" },
+  { key: "cool", emoji: "💤", label: "Давно тихо", sub: "12–18 міс", color: "#60a5fa" },
+  { key: "dormant", emoji: "🪦", label: "Сплячі", sub: "понад 18 міс", color: "#6b7280" },
+] as const;
+
 async function getData(sp: SP) {
   const num = (sql: string, p: unknown[] = []) => pool.query(sql, p).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
   const q = (sql: string, p: unknown[] = []) => pool.query(sql, p).then((r) => r.rows).catch(() => []);
 
-  // Build WHERE for the currently selected segment
   const conds: string[] = [];
   const params: string[] = [];
   if (sp.tier && ["A", "B", "C"].includes(sp.tier)) { params.push(sp.tier); conds.push(`tier=$${params.length}`); }
   if (sp.withEmail === "1") conds.push("email IS NOT NULL");
-  if (sp.activity && sp.activity in SC_ACTIVITY) conds.push(`${SC_ACTIVITY_SQL}='${sp.activity}'`);
+  if (sp.activity && ACTIVITY.some((a) => a.key === sp.activity)) conds.push(`${SC_ACTIVITY_SQL}='${sp.activity}'`);
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
 
-  const [total, seed, activityRows, tierRows, segCount, segEmail, preview] = await Promise.all([
+  const [total, seed, actRows, tierRows, segCount, segEmail, preview] = await Promise.all([
     num("SELECT COUNT(*)::int c FROM sc_artists"),
-    pool.query("SELECT permalink, username, followers_count, last_harvested_at FROM sc_seed_accounts WHERE active=true ORDER BY id LIMIT 1").then((r) => r.rows[0]).catch(() => null),
-    q(`SELECT ${SC_ACTIVITY_SQL} AS a, COUNT(*)::int c, COUNT(email)::int e FROM sc_artists GROUP BY 1`) as Promise<{ a: string; c: number; e: number }[]>,
+    pool.query("SELECT permalink, followers_count FROM sc_seed_accounts WHERE active=true ORDER BY id LIMIT 1").then((r) => r.rows[0]).catch(() => null),
+    q(`SELECT ${SC_ACTIVITY_SQL} AS a, COUNT(*)::int c FROM sc_artists GROUP BY 1`) as Promise<{ a: string; c: number }[]>,
     q(`SELECT COALESCE(tier,'C') AS t, COUNT(*)::int c FROM sc_artists GROUP BY 1`) as Promise<{ t: string; c: number }[]>,
     num(`SELECT COUNT(*)::int c FROM sc_artists ${where}`, params),
     num(`SELECT COUNT(*)::int c FROM sc_artists ${where}${where ? " AND" : " WHERE"} email IS NOT NULL`, params),
-    q(`SELECT username, full_name, email, tier, followers_count, track_count FROM sc_artists ${where} ORDER BY tier, followers_count DESC LIMIT 6`, params) as Promise<{ username: string; full_name: string | null; email: string | null; tier: string | null; followers_count: number; track_count: number }[]>,
+    q(`SELECT username, full_name, email FROM sc_artists ${where} ORDER BY tier, followers_count DESC LIMIT 5`, params) as Promise<{ username: string; full_name: string | null; email: string | null }[]>,
   ]);
-  return {
-    total, seed, segCount, segEmail, preview,
-    actMap: new Map(activityRows.map((r) => [r.a, r])),
-    tierMap: new Map(tierRows.map((r) => [r.t, r.c])),
-  };
+  return { total, seed, segCount, segEmail, preview, actMap: new Map(actRows.map((r) => [r.a, r.c])), tierMap: new Map(tierRows.map((r) => [r.t, r.c])) };
 }
 
 export default async function ScLeadsPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const d = await getData(sp);
   const qs = (extra: Partial<SP>) => {
-    const merged = { ...sp, ...extra };
-    const parts = Object.entries(merged).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`);
+    const m = { ...sp, ...extra };
+    const parts = Object.entries(m).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`);
     return `/sc-leads${parts.length ? `?${parts.join("&")}` : ""}`;
   };
   const exportUrl = `/api/segments/soundcloud/export${qs({}).replace("/sc-leads", "")}`;
-  const hasFilter = sp.tier || sp.activity || sp.withEmail === "1";
+  const hasFilter = Boolean(sp.tier || sp.activity || sp.withEmail === "1");
+
+  const chip = (active: boolean, accent = "var(--accent)") =>
+    `rounded-xl border px-4 py-3 text-left transition-all ${active ? "border-transparent ring-2" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`;
 
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
       <NavBar />
-      <main className="mx-auto max-w-4xl px-4 py-8">
+      <main className="mx-auto max-w-5xl px-4 py-8">
+        {/* Header */}
         <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold">SoundCloud Leads</h1>
-            <p className="text-sm text-[var(--text-muted)]">
-              {d.total.toLocaleString("uk-UA")} артистів{d.seed ? ` · джерело @${d.seed.permalink} (${d.seed.followers_count?.toLocaleString("uk-UA")} фоловерів)` : ""}
+            <h1 className="text-2xl font-bold tracking-tight">SoundCloud Leads</h1>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
+              {d.total.toLocaleString("uk-UA")} артистів у базі{d.seed ? ` · джерело @${d.seed.permalink}` : ""}
             </p>
           </div>
           <SeedControl seed={d.seed?.permalink ?? null} />
         </div>
 
-        {/* Segment builder */}
-        <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6">
-          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wider text-[var(--text-muted)]">Збери сегмент</h2>
-          <p className="mb-5 text-xs text-[var(--text-muted)]">Обери фільтри — кількість оновиться, потім завантаж CSV для кампанії.</p>
-
-          {/* 1. Activity */}
-          <div className="mb-5">
-            <div className="mb-2 text-xs font-medium text-[var(--text-muted)]">1. Свіжість активності</div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {(Object.keys(SC_ACTIVITY) as ScActivityKey[]).map((k) => {
-                const s = d.actMap.get(k);
-                const on = sp.activity === k;
-                return (
-                  <Link key={k} href={qs({ activity: on ? undefined : k })}
-                    className={`rounded-xl border p-3 text-center transition-colors ${on ? "border-[var(--accent)] bg-[var(--accent)]/15" : "border-[var(--border)] hover:border-[var(--accent)]/50"}`}>
-                    <div className="text-lg font-bold tabular-nums">{s?.c ?? 0}</div>
-                    <div className="text-[11px] text-[var(--text-muted)]">{SC_ACTIVITY[k].label}</div>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 2. Tier */}
-          <div className="mb-5">
-            <div className="mb-2 text-xs font-medium text-[var(--text-muted)]">2. Якість (tier)</div>
-            <div className="flex flex-wrap gap-2">
-              {[["", "всі"], ["A", "💎 A · перлини"], ["B", "B"], ["C", "C"]].map(([t, label]) => {
-                const on = (sp.tier ?? "") === t;
-                return (
-                  <Link key={t || "all"} href={qs({ tier: t || undefined })}
-                    className={`rounded-lg border px-4 py-2 text-sm transition-colors ${on ? "border-[var(--accent)] bg-[var(--accent)]/15" : "border-[var(--border)] hover:border-[var(--accent)]/50"}`}>
-                    {label}{t && d.tierMap.get(t) != null ? ` · ${d.tierMap.get(t)}` : ""}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 3. Email */}
-          <div className="mb-6">
-            <div className="mb-2 text-xs font-medium text-[var(--text-muted)]">3. Контакт</div>
-            <Link href={qs({ withEmail: sp.withEmail === "1" ? undefined : "1" })}
-              className={`inline-flex rounded-lg border px-4 py-2 text-sm transition-colors ${sp.withEmail === "1" ? "border-[var(--accent)] bg-[var(--accent)]/15" : "border-[var(--border)] hover:border-[var(--accent)]/50"}`}>
-              📧 Тільки з email
-            </Link>
-          </div>
-
-          {/* Result + download */}
-          <div className="flex flex-col items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-page)] p-5 sm:flex-row sm:justify-between">
-            <div>
-              <div className="text-3xl font-bold tabular-nums text-[var(--accent)]">{d.segCount.toLocaleString("uk-UA")}</div>
-              <div className="text-xs text-[var(--text-muted)]">
-                артистів у сегменті · <span className="text-[#60a5fa]">{d.segEmail}</span> з email
-                {hasFilter && <Link href="/sc-leads" className="ml-2 underline hover:text-[var(--text)]">скинути</Link>}
+        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+          {/* Left: filter recipe */}
+          <div className="space-y-6">
+            {/* Step 1: activity */}
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--bg-card)] text-xs font-bold text-[var(--text-muted)]">1</span>
+                <h2 className="text-sm font-semibold">Наскільки свіжі</h2>
               </div>
-            </div>
-            <a href={exportUrl} download
-              className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent)] px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[var(--accent-hover)]">
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" /></svg>
-              Завантажити CSV ({d.segCount})
-            </a>
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                {ACTIVITY.map((a) => {
+                  const on = sp.activity === a.key;
+                  return (
+                    <Link key={a.key} href={qs({ activity: on ? undefined : a.key })}
+                      className={chip(on)} style={on ? { boxShadow: `inset 0 0 0 2px ${a.color}`, background: `${a.color}1a` } : undefined}>
+                      <div className="text-2xl font-bold tabular-nums" style={{ color: a.color }}>{d.actMap.get(a.key) ?? 0}</div>
+                      <div className="mt-0.5 text-sm font-medium">{a.emoji} {a.label}</div>
+                      <div className="text-[11px] text-[var(--text-muted)]">{a.sub}</div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+
+            {/* Step 2: tier */}
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--bg-card)] text-xs font-bold text-[var(--text-muted)]">2</span>
+                <h2 className="text-sm font-semibold">Якість ліда</h2>
+              </div>
+              <div className="flex flex-wrap gap-2.5">
+                {[
+                  { t: "", label: "Усі", hint: null, color: "var(--accent)" },
+                  { t: "A", label: "💎 Перлини", hint: d.tierMap.get("A") ?? 0, color: "#fbbf24" },
+                  { t: "B", label: "Середні", hint: d.tierMap.get("B") ?? 0, color: "#60a5fa" },
+                  { t: "C", label: "Слабкі", hint: d.tierMap.get("C") ?? 0, color: "#6b7280" },
+                ].map((o) => {
+                  const on = (sp.tier ?? "") === o.t;
+                  return (
+                    <Link key={o.t || "all"} href={qs({ tier: o.t || undefined })}
+                      className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${on ? "border-transparent" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}
+                      style={on ? { boxShadow: `inset 0 0 0 2px ${o.color}`, background: `${o.color}1a` } : undefined}>
+                      {o.label}{o.hint != null && <span className="text-[var(--text-muted)]">{o.hint}</span>}
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+
+            {/* Step 3: contact */}
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--bg-card)] text-xs font-bold text-[var(--text-muted)]">3</span>
+                <h2 className="text-sm font-semibold">Контакт</h2>
+              </div>
+              <Link href={qs({ withEmail: sp.withEmail === "1" ? undefined : "1" })}
+                className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${sp.withEmail === "1" ? "border-transparent" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}
+                style={sp.withEmail === "1" ? { boxShadow: "inset 0 0 0 2px #60a5fa", background: "#60a5fa1a" } : undefined}>
+                📧 Лише з email у профілі
+              </Link>
+            </section>
           </div>
 
-          {/* Tiny preview */}
-          {d.preview.length > 0 && (
-            <div className="mt-4 text-xs text-[var(--text-muted)]">
-              <span className="mr-2">Приклад:</span>
-              {d.preview.map((p, i) => (
-                <span key={i}>{p.full_name || p.username}{p.email ? ` (${p.email})` : ""}{i < d.preview.length - 1 ? " · " : ""}</span>
-              ))}
+          {/* Right: sticky result */}
+          <aside className="lg:sticky lg:top-6 lg:self-start">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6 text-center">
+              <div className="text-xs uppercase tracking-wider text-[var(--text-muted)]">У вибраному сегменті</div>
+              <div className="my-2 text-5xl font-bold tabular-nums text-[var(--accent)]">{d.segCount.toLocaleString("uk-UA")}</div>
+              <div className="text-sm text-[var(--text-muted)]">
+                артистів · <span className="font-semibold text-[#60a5fa]">{d.segEmail}</span> з email
+              </div>
+
+              <a href={exportUrl} download
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-5 py-3.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[var(--accent-hover)]">
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" /></svg>
+                Завантажити CSV
+              </a>
+              {hasFilter && (
+                <Link href="/sc-leads" className="mt-3 inline-block text-xs text-[var(--text-muted)] underline hover:text-[var(--text)]">
+                  скинути фільтри
+                </Link>
+              )}
+
+              {d.preview.length > 0 && (
+                <div className="mt-5 border-t border-[var(--border)] pt-4 text-left">
+                  <div className="mb-2 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Приклад із сегмента</div>
+                  <ul className="space-y-1.5 text-xs">
+                    {d.preview.map((p, i) => (
+                      <li key={i} className="truncate">
+                        <span className="font-medium">{p.full_name || p.username}</span>
+                        {p.email && <span className="text-[var(--text-muted)]"> · {p.email}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
-          )}
+          </aside>
         </div>
       </main>
     </div>
