@@ -44,6 +44,13 @@ export async function buildStats(): Promise<string> {
 }
 
 export async function buildDailyReport(): Promise<string> {
+  // Health signals: is every part of the machine alive today?
+  const [chartsToday, enrichRunsToday, paused, cap] = await Promise.all([
+    q("SELECT COUNT(*)::int c FROM bptoptracker_daily WHERE snapshot_date = CURRENT_DATE"),
+    q("SELECT COUNT(*)::int c FROM enrichment_runs WHERE started_at >= CURRENT_DATE"),
+    getSetting("outreach_paused").then((v) => v === "1"),
+    getSetting("daily_send_cap").then((v) => parseInt(v ?? "999", 10) || 999),
+  ]);
   const [newLeads, newNewcomers, contactsFound, emailsFound, t1, t2, t3, replies, optOuts, bouncedToday, queue] = await Promise.all([
     q("SELECT COUNT(*)::int c FROM artist_metrics WHERE first_seen >= CURRENT_DATE"),
     q(`SELECT COUNT(*)::int c FROM lead_scores ls JOIN artist_metrics am ON am.artist_beatport_id=ls.artist_beatport_id
@@ -64,12 +71,25 @@ export async function buildDailyReport(): Promise<string> {
          AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)`),
   ]);
   const totalSent = t1 + t2 + t3;
+
+  // Verdict line first: green when every subsystem did its job today
+  const problems: string[] = [];
+  if (chartsToday === 0) problems.push("чарти за сьогодні НЕ зібрані");
+  if (enrichRunsToday === 0) problems.push("enrichment сьогодні не запускався");
+  if (paused) problems.push("розсилка на паузі");
+  else if (totalSent === 0 && queue > 0) problems.push("листи не відправлялись, хоча черга є");
+  if (bouncedToday > 3) problems.push(`підозріло багато bounce (${bouncedToday})`);
+  const verdict = problems.length === 0
+    ? "🟢 <b>Все працює штатно</b>"
+    : `🔴 <b>Увага:</b> ${problems.join("; ")}`;
+
   return (
-    `📈 <b>Звіт за сьогодні</b>\n\n` +
+    `📈 <b>Звіт за сьогодні</b>\n${verdict}\n\n` +
     `🆕 Нових артистів у базі: ${newLeads} (з них NEWCOMER: ${newNewcomers})\n` +
     `🔗 Знайдено контактів: ${contactsFound} (email: ${emailsFound})\n\n` +
-    `✉️ Відправлено: ${totalSent} (T1: ${t1} · T2: ${t2} · T3: ${t3})\n` +
+    `✉️ Відправлено: ${totalSent}/${cap} (T1: ${t1} · T2: ${t2} · T3: ${t3})\n` +
     `💬 Відповідей: ${replies} · 🚫 Відмов: ${optOuts} · ↩️ Bounce: ${bouncedToday}\n\n` +
-    `🎯 У черзі на завтра: ${queue} лідів з email`
+    `🎯 У черзі на завтра: ${queue} лідів з email\n` +
+    `📤 Відправник: max@promosoundgroup.net (Brevo)`
   );
 }
