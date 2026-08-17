@@ -19,11 +19,14 @@ function getPool(): Pool {
       );
     }
     connectionString = normalizeConnectionString(connectionString);
+    // Serverless: each concurrent Vercel instance opens its own pool, so a big
+    // `max` multiplied across instances can exhaust Neon's connection limit and
+    // make pages hang on connection acquisition. Keep it small and fail fast.
     _pool = new Pool({
       connectionString,
-      max: 15,
-      idleTimeoutMillis: 20000,
-      connectionTimeoutMillis: 15000,
+      max: 4,
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 8000,
     });
   }
   return _pool;

@@ -34,19 +34,38 @@ async function getData(sp: SP) {
   if (sp.activity && ACTIVITY.some((a) => a.key === sp.activity)) conds.push(`${SC_ACTIVITY_SQL}='${sp.activity}'`);
   const where = `WHERE ${conds.join(" AND ")}`;
 
-  const [total, promoters, reexDays, seed, actRows, tierRows, segCount, segEmail, preview] = await Promise.all([
-    num(`SELECT COUNT(*)::int c FROM sc_artists WHERE ${HAS_TRACKS}`),
-    // Analytics bucket: repost channels (0 own tracks) — insight into their model
-    num("SELECT COUNT(*)::int c FROM sc_artists WHERE is_promoter=true AND track_count=0"),
+  // One aggregate for all the static cards (total + promoters + tier/activity
+  // email counts) instead of 6 separate queries — fewer connections per page
+  // load, so rapid reloads don't saturate the pool and blank the numbers.
+  const statsRow = pool.query<{
+    total: number; promoters: number; a: number; b: number; c: number;
+    hot: number; warm: number; cool: number; dormant: number;
+  }>(`SELECT
+      COUNT(*) FILTER (WHERE ${HAS_TRACKS})::int total,
+      COUNT(*) FILTER (WHERE is_promoter AND track_count=0)::int promoters,
+      COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND tier='A')::int a,
+      COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND tier='B')::int b,
+      COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND COALESCE(tier,'C')='C')::int c,
+      COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND ${SC_ACTIVITY_SQL}='hot')::int hot,
+      COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND ${SC_ACTIVITY_SQL}='warm')::int warm,
+      COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND ${SC_ACTIVITY_SQL}='cool')::int cool,
+      COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND ${SC_ACTIVITY_SQL}='dormant')::int dormant
+    FROM sc_artists`).then((r) => r.rows[0]).catch(() => null);
+
+  const [stats, seg, reexDays, seed, preview] = await Promise.all([
+    statsRow,
+    // segment count + email in one query (respects active filters)
+    pool.query<{ c: number; e: number }>(`SELECT COUNT(*)::int c, COUNT(email)::int e FROM sc_artists ${where}`, params).then((r) => r.rows[0]).catch(() => ({ c: 0, e: 0 })),
     pool.query<{ day: string; active_campaigns: number }>("SELECT day::text, active_campaigns FROM reex_daily ORDER BY day DESC LIMIT 2").then((r) => r.rows).catch(() => []),
     pool.query("SELECT permalink, followers_count FROM sc_seed_accounts WHERE active=true ORDER BY id LIMIT 1").then((r) => r.rows[0]).catch(() => null),
-    q(`SELECT ${SC_ACTIVITY_SQL} AS a, COUNT(email)::int e FROM sc_artists WHERE ${HAS_TRACKS} GROUP BY 1`) as Promise<{ a: string; e: number }[]>,
-    q(`SELECT COALESCE(tier,'C') AS t, COUNT(email)::int e FROM sc_artists WHERE ${HAS_TRACKS} GROUP BY 1`) as Promise<{ t: string; e: number }[]>,
-    num(`SELECT COUNT(*)::int c FROM sc_artists ${where}`, params),
-    num(`SELECT COUNT(*)::int c FROM sc_artists ${where} AND email IS NOT NULL`, params),
     q(`SELECT username, full_name, email FROM sc_artists ${where} AND email IS NOT NULL ORDER BY tier, followers_count DESC LIMIT 5`, params) as Promise<{ username: string; full_name: string | null; email: string | null }[]>,
   ]);
-  return { total, promoters, reexDays, seed, segCount, segEmail, preview, actMap: new Map(actRows.map((r) => [r.a, r.e])), tierMap: new Map(tierRows.map((r) => [r.t, r.e])) };
+  return {
+    total: stats?.total ?? 0, promoters: stats?.promoters ?? 0,
+    segCount: seg?.c ?? 0, segEmail: seg?.e ?? 0, reexDays, seed, preview,
+    actMap: new Map<string, number>([["hot", stats?.hot ?? 0], ["warm", stats?.warm ?? 0], ["cool", stats?.cool ?? 0], ["dormant", stats?.dormant ?? 0]]),
+    tierMap: new Map<string, number>([["A", stats?.a ?? 0], ["B", stats?.b ?? 0], ["C", stats?.c ?? 0]]),
+  };
 }
 
 export default async function ScLeadsPage({ searchParams }: { searchParams: Promise<SP> }) {
@@ -89,7 +108,7 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
                 {ACTIVITY.map((a) => {
                   const on = sp.activity === a.key;
                   return (
-                    <Link key={a.key} href={qs({ activity: on ? undefined : a.key })}
+                    <Link key={a.key} href={qs({ activity: on ? undefined : a.key, tier: undefined })}
                       className={chip(on)} style={on ? { boxShadow: `inset 0 0 0 2px ${a.color}`, background: `${a.color}1a` } : undefined}>
                       <div className="flex items-center gap-1.5">
                         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: a.color }} />
@@ -118,7 +137,7 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
                 ].map((o) => {
                   const on = (sp.tier ?? "") === o.t;
                   return (
-                    <Link key={o.t || "all"} href={qs({ tier: o.t || undefined })}
+                    <Link key={o.t || "all"} href={qs({ tier: o.t || undefined, activity: undefined })}
                       className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${on ? "border-transparent" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}
                       style={on ? { boxShadow: `inset 0 0 0 2px ${o.color}`, background: `${o.color}1a` } : undefined}>
                       {o.label}{o.hint != null && <span className="text-[var(--text-muted)]">{o.hint}</span>}
