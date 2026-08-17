@@ -4,6 +4,7 @@ import { pool } from "@/lib/db";
 import { SeedControl } from "./SeedControl";
 import { EnrichButton } from "./EnrichButton";
 import { ReexSync } from "./ReexSync";
+import { SegmentPreview } from "./SegmentPreview";
 import { SC_ACTIVITY_SQL } from "@/lib/scActivity";
 
 export const dynamic = "force-dynamic";
@@ -169,6 +170,11 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" /></svg>
                 Завантажити {d.segEmail} з email
               </a>
+              <SegmentPreview
+                previewUrl={`${exportUrl}${exportUrl.includes("?") ? "&" : "?"}withEmail=1&format=json&limit=200`}
+                downloadUrl={`${exportUrl}${exportUrl.includes("?") ? "&" : "?"}withEmail=1`}
+                count={d.segEmail}
+              />
               <EnrichButton />
               {hasFilter && (
                 <Link href="/sc-leads" className="mt-3 inline-block text-xs text-[var(--text-muted)] underline hover:text-[var(--text)]">

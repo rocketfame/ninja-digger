@@ -31,6 +31,20 @@ export async function GET(request: Request) {
   if (activity && activity in SC_ACTIVITY) conds.push(`${SC_ACTIVITY_SQL} = '${activity}'`);
   if (searchParams.get("promoter") === "1") conds.push("is_promoter = true");
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+
+  // Preview mode: JSON slice + total, for the in-app modal (no download).
+  if (searchParams.get("format") === "json") {
+    const limit = Math.min(parseInt(searchParams.get("limit") ?? "100", 10) || 100, 500);
+    const [rows, totalRow] = await Promise.all([
+      pool.query(
+        `SELECT email, username, full_name, permalink_url, tier, ${SC_ACTIVITY_SQL} AS activity, track_count, followers_count, country_code, instagram
+         FROM sc_artists ${where} ORDER BY tier, followers_count DESC LIMIT ${limit}`, params
+      ).then((r) => r.rows),
+      pool.query(`SELECT COUNT(*)::int c FROM sc_artists ${where}`, params).then((r) => r.rows[0]?.c ?? 0),
+    ]);
+    return NextResponse.json({ total: totalRow, shown: rows.length, rows });
+  }
+
   const rows = (await pool.query(
     `SELECT email, username, full_name, permalink_url, tier, ${SC_ACTIVITY_SQL} AS activity, track_count, followers_count, city, country_code, lead_status, instagram, is_promoter
      FROM sc_artists ${where} ORDER BY tier, followers_count DESC LIMIT 20000`, params
