@@ -80,9 +80,12 @@ export async function GET(request: Request) {
     // --- DB Cleanup: видаляємо старі дані щоб не перевищити Neon 512 MB ---
     const cleanup = { url_cache: 0, enrichment_runs: 0, old_chart_entries: 0, bptoptracker_daily: 0 };
     try {
-      // url_cache: HTML кеш, тримаємо 2 дні
-      const c1 = await pool.query("DELETE FROM url_cache WHERE fetched_at < NOW() - INTERVAL '2 days'");
-      cleanup.url_cache = c1.rowCount ?? 0;
+      // url_cache: чистий HTML-кеш, регенерується. DELETE лишає мертві рядки
+      // (розмір не падає без VACUUM), тому щодня робимо TRUNCATE — файли
+      // звільняються одразу, кеш тримається біля нуля.
+      const c1 = await pool.query("SELECT COUNT(*)::int c FROM url_cache");
+      await pool.query("TRUNCATE url_cache");
+      cleanup.url_cache = c1.rows[0]?.c ?? 0;
 
       // enrichment_runs: логи запусків, тримаємо 7 днів
       const c2 = await pool.query("DELETE FROM enrichment_runs WHERE started_at < NOW() - INTERVAL '7 days'");

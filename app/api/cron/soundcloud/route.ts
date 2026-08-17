@@ -44,6 +44,9 @@ export async function GET(request: Request) {
   // Enrich email-less A/B/promoter artists via their public funnel — bigger
   // batch so the gold gets contacts steadily, not a trickle
   const enriched = await enrichScBatch(25);
+  // Dynamic bloat control: keep the regenerable HTML cache tightly bounded so it
+  // never balloons between daily truncates (it was the #1 space hog at 172MB).
+  await pool.query("DELETE FROM url_cache WHERE fetched_at < now() - interval '6 hours'").catch(() => {});
   return NextResponse.json({ ok: true, dbMb, harvestOk, results, verified, enriched, ts: new Date().toISOString() });
 }
 
