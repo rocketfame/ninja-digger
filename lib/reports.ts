@@ -93,3 +93,51 @@ export async function buildDailyReport(): Promise<string> {
     `📤 Відправник: max@promosoundgroup.net (Brevo)`
   );
 }
+
+/** Daily SoundCloud parsing digest (20:00 Kyiv): what the follower-harvest of
+ * Re-Ex promo channels produced today, plus the running totals. */
+export async function buildScReport(): Promise<string> {
+  const one = <T extends Record<string, unknown>>(sql: string) =>
+    pool.query<T>(sql).then((r) => r.rows[0]).catch(() => undefined);
+
+  const totals = await one<{ artists: number; emails: number; promoters: number; promoter_emails: number }>(
+    `SELECT COUNT(*)::int artists,
+            COUNT(email)::int emails,
+            COUNT(*) FILTER (WHERE is_promoter)::int promoters,
+            COUNT(email) FILTER (WHERE is_promoter)::int promoter_emails
+     FROM sc_artists`
+  );
+  const today = await one<{ new_artists: number; new_emails: number }>(
+    `SELECT COUNT(*)::int new_artists,
+            COUNT(email)::int new_emails
+     FROM sc_artists WHERE harvested_at >= CURRENT_DATE`
+  );
+  const seeds = await one<{ total: number; completed: number; pending: number; refreshed_today: number }>(
+    `SELECT COUNT(*)::int total,
+            COUNT(completed_at)::int completed,
+            COUNT(*) FILTER (WHERE completed_at IS NULL)::int pending,
+            COUNT(*) FILTER (WHERE last_harvested_at >= CURRENT_DATE)::int refreshed_today
+     FROM sc_seed_accounts WHERE active = true`
+  );
+  const db = await one<{ mb: number }>(
+    `SELECT (pg_database_size(current_database())/1048576.0)::numeric(10,1) mb`
+  );
+
+  const emails = totals?.emails ?? 0;
+  const newEmails = today?.new_emails ?? 0;
+  const pending = seeds?.pending ?? 0;
+  const mb = Number(db?.mb ?? 0);
+  const dbFlag = mb > 460 ? "🔴" : mb > 400 ? "🟡" : "🟢";
+
+  return (
+    `🎧 SoundCloud-парсинг — звіт за день\n\n` +
+    `📧 Email у базі: ${emails}  (+${newEmails} сьогодні)\n` +
+    `👤 Артистів усього: ${totals?.artists ?? 0}  (+${today?.new_artists ?? 0} сьогодні)\n\n` +
+    `🔗 Промо-канали (сіди): ${seeds?.total ?? 0}\n` +
+    `   ✅ опрацьовано: ${seeds?.completed ?? 0} · ⏳ в черзі: ${pending}\n` +
+    `   🔄 спарсено сьогодні: ${seeds?.refreshed_today ?? 0}\n\n` +
+    `💎 Промоутери: ${totals?.promoters ?? 0} (з email: ${totals?.promoter_emails ?? 0})\n` +
+    `${dbFlag} База: ${mb} / 512 MB` +
+    (pending === 0 ? `\n\n✨ Усі канали опрацьовано — йдуть тільки refresh нових підписників.` : "")
+  );
+}

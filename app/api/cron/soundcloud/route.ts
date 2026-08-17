@@ -28,10 +28,13 @@ export async function GET(request: Request) {
   // Rotate through the least-recently-harvested seeds. 773+ promoter channels
   // now seed the pipeline, so we take a few per run (2 pages each) to spread
   // coverage without exhausting any single one or flooding the DB.
+  // Uncompleted seeds first (deep-harvest their newest 600 followers), then
+  // seeds completed >14 days ago for a light refresh of new followers only.
   const seeds = harvestOk
     ? await pool.query<{ permalink: string }>(
-        `SELECT permalink FROM sc_seed_accounts WHERE active = true
-         ORDER BY last_harvested_at ASC NULLS FIRST LIMIT 3`)
+        `SELECT permalink FROM sc_seed_accounts
+         WHERE active = true AND (completed_at IS NULL OR completed_at < now() - interval '14 days')
+         ORDER BY completed_at NULLS FIRST, last_harvested_at ASC NULLS FIRST LIMIT 3`)
     : { rows: [] as { permalink: string }[] };
 
   const results = [];

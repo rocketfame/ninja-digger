@@ -139,13 +139,21 @@ export async function verifyActiveArtists(limit = 60): Promise<{ checked: number
   return { checked: rows.length, confirmed };
 }
 
-/** Harvest one page of a seed account's followers; resumable via stored cursor. */
-export async function harvestSeedFollowers(permalink: string, maxPages = 4): Promise<{ harvested: number; withEmail: number; done: boolean; error?: string }> {
+// We keep only the newest slice of each promo channel's followers: they are the
+// freshest, most-active leads, and it stops a single 20k-follower channel from
+// flooding the DB. Deep followers are older and mostly stale.
+const PER_SEED_CAP = 600;
+
+/** Harvest one page of a seed account's followers; resumable via stored cursor.
+ * Once a seed reaches PER_SEED_CAP (or runs out) it's marked completed and drops
+ * to the back of the queue; a completed seed is only revisited for NEW followers
+ * (page 1 only), so we never re-parse the same people. */
+export async function harvestSeedFollowers(permalink: string, maxPages = 4): Promise<{ harvested: number; withEmail: number; done: boolean; refresh?: boolean; error?: string }> {
   const clientId = await getClientId();
   if (!clientId) return { harvested: 0, withEmail: 0, done: false, error: "no client_id" };
 
-  const seed = await pool.query<{ soundcloud_id: string | null; cursor: string | null }>(
-    `SELECT soundcloud_id, cursor FROM sc_seed_accounts WHERE permalink = $1`, [permalink]
+  const seed = await pool.query<{ soundcloud_id: string | null; cursor: string | null; harvested_count: number; completed_at: string | null }>(
+    `SELECT soundcloud_id, cursor, harvested_count, completed_at FROM sc_seed_accounts WHERE permalink = $1`, [permalink]
   ).then((r) => r.rows[0]);
   if (!seed) return { harvested: 0, withEmail: 0, done: true, error: "seed not found" };
 
@@ -158,9 +166,14 @@ export async function harvestSeedFollowers(permalink: string, maxPages = 4): Pro
       [resolved.id, resolved.username, resolved.followers_count, permalink]);
   }
 
-  let cursor = seed.cursor;
-  let harvested = 0, withEmail = 0, done = false;
-  for (let page = 0; page < maxPages; page++) {
+  // Refresh mode: an already-completed seed — just check its newest page for new
+  // followers (dedup drops the ones we already have), don't paginate deep again.
+  const refresh = seed.completed_at != null;
+  const pageBudget = refresh ? 1 : maxPages;
+  let cursor = refresh ? null : seed.cursor;
+  let count = seed.harvested_count ?? 0;
+  let harvested = 0, withEmail = 0, done = false, capped = false;
+  for (let page = 0; page < pageBudget; page++) {
     const path = cursor
       ? cursor.replace("https://api-v2.soundcloud.com", "")
       : `/users/${userId}/followers?limit=200`;
@@ -168,13 +181,21 @@ export async function harvestSeedFollowers(permalink: string, maxPages = 4): Pro
     if (!data?.collection) { done = true; break; }
     for (const u of data.collection) {
       const isNew = await upsertArtist(u, permalink);
-      if (isNew) harvested++;
+      if (isNew) { harvested++; count++; }
       if ((u.description ?? "").match(EMAIL_RE)) withEmail++;
     }
     cursor = data.next_href;
     if (!cursor) { done = true; break; }
+    if (!refresh && count >= PER_SEED_CAP) { capped = true; done = true; break; }
   }
-  await pool.query(`UPDATE sc_seed_accounts SET cursor=$1, last_harvested_at=now() WHERE permalink=$2`,
-    [done ? null : cursor, permalink]);
-  return { harvested, withEmail, done };
+  // Mark completed when we hit the cap or exhausted the list (deep pass only).
+  const nowCompleted = !refresh && (done || capped);
+  await pool.query(
+    `UPDATE sc_seed_accounts
+       SET cursor = $1, harvested_count = $2, last_harvested_at = now(),
+           completed_at = CASE WHEN $3 THEN now() ELSE completed_at END
+     WHERE permalink = $4`,
+    [nowCompleted ? null : cursor, count, nowCompleted, permalink]
+  );
+  return { harvested, withEmail, done, refresh };
 }

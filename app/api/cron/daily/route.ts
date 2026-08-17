@@ -99,6 +99,18 @@ export async function GET(request: Request) {
       const c4 = await pool.query("DELETE FROM bptoptracker_daily WHERE snapshot_date < CURRENT_DATE - 56");
       cleanup.bptoptracker_daily = c4.rowCount ?? 0;
 
+      // Keep the seed list current: every Re-Ex promoter (within a follower cap
+      // so no mega-channel floods the DB) becomes a harvest seed. Idempotent —
+      // ON CONFLICT keeps existing cursors/progress intact.
+      const seedSync = await pool.query(
+        `INSERT INTO sc_seed_accounts (permalink, soundcloud_id, username, followers_count, active)
+         SELECT permalink, soundcloud_id, COALESCE(username, full_name, permalink), followers_count, true
+         FROM sc_artists
+         WHERE is_promoter = true AND permalink IS NOT NULL AND followers_count BETWEEN 30 AND 50000
+         ON CONFLICT (permalink) DO NOTHING`
+      ).catch(() => ({ rowCount: 0 }));
+      (cleanup as Record<string, number>).new_seeds = seedSync.rowCount ?? 0;
+
       result.cleanup = cleanup;
       console.log("[cron/daily] cleanup:", cleanup);
     } catch (cleanupErr) {
