@@ -34,13 +34,13 @@ async function getData(sp: SP) {
     num("SELECT COUNT(*)::int c FROM sc_artists WHERE is_promoter=true"),
     pool.query<{ day: string; active_campaigns: number }>("SELECT day::text, active_campaigns FROM reex_daily ORDER BY day DESC LIMIT 2").then((r) => r.rows).catch(() => []),
     pool.query("SELECT permalink, followers_count FROM sc_seed_accounts WHERE active=true ORDER BY id LIMIT 1").then((r) => r.rows[0]).catch(() => null),
-    q(`SELECT ${SC_ACTIVITY_SQL} AS a, COUNT(*)::int c FROM sc_artists GROUP BY 1`) as Promise<{ a: string; c: number }[]>,
-    q(`SELECT COALESCE(tier,'C') AS t, COUNT(*)::int c FROM sc_artists GROUP BY 1`) as Promise<{ t: string; c: number }[]>,
+    q(`SELECT ${SC_ACTIVITY_SQL} AS a, COUNT(email)::int e FROM sc_artists GROUP BY 1`) as Promise<{ a: string; e: number }[]>,
+    q(`SELECT COALESCE(tier,'C') AS t, COUNT(email)::int e FROM sc_artists GROUP BY 1`) as Promise<{ t: string; e: number }[]>,
     num(`SELECT COUNT(*)::int c FROM sc_artists ${where}`, params),
     num(`SELECT COUNT(*)::int c FROM sc_artists ${where}${where ? " AND" : " WHERE"} email IS NOT NULL`, params),
-    q(`SELECT username, full_name, email FROM sc_artists ${where} ORDER BY tier, followers_count DESC LIMIT 5`, params) as Promise<{ username: string; full_name: string | null; email: string | null }[]>,
+    q(`SELECT username, full_name, email FROM sc_artists ${where}${where ? " AND" : " WHERE"} email IS NOT NULL ORDER BY tier, followers_count DESC LIMIT 5`, params) as Promise<{ username: string; full_name: string | null; email: string | null }[]>,
   ]);
-  return { total, promoters, reexDays, seed, segCount, segEmail, preview, actMap: new Map(actRows.map((r) => [r.a, r.c])), tierMap: new Map(tierRows.map((r) => [r.t, r.c])) };
+  return { total, promoters, reexDays, seed, segCount, segEmail, preview, actMap: new Map(actRows.map((r) => [r.a, r.e])), tierMap: new Map(tierRows.map((r) => [r.t, r.e])) };
 }
 
 export default async function ScLeadsPage({ searchParams }: { searchParams: Promise<SP> }) {
@@ -76,7 +76,7 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
             <section>
               <div className="mb-3 flex items-center gap-2">
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--bg-card)] text-xs font-bold text-[var(--text-muted)]">1</span>
-                <h2 className="text-sm font-semibold">Наскільки свіжі</h2>
+                <h2 className="text-sm font-semibold">Наскільки свіжі <span className="font-normal text-[var(--text-muted)]">· число = email</span></h2>
               </div>
               <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
                 {ACTIVITY.map((a) => {
@@ -100,7 +100,7 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
             <section>
               <div className="mb-3 flex items-center gap-2">
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--bg-card)] text-xs font-bold text-[var(--text-muted)]">2</span>
-                <h2 className="text-sm font-semibold">Якість ліда</h2>
+                <h2 className="text-sm font-semibold">Якість ліда <span className="font-normal text-[var(--text-muted)]">· число = email</span></h2>
               </div>
               <div className="flex flex-wrap gap-2.5">
                 {[
