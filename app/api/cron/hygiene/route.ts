@@ -45,6 +45,35 @@ export async function GET(request: Request) {
        WHERE am.first_seen >= CURRENT_DATE - 7`),
   ]);
 
+  // Warm-up auto-ramp: raise daily_send_cap one ladder step per clean week,
+  // step back down when bounce/opt-out signals degrade
+  const LADDER = [15, 30, 50, 75, 100];
+  const capRow = await pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key='daily_send_cap'`).catch(() => ({ rows: [] as { value: string }[] }));
+  const currentCap = parseInt(capRow.rows[0]?.value ?? "15", 10) || 15;
+  const bouncedMailed7d = await q(
+    `SELECT COUNT(DISTINCT ac.value)::int c FROM artist_contacts ac
+     WHERE ac.type='email' AND ac.status='bounced'
+       AND EXISTS (SELECT 1 FROM outreach_events oe WHERE LOWER(oe.contact_value)=LOWER(TRIM(ac.value)) AND oe.sent_at >= CURRENT_DATE - 7)`
+  );
+  const bounceRate = sent7d > 0 ? bouncedMailed7d / sent7d : 0;
+  const idx = Math.max(0, LADDER.indexOf(LADDER.find((l) => l >= currentCap) ?? 15));
+  let newCap = currentCap;
+  let rampNote = "без змін";
+  if (bounceRate >= 0.05 || optOut7d > 5) {
+    newCap = LADDER[Math.max(0, idx - 1)];
+    rampNote = `⬇️ знижено (bounce ${(bounceRate * 100).toFixed(1)}%, відмов ${optOut7d})`;
+  } else if (sent7d >= currentCap * 3 && bounceRate < 0.03 && optOut7d <= 3 && idx < LADDER.length - 1) {
+    newCap = LADDER[idx + 1];
+    rampNote = `⬆️ піднято (тиждень чистий: bounce ${(bounceRate * 100).toFixed(1)}%)`;
+  }
+  if (newCap !== currentCap) {
+    await pool.query(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES ('daily_send_cap', $1, now())
+       ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = now()`,
+      [String(newCap)]
+    ).catch(() => {});
+  }
+
   await sendTelegramMessage(
     `🧹 <b>Тижневий дайджест бази</b>\n\n` +
     `✉️ Відправлено за тиждень: ${sent7d}\n` +
@@ -53,6 +82,7 @@ export async function GET(request: Request) {
     `🧽 Гігієна: перевірено ${contacts.rows.length} email, вичищено ${invalidated}\n` +
     `📧 Валідних email-лідів: ${validLeads} · всього bounced: ${bounced7d}\n` +
     `⭐ Золота база (відповідали): ${golden}\n\n` +
+    `🔥 <b>Прогрів:</b> ліміт ${currentCap} → <b>${newCap}</b>/день (${rampNote})\n\n` +
     `<a href="https://ninja-digger.vercel.app/analytics">Повна аналітика</a>`
   );
 
