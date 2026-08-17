@@ -7,7 +7,10 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import * as nodemailer from "nodemailer";
 import { validateEmailForOutreach, invalidateContactEmail, isHardBounceError } from "@/lib/emailHygiene";
-import { wrapEmailHtml, TEXT_SIGNATURE } from "@/lib/emailTemplate";
+// Cold touches go PLAIN TEXT on purpose: the branded HTML footer (logo + promo
+// links) pattern-matches bulk mail and hurts inbox placement. April's plain
+// wave got replies; the HTML wave got none. Branded HTML stays for warm replies.
+const PLAIN_SIGNATURE = `\n\n--\nMax | PromoSound\nhttps://promosoundgroup.net/`;
 import { JUNK_NAME_SQL, TIER_SQL } from "@/lib/leadQuality";
 import { runBptoptrackerDailyUpdate } from "@/lib/bptoptrackerDaily";
 import { syncBptoptrackerToChartEntries } from "@/lib/bptoptrackerSync";
@@ -101,8 +104,7 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
           to: primary,
           cc: valid.length > 1 ? valid.slice(1).join(", ") : undefined,
           subject: touch.subjects[v],
-          text: bodyText + TEXT_SIGNATURE,
-          html: wrapEmailHtml(bodyText),
+          text: bodyText + PLAIN_SIGNATURE,
         });
       } catch (sendErr) {
         if (isHardBounceError(sendErr)) {
