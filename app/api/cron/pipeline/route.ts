@@ -7,10 +7,17 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import * as nodemailer from "nodemailer";
 import { validateEmailForOutreach, invalidateContactEmail, isHardBounceError } from "@/lib/emailHygiene";
-// Cold touches go PLAIN TEXT on purpose: the branded HTML footer (logo + promo
-// links) pattern-matches bulk mail and hurts inbox placement. April's plain
-// wave got replies; the HTML wave got none. Branded HTML stays for warm replies.
-const PLAIN_SIGNATURE = `\n\n--\nMax | PromoSound\nhttps://promosoundgroup.net/`;
+// Cold touches go PLAIN TEXT with ZERO links on purpose: the sender reputation
+// was burned (seed test landed in spam), so cold mail must look maximally
+// personal. Branded HTML stays for warm replies only.
+const PLAIN_SIGNATURE = `\n\n--\nMax\nPromoSound`;
+const GREETINGS = ["Hi", "Hey", "Hello", "Hi there,"];
+
+/** Break the template fingerprint a bit: vary the greeting per send. */
+function varyBody(body: string): string {
+  const g = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+  return body.replace(/^(Hi|Hey|Hello)\b/, g.replace(/,$/, ""));
+}
 import { JUNK_NAME_SQL, TIER_SQL } from "@/lib/leadQuality";
 import { runBptoptrackerDailyUpdate } from "@/lib/bptoptrackerDaily";
 import { syncBptoptrackerToChartEntries } from "@/lib/bptoptrackerSync";
@@ -98,7 +105,7 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
       if (valid.length === 0) continue; // no deliverable address — lead skipped, no status change
       const primary = valid[0];
       try {
-        const bodyText = touch.bodies[v](lead.name);
+        const bodyText = varyBody(touch.bodies[v](lead.name));
         await transporter.sendMail({
           from: `"Max from PromoSound" <${user}>`,
           to: primary,
@@ -187,12 +194,23 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, hour, actions: ["paused"], ts: new Date().toISOString() });
   }
 
-  // Beatport outreach: 60% chance, skip night
+  // Beatport outreach: 60% chance, skip night. Daily cap (app_settings) guards
+  // the post-burn reputation ramp-up.
   if (hour >= 6 && hour <= 21 && rand < 0.65) {
-    const t1 = await sendBeatportBatch(1, "New", "Attempt 1", 0);
-    const t2 = await sendBeatportBatch(2, "Attempt 1", "Attempt 2", 2);
-    const t3 = await sendBeatportBatch(3, "Attempt 2", "No Response", 3);
-    if (t1 + t2 + t3 > 0) actions.push(`bp: T1=${t1} T2=${t2} T3=${t3}`);
+    const cap = await pool.query<{ value: string }>(
+      `SELECT value FROM app_settings WHERE key = 'daily_send_cap'`
+    ).then((r) => parseInt(r.rows[0]?.value ?? "999", 10) || 999).catch(() => 999);
+    const sentToday = await pool.query<{ c: number }>(
+      `SELECT COUNT(*)::int c FROM outreach_events WHERE channel='email' AND template_id LIKE 'email_touch_%' AND sent_at >= CURRENT_DATE`
+    ).then((r) => r.rows[0]?.c ?? 0).catch(() => 0);
+    if (sentToday >= cap) {
+      actions.push(`daily cap reached (${sentToday}/${cap})`);
+    } else {
+      const t1 = await sendBeatportBatch(1, "New", "Attempt 1", 0);
+      const t2 = await sendBeatportBatch(2, "Attempt 1", "Attempt 2", 2);
+      const t3 = await sendBeatportBatch(3, "Attempt 2", "No Response", 3);
+      if (t1 + t2 + t3 > 0) actions.push(`bp: T1=${t1} T2=${t2} T3=${t3}`);
+    }
   }
 
   // Cold marking: 5% chance
