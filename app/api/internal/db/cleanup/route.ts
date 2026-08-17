@@ -34,7 +34,18 @@ export async function GET() {
      WHERE n.nspname='public' AND c.relkind='r'
      ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 12`
   )).rows.map((x) => ({ name: x.name, mb: Number(x.mb) }));
-  return NextResponse.json({ ok: true, dbSizeMB: await dbSizeMB(), tables });
+  // Diagnostic: did the broken status constraint stall the outreach state
+  // machine? Status spread + how many leads got touch-1 more than once (spam).
+  const leadStatus = (await pool.query<{ status: string; c: number }>(
+    `SELECT status, COUNT(*)::int c FROM lead_profiles GROUP BY status ORDER BY c DESC`
+  ).catch(() => ({ rows: [] }))).rows;
+  const repeatT1 = (await pool.query<{ leads: number; total_sends: number }>(
+    `SELECT COUNT(*)::int leads, COALESCE(SUM(n),0)::int total_sends FROM (
+       SELECT artist_beatport_id, COUNT(*) n FROM outreach_events
+       WHERE template_id='email_touch_1' GROUP BY artist_beatport_id HAVING COUNT(*) > 1
+     ) x`
+  ).catch(() => ({ rows: [{ leads: 0, total_sends: 0 }] }))).rows[0];
+  return NextResponse.json({ ok: true, dbSizeMB: await dbSizeMB(), tables, leadStatus, repeatT1 });
 }
 
 export async function POST() {

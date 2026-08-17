@@ -127,14 +127,15 @@ export async function enrichScBatch(limit = 8): Promise<{ processed: number; fou
   const rows = (await pool.query<{ soundcloud_id: string; username: string; description: string | null; instagram: string | null }>(
     `SELECT soundcloud_id, username, description, instagram FROM sc_artists
      WHERE email IS NULL AND (is_promoter = true OR tier IN ('A','B'))
-     ORDER BY is_promoter DESC, tier, followers_count DESC LIMIT $1`, [limit]
+     ORDER BY enrich_attempted_at ASC NULLS FIRST, is_promoter DESC, tier, followers_count DESC LIMIT $1`, [limit]
   )).rows;
   let found = 0;
   for (const r of rows) {
     const email = await enrichScArtist(r).catch(() => null);
     if (email) found++;
-    // mark attempted so we don't reprobe dry profiles forever
-    await pool.query(`UPDATE sc_artists SET updated_at=now() WHERE soundcloud_id=$1`, [r.soundcloud_id]).catch(() => {});
+    // Stamp the attempt so the next batch moves on to different profiles instead
+    // of re-probing the same dry ones every hour.
+    await pool.query(`UPDATE sc_artists SET enrich_attempted_at=now(), updated_at=now() WHERE soundcloud_id=$1`, [r.soundcloud_id]).catch(() => {});
   }
   return { processed: rows.length, found };
 }

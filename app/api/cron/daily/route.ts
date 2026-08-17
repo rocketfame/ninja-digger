@@ -99,6 +99,10 @@ export async function GET(request: Request) {
       const c4 = await pool.query("DELETE FROM bptoptracker_daily WHERE snapshot_date < CURRENT_DATE - 56");
       cleanup.bptoptracker_daily = c4.rowCount ?? 0;
 
+      // outreach_events: аудит-лог розсилки, 120 днів достатньо (інакше росте безмежно)
+      const c5 = await pool.query("DELETE FROM outreach_events WHERE sent_at < now() - interval '120 days'");
+      (cleanup as Record<string, number>).outreach_events = c5.rowCount ?? 0;
+
       // Keep the seed list current: every Re-Ex promoter (within a follower cap
       // so no mega-channel floods the DB) becomes a harvest seed. Idempotent —
       // ON CONFLICT keeps existing cursors/progress intact.

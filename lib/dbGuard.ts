@@ -45,6 +45,17 @@ export async function defendDbSpace(): Promise<{ before: number; after: number; 
     await pool.query(`DELETE FROM chart_entries WHERE snapshot_date < CURRENT_DATE - 42`).catch(() => {});
     await pool.query(`DELETE FROM bptoptracker_daily WHERE snapshot_date < CURRENT_DATE - 42`).catch(() => {});
     reclaimed = true;
+
+    // Under real pressure only: drop worthless SC leads (tier C, no email, not a
+    // promoter, harvested long ago). Valuable leads (with email / A-B / promoters)
+    // are never touched. Deep followers like these aren't in refresh page-1, so
+    // this won't churn-re-add them.
+    if ((await sizeMB()) >= RECLAIM_MB) {
+      await pool.query(
+        `DELETE FROM sc_artists WHERE tier = 'C' AND email IS NULL AND is_promoter = false
+           AND harvested_at < now() - interval '30 days'`
+      ).catch(() => {});
+    }
   }
 
   const after = await sizeMB();

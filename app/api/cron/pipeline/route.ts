@@ -26,10 +26,12 @@ export const maxDuration = 300; // 5 min for natural-paced sends
 
 
 
-async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus: string, minDays: number) {
+async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus: string, minDays: number, budget = 5) {
   const mailer = getOutreachMailer();
   if (!mailer) return 0;
+  if (budget <= 0) return 0; // daily cap already exhausted
   const { transporter, from, replyTo } = mailer;
+  const limit = Math.min(5, budget);
 
   // Touch 1 only for artists still in charts recently — a "congrats on your chart entry"
   // months after the fact reads as spam. Follow-ups (2/3) go regardless.
@@ -53,7 +55,7 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
     ORDER BY t.tier, CASE t.segment
       WHEN 'NEWCOMER' THEN 0 WHEN 'NEW_ENTRY' THEN 1 WHEN 'FAST_GROWING' THEN 2 ELSE 3 END,
       t.first_seen DESC NULLS LAST
-    LIMIT 5
+    LIMIT ${limit}
   `);
 
   let sent = 0;
@@ -98,16 +100,20 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
         }
         throw sendErr;
       }
-      await pool.query(
-        `INSERT INTO lead_profiles (artist_beatport_id, status, updated_at) VALUES ($1, $2, now())
-         ON CONFLICT (artist_beatport_id) DO UPDATE SET status = $2, updated_at = now()`,
-        [lead.id, toStatus]
-      );
+      // Record the send FIRST so the daily-cap counter is always accurate even
+      // if the status write fails — otherwise a swallowed error uncaps sending.
       await pool.query(
         `INSERT INTO outreach_events (artist_beatport_id, template_id, channel, contact_value, sent_at, outcome)
          VALUES ($1, $2, 'email', $3, now(), $4)`,
         [lead.id, `email_touch_${touchNum}`, primary, toStatus]
       ).catch((e) => console.error("[cron/pipeline] outreach_events insert failed:", e instanceof Error ? e.message : e));
+      // Advance the lead state machine (won't throw now that the constraint
+      // allows these statuses; kept defensive so a bad status never re-sends).
+      await pool.query(
+        `INSERT INTO lead_profiles (artist_beatport_id, status, updated_at) VALUES ($1, $2, now())
+         ON CONFLICT (artist_beatport_id) DO UPDATE SET status = $2, updated_at = now()`,
+        [lead.id, toStatus]
+      ).catch((e) => console.error("[cron/pipeline] lead_profiles update failed:", e instanceof Error ? e.message : e));
       sent++;
     } catch (e) {
       console.error(`[cron/pipeline] send failed for ${lead.id}:`, e instanceof Error ? e.message : e);
@@ -180,9 +186,12 @@ export async function GET(request: Request) {
     if (sentToday >= cap) {
       actions.push(`daily cap reached (${sentToday}/${cap})`);
     } else {
-      const t1 = await sendBeatportBatch(1, "New", "Attempt 1", 0);
-      const t2 = await sendBeatportBatch(2, "Attempt 1", "Attempt 2", 2);
-      const t3 = await sendBeatportBatch(3, "Attempt 2", "No Response", 3);
+      // Shared daily budget across all three touches so the cap can't be
+      // exceeded 3x by running three back-to-back batches in one hour.
+      let budget = cap - sentToday;
+      const t1 = await sendBeatportBatch(1, "New", "Attempt 1", 0, budget); budget -= t1;
+      const t2 = await sendBeatportBatch(2, "Attempt 1", "Attempt 2", 2, budget); budget -= t2;
+      const t3 = await sendBeatportBatch(3, "Attempt 2", "No Response", 3, budget);
       if (t1 + t2 + t3 > 0) actions.push(`bp: T1=${t1} T2=${t2} T3=${t3}`);
     }
   }
