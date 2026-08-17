@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { harvestSeedFollowers, verifyActiveArtists } from "@/lib/soundcloud";
 import { enrichScBatch } from "@/lib/soundcloudEnrich";
+import { defendDbSpace } from "@/lib/dbGuard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -16,13 +17,14 @@ export async function GET(request: Request) {
   if (secret && request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // Self-defense first: auto-reclaim space + Telegram alert if near the limit.
+  const guard = await defendDbSpace();
+
   // Overflow guard: the Neon free tier caps at 512MB and a full DB once killed
   // ingestion. Above the safe line we stop adding rows (harvest) but still run
   // enrich/verify, which only update existing rows.
   const SAFE_MB = 460;
-  const dbMb = Number((await pool.query<{ mb: number }>(
-    `SELECT (pg_database_size(current_database())/1048576.0)::numeric(10,1) AS mb`
-  )).rows[0].mb);
+  const dbMb = guard.after;
   const harvestOk = dbMb < SAFE_MB;
 
   // Rotate through the least-recently-harvested seeds. 773+ promoter channels
@@ -50,7 +52,7 @@ export async function GET(request: Request) {
   // Dynamic bloat control: keep the regenerable HTML cache tightly bounded so it
   // never balloons between daily truncates (it was the #1 space hog at 172MB).
   await pool.query("DELETE FROM url_cache WHERE fetched_at < now() - interval '6 hours'").catch(() => {});
-  return NextResponse.json({ ok: true, dbMb, harvestOk, results, verified, enriched, ts: new Date().toISOString() });
+  return NextResponse.json({ ok: true, dbMb, harvestOk, guard, results, verified, enriched, ts: new Date().toISOString() });
 }
 
 // Manual trigger with a bigger page budget (POST from the /sc-leads button)
