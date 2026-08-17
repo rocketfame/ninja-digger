@@ -20,6 +20,16 @@ export const maxDuration = 60;
 const MIN_FOLLOWERS = 30;
 const MAX_FOLLOWERS = 50000;
 
+async function tableSizes() {
+  const r = await pool.query<{ name: string; mb: number }>(
+    `SELECT relname AS name, (pg_total_relation_size(c.oid)/1048576.0)::numeric(10,1) AS mb
+     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+     WHERE n.nspname='public' AND c.relkind='r'
+     ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 8`
+  );
+  return r.rows.map((x) => ({ name: x.name, mb: Number(x.mb) }));
+}
+
 async function stats() {
   const [size, arts, seeds] = await Promise.all([
     pool.query<{ mb: number }>(`SELECT (pg_database_size(current_database())/1048576.0)::numeric(10,1) AS mb`),
@@ -45,7 +55,7 @@ async function stats() {
 }
 
 export async function GET() {
-  return NextResponse.json({ ok: true, ...(await stats()) });
+  return NextResponse.json({ ok: true, ...(await stats()), tables: await tableSizes() });
 }
 
 export async function POST() {
