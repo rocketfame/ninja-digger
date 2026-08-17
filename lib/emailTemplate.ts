@@ -50,7 +50,7 @@ export function wrapEmailHtml(bodyText: string): string {
               <img src="${LOGO_URL}" alt="PromoSound" width="130" style="display:block;max-width:130px;height:auto;border:0;margin-bottom:10px;">
             </a>
             <p style="margin:0 0 12px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#737373;line-height:1.5;">
-              Music promotion for electronic artists — trusted by 100k+ musicians since 2013.
+              Music promotion for electronic artists, trusted by 100k+ musicians since 2013.
             </p>
             <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">${serviceLinks}</div>
           </td></tr>
