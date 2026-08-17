@@ -34,6 +34,7 @@ type Submitter = {
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const items: Submitter[] = Array.isArray(body.submitters) ? body.submitters : [];
+  const totalActive = Number(body.totalActive) || 0;
   if (items.length === 0) return NextResponse.json({ ok: false, error: "no submitters" }, { status: 400, headers: CORS });
 
   let upserted = 0;
@@ -64,5 +65,15 @@ export async function POST(request: Request) {
     );
     upserted += res.rowCount ?? 0;
   }
-  return NextResponse.json({ ok: true, upserted, received: items.length }, { headers: CORS });
+  // Daily market-pulse snapshot (active campaigns today)
+  if (totalActive > 0) {
+    await pool.query(
+      `INSERT INTO reex_daily (day, active_campaigns, submitters_ingested, captured_at)
+       VALUES (CURRENT_DATE, $1, $2, now())
+       ON CONFLICT (day) DO UPDATE SET active_campaigns = GREATEST(reex_daily.active_campaigns, $1),
+         submitters_ingested = reex_daily.submitters_ingested + $2, captured_at = now()`,
+      [totalActive, items.length]
+    ).catch(() => {});
+  }
+  return NextResponse.json({ ok: true, upserted, received: items.length, totalActive }, { headers: CORS });
 }
