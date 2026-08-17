@@ -5,7 +5,7 @@
 
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { harvestSeedFollowers } from "@/lib/soundcloud";
+import { harvestSeedFollowers, verifyActiveArtists } from "@/lib/soundcloud";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -26,7 +26,9 @@ export async function GET(request: Request) {
     const r = await harvestSeedFollowers(s.permalink, 4);
     results.push({ seed: s.permalink, ...r });
   }
-  return NextResponse.json({ ok: true, results, ts: new Date().toISOString() });
+  // Deep-verify a slice of tier-A gems each run (latest-track check)
+  const verified = await verifyActiveArtists(60);
+  return NextResponse.json({ ok: true, results, verified, ts: new Date().toISOString() });
 }
 
 // Manual trigger with a bigger page budget (POST from the /sc-leads button)
