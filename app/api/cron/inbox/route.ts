@@ -162,23 +162,25 @@ export async function GET(request: Request) {
               .filter((e) => e !== ar.addr && e !== user.toLowerCase() && !e.includes("googlemail.com"))
           )].slice(0, 4);
           if (found.length === 0) continue;
-          const withRoles: string[] = [];
+          // Notify only about genuinely NEW addresses (DO NOTHING + rowCount),
+          // otherwise the same OOO in the 3-day window spams every hour
+          const fresh: string[] = [];
           for (const newEmail of found) {
             const role = detectRole(body.toLowerCase(), newEmail, lead.name);
-            await pool.query(
+            const ins = await pool.query(
               `INSERT INTO artist_contacts (artist_beatport_id, type, value, confidence, status, email_type, source_context)
                VALUES ($1, 'email', $2, 0.8, 'ok', $3, 'auto-reply harvest')
-               ON CONFLICT (artist_beatport_id, type, LOWER(TRIM(value)))
-               DO UPDATE SET confidence = GREATEST(artist_contacts.confidence, 0.8), email_type = $3`,
+               ON CONFLICT (artist_beatport_id, type, LOWER(TRIM(value))) DO NOTHING`,
               [lead.artist, newEmail, role]
-            ).catch(() => {});
-            withRoles.push(`${newEmail} (${role})`);
+            ).catch(() => ({ rowCount: 0 }));
+            if ((ins.rowCount ?? 0) > 0) fresh.push(`${newEmail} (${role})`);
           }
-          harvested += found.length;
+          if (fresh.length === 0) continue;
+          harvested += fresh.length;
           await sendTelegramMessage(
-            `📮 <b>${tgEscape(lead.name ?? lead.artist)}</b>: в автовідповіді знайшов контакти — ${withRoles.map(tgEscape).join(", ")} (додав до ліда)`
+            `📮 <b>${tgEscape(lead.name ?? lead.artist)}</b>: в автовідповіді знайшов контакти — ${fresh.map(tgEscape).join(", ")} (додав до ліда)`
           );
-          console.log(`[cron/inbox] harvested ${found.length} contact(s) from OOO for ${lead.artist}`);
+          console.log(`[cron/inbox] harvested ${fresh.length} new contact(s) from OOO for ${lead.artist}`);
         }
       }
 
@@ -245,13 +247,13 @@ export async function GET(request: Request) {
                 .map((e) => e.toLowerCase())
                 .filter((e) => e !== addrKey && e !== user.toLowerCase());
               for (const newEmail of redirects.slice(0, 2)) {
-                await pool.query(
+                const ins = await pool.query(
                   `INSERT INTO artist_contacts (artist_beatport_id, type, value, confidence, status, source_context)
                    VALUES ($1, 'email', $2, 0.9, 'ok', 'auto-reply redirect')
-                   ON CONFLICT (artist_beatport_id, type, LOWER(TRIM(value)))
-                   DO UPDATE SET confidence = GREATEST(artist_contacts.confidence, 0.9)`,
+                   ON CONFLICT (artist_beatport_id, type, LOWER(TRIM(value))) DO NOTHING`,
                   [row.artist_beatport_id, newEmail]
-                ).catch(() => {});
+                ).catch(() => ({ rowCount: 0 }));
+                if ((ins.rowCount ?? 0) === 0) continue; // already known — no re-notification
                 await invalidateContactEmail(row.value, "auto-reply: address no longer monitored");
                 await sendTelegramMessage(
                   `📮 <b>${tgEscape(name)}</b>: стара адреса не моніториться, знайшов нову в автовідповіді → <b>${tgEscape(newEmail)}</b> (додав до ліда)`

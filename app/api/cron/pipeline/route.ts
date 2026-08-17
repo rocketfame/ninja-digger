@@ -157,6 +157,13 @@ export async function GET(request: Request) {
       if (lock) {
         console.log("[cron/pipeline] today's charts missing — self-healing ingest");
         const bpt = await runBptoptrackerDailyUpdate();
+        if (bpt.inserted === 0) {
+          // BPTT refused everything (login throttle / downtime) — retry next hour quietly
+          await sendTelegramMessage(
+            `🛠 Ранковий збір чартів ще не вдався (BPTT недоступний, ${bpt.errors.length} відмов) — повторю за годину.`
+          );
+          return NextResponse.json({ ok: true, hour, actions: ["self-heal failed, will retry"], ts: new Date().toISOString() });
+        }
         await syncBptoptrackerToChartEntries();
         const metrics = await refreshArtistMetrics();
         const scores = await refreshLeadScoresV2();
