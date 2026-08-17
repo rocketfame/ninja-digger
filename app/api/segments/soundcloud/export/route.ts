@@ -23,13 +23,14 @@ export async function GET(request: Request) {
   if (tier && ["A", "B", "C"].includes(tier)) { params.push(tier); conds.push(`tier = $${params.length}`); }
   if (withEmail) conds.push(`email IS NOT NULL`);
   if (activity && activity in SC_ACTIVITY) conds.push(`${SC_ACTIVITY_SQL} = '${activity}'`);
+  if (searchParams.get("promoter") === "1") conds.push("is_promoter = true");
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
   const rows = (await pool.query(
-    `SELECT email, username, full_name, permalink_url, tier, ${SC_ACTIVITY_SQL} AS activity, track_count, followers_count, city, country_code, lead_status
+    `SELECT email, username, full_name, permalink_url, tier, ${SC_ACTIVITY_SQL} AS activity, track_count, followers_count, city, country_code, lead_status, instagram, is_promoter
      FROM sc_artists ${where} ORDER BY tier, followers_count DESC LIMIT 20000`, params
   )).rows;
-  const header = "email,username,full_name,profile_url,tier,activity,tracks,followers,city,country,lead_status";
-  const body = rows.map((r) => [r.email, r.username, r.full_name, r.permalink_url, r.tier, r.activity, r.track_count, r.followers_count, r.city, r.country_code, r.lead_status].map(csvCell).join(",")).join("\n");
+  const header = "email,username,full_name,profile_url,tier,activity,tracks,followers,city,country,instagram,pays_for_promo,lead_status";
+  const body = rows.map((r) => [r.email, r.username, r.full_name, r.permalink_url, r.tier, r.activity, r.track_count, r.followers_count, r.city, r.country_code, r.instagram, r.is_promoter ? "yes" : "", r.lead_status].map(csvCell).join(",")).join("\n");
   const date = new Date().toISOString().slice(0, 10);
   const suffix = [tier, activity].filter(Boolean).join("-");
   return new NextResponse(header + "\n" + body + "\n", {

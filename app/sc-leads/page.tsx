@@ -7,7 +7,7 @@ import { SC_ACTIVITY_SQL } from "@/lib/scActivity";
 
 export const dynamic = "force-dynamic";
 
-type SP = { tier?: string; withEmail?: string; activity?: string };
+type SP = { tier?: string; withEmail?: string; activity?: string; promoter?: string };
 
 const ACTIVITY = [
   { key: "hot", emoji: "🔥", label: "Активні", sub: "останні 6 міс", color: "#22c55e" },
@@ -25,10 +25,12 @@ async function getData(sp: SP) {
   if (sp.tier && ["A", "B", "C"].includes(sp.tier)) { params.push(sp.tier); conds.push(`tier=$${params.length}`); }
   if (sp.withEmail === "1") conds.push("email IS NOT NULL");
   if (sp.activity && ACTIVITY.some((a) => a.key === sp.activity)) conds.push(`${SC_ACTIVITY_SQL}='${sp.activity}'`);
+  if (sp.promoter === "1") conds.push("is_promoter = true");
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
 
-  const [total, seed, actRows, tierRows, segCount, segEmail, preview] = await Promise.all([
+  const [total, promoters, seed, actRows, tierRows, segCount, segEmail, preview] = await Promise.all([
     num("SELECT COUNT(*)::int c FROM sc_artists"),
+    num("SELECT COUNT(*)::int c FROM sc_artists WHERE is_promoter=true"),
     pool.query("SELECT permalink, followers_count FROM sc_seed_accounts WHERE active=true ORDER BY id LIMIT 1").then((r) => r.rows[0]).catch(() => null),
     q(`SELECT ${SC_ACTIVITY_SQL} AS a, COUNT(*)::int c FROM sc_artists GROUP BY 1`) as Promise<{ a: string; c: number }[]>,
     q(`SELECT COALESCE(tier,'C') AS t, COUNT(*)::int c FROM sc_artists GROUP BY 1`) as Promise<{ t: string; c: number }[]>,
@@ -36,7 +38,7 @@ async function getData(sp: SP) {
     num(`SELECT COUNT(*)::int c FROM sc_artists ${where}${where ? " AND" : " WHERE"} email IS NOT NULL`, params),
     q(`SELECT username, full_name, email FROM sc_artists ${where} ORDER BY tier, followers_count DESC LIMIT 5`, params) as Promise<{ username: string; full_name: string | null; email: string | null }[]>,
   ]);
-  return { total, seed, segCount, segEmail, preview, actMap: new Map(actRows.map((r) => [r.a, r.c])), tierMap: new Map(tierRows.map((r) => [r.t, r.c])) };
+  return { total, promoters, seed, segCount, segEmail, preview, actMap: new Map(actRows.map((r) => [r.a, r.c])), tierMap: new Map(tierRows.map((r) => [r.t, r.c])) };
 }
 
 export default async function ScLeadsPage({ searchParams }: { searchParams: Promise<SP> }) {
@@ -114,17 +116,25 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
               </div>
             </section>
 
-            {/* Step 3: contact */}
+            {/* Step 3: contact + intent */}
             <section>
               <div className="mb-3 flex items-center gap-2">
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--bg-card)] text-xs font-bold text-[var(--text-muted)]">3</span>
-                <h2 className="text-sm font-semibold">Контакт</h2>
+                <h2 className="text-sm font-semibold">Контакт та намір</h2>
               </div>
-              <Link href={qs({ withEmail: sp.withEmail === "1" ? undefined : "1" })}
-                className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${sp.withEmail === "1" ? "border-transparent" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}
-                style={sp.withEmail === "1" ? { boxShadow: "inset 0 0 0 2px #60a5fa", background: "#60a5fa1a" } : undefined}>
-                📧 Лише з email у профілі
-              </Link>
+              <div className="flex flex-wrap gap-2.5">
+                <Link href={qs({ withEmail: sp.withEmail === "1" ? undefined : "1" })}
+                  className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${sp.withEmail === "1" ? "border-transparent" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}
+                  style={sp.withEmail === "1" ? { boxShadow: "inset 0 0 0 2px #60a5fa", background: "#60a5fa1a" } : undefined}>
+                  📧 Лише з email
+                </Link>
+                <Link href={qs({ promoter: sp.promoter === "1" ? undefined : "1" })}
+                  className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${sp.promoter === "1" ? "border-transparent" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}
+                  style={sp.promoter === "1" ? { boxShadow: "inset 0 0 0 2px #22c55e", background: "#22c55e1a" } : undefined}>
+                  🔥 Платять за промо · {d.promoters}
+                </Link>
+              </div>
+              <p className="mt-2 text-[11px] text-[var(--text-muted)]">«Платять за промо» — активні артисти з RepostExchange, найвищий намір купити просування.</p>
             </section>
 
             {/* Add source — fills the space, prettier search */}
