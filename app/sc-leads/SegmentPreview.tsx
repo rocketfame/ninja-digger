@@ -39,7 +39,7 @@ export function SegmentPreview({ previewUrl, downloadUrl, count }: { previewUrl:
       <button type="button" onClick={openModal}
         className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-5 py-2.5 text-sm font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--accent)]/60 hover:text-[var(--text)]">
         <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-        Прев'ю сегмента
+        Превʼю сегмента
       </button>
 
       {open && (
@@ -48,7 +48,7 @@ export function SegmentPreview({ previewUrl, downloadUrl, count }: { previewUrl:
             {/* Header */}
             <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
               <div className="text-left">
-                <div className="text-sm font-semibold text-[var(--text)]">Прев'ю сегмента</div>
+                <div className="text-sm font-semibold text-[var(--text)]">Превʼю сегмента</div>
                 <div className="text-xs text-[var(--text-muted)]">
                   {total.toLocaleString("uk-UA")} лідів з email {rows && total > rows.length ? `· показано перші ${rows.length}` : ""}
                 </div>
@@ -68,7 +68,7 @@ export function SegmentPreview({ previewUrl, downloadUrl, count }: { previewUrl:
 
             {/* Table */}
             <div className="overflow-auto">
-              {loading && <div className="p-10 text-center text-sm text-[var(--text-muted)]">Завантажую прев'ю…</div>}
+              {loading && <div className="p-10 text-center text-sm text-[var(--text-muted)]">Завантажую превʼю…</div>}
               {!loading && rows && rows.length === 0 && <div className="p-10 text-center text-sm text-[var(--text-muted)]">Порожньо</div>}
               {!loading && rows && rows.length > 0 && (
                 <table className="w-full text-left text-xs">
