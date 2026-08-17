@@ -19,6 +19,7 @@ function varyBody(body: string): string {
   return body.replace(/^(Hi|Hey|Hello)\b/, g.replace(/,$/, ""));
 }
 import { JUNK_NAME_SQL, TIER_SQL } from "@/lib/leadQuality";
+import { getOutreachMailer } from "@/lib/mailer";
 import { runBptoptrackerDailyUpdate } from "@/lib/bptoptrackerDaily";
 import { syncBptoptrackerToChartEntries } from "@/lib/bptoptrackerSync";
 import { refreshArtistMetrics } from "@/segment/normalize";
@@ -50,11 +51,9 @@ function hashId(id: string): number {
 }
 
 async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus: string, minDays: number) {
-  const user = process.env.GMAIL_USER;
-  const pass = process.env.GMAIL_APP_PASSWORD;
-  if (!user || !pass) return 0;
-
-  const transporter = nodemailer.createTransport({ service: "gmail", auth: { user, pass } });
+  const mailer = getOutreachMailer();
+  if (!mailer) return 0;
+  const { transporter, from, replyTo } = mailer;
 
   // Touch 1 only for artists still in charts recently — a "congrats on your chart entry"
   // months after the fact reads as spam. Follow-ups (2/3) go regardless.
@@ -107,7 +106,8 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
       try {
         const bodyText = varyBody(touch.bodies[v](lead.name));
         await transporter.sendMail({
-          from: `"Max from PromoSound" <${user}>`,
+          from,
+          replyTo,
           to: primary,
           cc: valid.length > 1 ? valid.slice(1).join(", ") : undefined,
           subject: touch.subjects[v],
