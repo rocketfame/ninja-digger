@@ -142,7 +142,7 @@ export async function verifyActiveArtists(limit = 60): Promise<{ checked: number
 // We keep only the newest slice of each promo channel's followers: they are the
 // freshest, most-active leads, and it stops a single 20k-follower channel from
 // flooding the DB. Deep followers are older and mostly stale.
-const PER_SEED_CAP = 600;
+const PER_SEED_CAP = 1000;
 
 /** Harvest one page of a seed account's followers; resumable via stored cursor.
  * Once a seed reaches PER_SEED_CAP (or runs out) it's marked completed and drops
