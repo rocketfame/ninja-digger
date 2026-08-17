@@ -3,6 +3,7 @@ import { NavBar } from "@/app/components/NavBar";
 import { pool } from "@/lib/db";
 import { SeedControl } from "./SeedControl";
 import { EnrichButton } from "./EnrichButton";
+import { ReexSync } from "./ReexSync";
 import { SC_ACTIVITY_SQL } from "@/lib/scActivity";
 
 export const dynamic = "force-dynamic";
@@ -28,9 +29,10 @@ async function getData(sp: SP) {
   if (sp.promoter === "1") conds.push("is_promoter = true");
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
 
-  const [total, promoters, seed, actRows, tierRows, segCount, segEmail, preview] = await Promise.all([
+  const [total, promoters, reexDays, seed, actRows, tierRows, segCount, segEmail, preview] = await Promise.all([
     num("SELECT COUNT(*)::int c FROM sc_artists"),
     num("SELECT COUNT(*)::int c FROM sc_artists WHERE is_promoter=true"),
+    pool.query<{ day: string; active_campaigns: number }>("SELECT day::text, active_campaigns FROM reex_daily ORDER BY day DESC LIMIT 2").then((r) => r.rows).catch(() => []),
     pool.query("SELECT permalink, followers_count FROM sc_seed_accounts WHERE active=true ORDER BY id LIMIT 1").then((r) => r.rows[0]).catch(() => null),
     q(`SELECT ${SC_ACTIVITY_SQL} AS a, COUNT(*)::int c FROM sc_artists GROUP BY 1`) as Promise<{ a: string; c: number }[]>,
     q(`SELECT COALESCE(tier,'C') AS t, COUNT(*)::int c FROM sc_artists GROUP BY 1`) as Promise<{ t: string; c: number }[]>,
@@ -38,7 +40,7 @@ async function getData(sp: SP) {
     num(`SELECT COUNT(*)::int c FROM sc_artists ${where}${where ? " AND" : " WHERE"} email IS NOT NULL`, params),
     q(`SELECT username, full_name, email FROM sc_artists ${where} ORDER BY tier, followers_count DESC LIMIT 5`, params) as Promise<{ username: string; full_name: string | null; email: string | null }[]>,
   ]);
-  return { total, promoters, seed, segCount, segEmail, preview, actMap: new Map(actRows.map((r) => [r.a, r.c])), tierMap: new Map(tierRows.map((r) => [r.t, r.c])) };
+  return { total, promoters, reexDays, seed, segCount, segEmail, preview, actMap: new Map(actRows.map((r) => [r.a, r.c])), tierMap: new Map(tierRows.map((r) => [r.t, r.c])) };
 }
 
 export default async function ScLeadsPage({ searchParams }: { searchParams: Promise<SP> }) {
@@ -137,7 +139,10 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
               <p className="mt-2 text-[11px] text-[var(--text-muted)]">«Платять за промо» — активні артисти з RepostExchange, найвищий намір купити просування.</p>
             </section>
 
-            {/* Add source — fills the space, prettier search */}
+            {/* RepostExchange sync — highest-intent source */}
+            <ReexSync today={d.reexDays[0]?.active_campaigns ?? null} yesterday={d.reexDays[1]?.active_campaigns ?? null} />
+
+            {/* Add source — prettier search */}
             <SeedControl seed={d.seed?.permalink ?? null} />
           </div>
 
