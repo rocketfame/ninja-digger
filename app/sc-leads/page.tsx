@@ -21,6 +21,15 @@ const ACTIVITY = [
 async function getData(sp: SP) {
   const num = (sql: string, p: unknown[] = []) => pool.query(sql, p).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
   const q = (sql: string, p: unknown[] = []) => pool.query(sql, p).then((r) => r.rows).catch(() => []);
+  // Transient connection blips under cron load used to blank the whole page to
+  // zeros. Retry a critical query a couple times before giving up.
+  async function retryRow<T>(sql: string, p: unknown[] = []): Promise<T | null> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try { return (await pool.query<T>(sql, p)).rows[0] ?? null; }
+      catch { await new Promise((r) => setTimeout(r, 250 * (attempt + 1))); }
+    }
+    return null;
+  }
 
   // A lead must have its own tracks. Accounts with 0 tracks are repost/promo
   // channels — kept for analytics, never shown as outreach leads. The promoter
@@ -37,7 +46,7 @@ async function getData(sp: SP) {
   // One aggregate for all the static cards (total + promoters + tier/activity
   // email counts) instead of 6 separate queries — fewer connections per page
   // load, so rapid reloads don't saturate the pool and blank the numbers.
-  const statsRow = pool.query<{
+  const statsRow = retryRow<{
     total: number; promoters: number; a: number; b: number; c: number;
     hot: number; warm: number; cool: number; dormant: number;
   }>(`SELECT
@@ -50,12 +59,12 @@ async function getData(sp: SP) {
       COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND ${SC_ACTIVITY_SQL}='warm')::int warm,
       COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND ${SC_ACTIVITY_SQL}='cool')::int cool,
       COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND ${SC_ACTIVITY_SQL}='dormant')::int dormant
-    FROM sc_artists`).then((r) => r.rows[0]).catch(() => null);
+    FROM sc_artists`);
 
   const [stats, seg, reexDays, seed, preview] = await Promise.all([
     statsRow,
-    // segment count + email in one query (respects active filters)
-    pool.query<{ c: number; e: number }>(`SELECT COUNT(*)::int c, COUNT(email)::int e FROM sc_artists ${where}`, params).then((r) => r.rows[0]).catch(() => ({ c: 0, e: 0 })),
+    // segment count + email in one query (respects active filters) — retried
+    retryRow<{ c: number; e: number }>(`SELECT COUNT(*)::int c, COUNT(email)::int e FROM sc_artists ${where}`, params),
     pool.query<{ day: string; active_campaigns: number }>("SELECT day::text, active_campaigns FROM reex_daily ORDER BY day DESC LIMIT 2").then((r) => r.rows).catch(() => []),
     pool.query("SELECT permalink, followers_count FROM sc_seed_accounts WHERE active=true ORDER BY id LIMIT 1").then((r) => r.rows[0]).catch(() => null),
     q(`SELECT username, full_name, email FROM sc_artists ${where} AND email IS NOT NULL ORDER BY tier, followers_count DESC LIMIT 5`, params) as Promise<{ username: string; full_name: string | null; email: string | null }[]>,
