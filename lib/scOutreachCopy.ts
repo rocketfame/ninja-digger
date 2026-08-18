@@ -48,9 +48,9 @@ const T2_BODIES = [
 // TOUCH 3 — the offer, only after no reply.
 const T3_SUBJECTS = ["last note", "one option for you", "re: your releases"];
 const T3_BODIES = [
-  "Last one from me. If you want to try it on a release, I can set you up with {pct}% off your first package (code {code}), so it's low risk. Want the details?",
-  "Won't keep bugging you. If you'd like to test it, here's {pct}% off the first package with code {code}. Happy to send how it works.",
-  "Final note. To make it easy to try, {pct}% off your first package ({code}). Want me to break it down?",
+  "Last one from me. If you want to try it on a release, I can set you up with {pct}% off your first package, so it's low risk. Want the details?",
+  "Won't keep bugging you. If you'd like to test it, I can do {pct}% off your first package. Happy to send how it works.",
+  "Final note. To make it easy to try, I can take {pct}% off your first package. Want me to break it down?",
 ];
 
 const CLOSERS = ["Max\nPromoSound", "Max, PromoSound", "Cheers,\nMax\nPromoSound"];
