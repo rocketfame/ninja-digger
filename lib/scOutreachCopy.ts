@@ -37,12 +37,14 @@ const T1_QUESTIONS = [
 
 // TOUCH 2 — brief value, soft CTA. Still no discount.
 const T2_SUBJECTS = ["re: your soundcloud", "following up", "your next release"];
-// Show the full spectrum, but grouped into buckets (streaming / socials / press)
-// so it reads compact and considered, not a spammy 15-platform list.
+// Flatter, don't diminish. "for artists at your level" + comprehensive solutions
+// that grow them across ALL major streamers at once (Spotify, Deezer, Tidal,
+// Apple Music), our exclusive Beatport promotion, plus socials. Grouped so it
+// stays compact, never a spammy platform dump, never "SoundCloud-only".
 const T2_BODIES = [
-  "Following up quickly. Most artists we work with were SoundCloud-only, then we got their releases moving across the board: streaming (Spotify, Apple, Beatport, Bandcamp), socials (TikTok, Instagram, Facebook) and scene press like Resident Advisor. If you'd want that for your next drop, happy to show how.",
-  "Circling back. We usually take a SoundCloud release and push it everywhere that counts: Spotify and Apple, Beatport and Bandcamp, TikTok and Instagram, plus press like Resident Advisor. Worth a look for your next one?",
-  "One more note. The artists we help go from SoundCloud-only to a full rollout: streaming, socials (TikTok, Instagram, Facebook) and scene press (Resident Advisor), all from one catalog. Would that be useful for your next release?",
+  "Following up. For artists at your level we put together complete campaigns that grow you across all the main streaming services at once (Spotify, Deezer, Tidal, Apple Music), plus our exclusive Beatport promotion and social media on top. Would that be useful for your next release?",
+  "Circling back. We build comprehensive packages for artists like you: simultaneous growth on the major streamers (Spotify, Deezer, Tidal, Apple Music), our exclusive Beatport push, and socials included. Worth a look for your next drop?",
+  "One more note. For artists at your stage we run full campaigns across every major streaming service (Spotify, Deezer, Tidal, Apple Music), with unique Beatport promotion and social media on top. Want me to show how it works?",
 ];
 
 // TOUCH 3 — the offer, only after no reply.
