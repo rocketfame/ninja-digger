@@ -63,17 +63,18 @@ export function buildScEmail(touch: 1 | 2 | 3, opts: { name: string; pct: number
   const greet = pick(GREETINGS, seed).replace("{name}", name);
   const close = pick(CLOSERS, seed);
 
+  // No unsubscribe link anywhere — it reads as a spam footer. These are 1:1
+  // style emails to a monitored reply-to inbox, and the inbox automation honors
+  // "stop / not interested" replies by blacklisting the sender. Clean + compliant.
   if (touch === 1) {
-    // Offer-free opener. Opt-out is conversational (a reply is honored) so it
-    // reads like a real 1:1 message, not a marketing blast.
     const text = `${greet}\n\n${pick(T1_OPENERS, seed + 1)}\n\n${pick(T1_QUESTIONS, seed + 2)}\n\n${close}`;
     return { subject: pick(T1_SUBJECTS, seed), text };
   }
   if (touch === 2) {
-    const text = `${greet}\n\n${pick(T2_BODIES, seed + 1)}\n\n${close}\n\nNot interested? Unsubscribe: ${opts.unsubUrl}`;
+    const text = `${greet}\n\n${pick(T2_BODIES, seed + 1)}\n\n${close}`;
     return { subject: pick(T2_SUBJECTS, seed), text };
   }
   const body = pick(T3_BODIES, seed + 1).replace("{pct}", String(opts.pct)).replace("{code}", opts.code);
-  const text = `${greet}\n\n${body}\n\n${close}\n\nNot interested? Unsubscribe: ${opts.unsubUrl}`;
+  const text = `${greet}\n\n${body}\n\n${close}`;
   return { subject: pick(T3_SUBJECTS, seed), text };
 }
