@@ -198,6 +198,8 @@ export async function GET(request: Request) {
         );
         for (const email of found) {
           bouncedMarked += await invalidateContactEmail(email, "async bounce (mailer-daemon)");
+          // SC leads: a bounce also drops them out of the outreach sequence.
+          await pool.query(`UPDATE sc_artists SET lead_status='Bounced', updated_at=now() WHERE LOWER(email)=$1 AND lead_status='Contacted'`, [email]).catch(() => {});
         }
       }
 
@@ -216,6 +218,25 @@ export async function GET(request: Request) {
              AND lp.status = ANY($2::text[])`,
           [unique, REPLYABLE]
         );
+
+        // SC leads: a reply stops their sequence (status leaves 'Contacted'),
+        // counts as a reply, and pings Telegram. RETURNING is the dedup — only
+        // rows that were still 'Contacted' flip, so no double-notify.
+        const scReplied = await pool.query<{ username: string; full_name: string | null; email: string }>(
+          `UPDATE sc_artists SET lead_status='Responded', updated_at=now()
+           WHERE LOWER(email) = ANY($1::text[]) AND lead_status='Contacted'
+           RETURNING username, full_name, email`, [unique]
+        ).catch(() => ({ rows: [] as { username: string; full_name: string | null; email: string }[] }));
+        for (const row of scReplied.rows) {
+          replies++;
+          const uid = uidByAddr.get(row.email.toLowerCase().trim());
+          const excerpt = uid ? await downloadText(client, uid) : null;
+          await sendTelegramMessage(
+            `💬 SC-відповідь від <b>${row.full_name || row.username}</b>\n${row.email}` +
+            (excerpt ? `\n\n${excerpt.slice(0, 400)}` : "")
+          ).catch(() => {});
+        }
+
         for (const row of matched.rows) {
           // The status transition is the dedup: once Responded, no re-notification
           const updated = await pool.query(

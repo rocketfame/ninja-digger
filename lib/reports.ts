@@ -122,6 +122,21 @@ export async function buildScReport(): Promise<string> {
   const db = await one<{ mb: number }>(
     `SELECT (pg_database_size(current_database())/1048576.0)::numeric(10,1) mb`
   );
+  // Outreach stats
+  const out = await one<{ sent_today: number; sent_total: number; replied: number; bounced: number; unsub: number }>(
+    `SELECT
+       (SELECT COUNT(*)::int FROM outreach_events WHERE template_id LIKE 'sc_touch_%' AND sent_at >= CURRENT_DATE) sent_today,
+       (SELECT COUNT(*)::int FROM outreach_events WHERE template_id LIKE 'sc_touch_%') sent_total,
+       (SELECT COUNT(*)::int FROM sc_artists WHERE lead_status='Responded') replied,
+       (SELECT COUNT(*)::int FROM sc_artists WHERE lead_status='Bounced') bounced,
+       (SELECT COUNT(*)::int FROM sc_artists WHERE lead_status='Unsubscribed') unsub`
+  );
+  const queue = await one<{ c: number }>(
+    `SELECT COUNT(*)::int c FROM sc_artists
+     WHERE email IS NOT NULL AND sc_touch = 0 AND (lead_status IS NULL OR lead_status='New') AND track_count >= 1
+       AND LOWER(email) NOT IN (SELECT LOWER(email) FROM email_blacklist)`
+  );
+  const paused = (await getSetting("sc_outreach_paused")) === "1";
 
   const emails = totals?.emails ?? 0;
   const newEmails = today?.new_emails ?? 0;
@@ -137,7 +152,12 @@ export async function buildScReport(): Promise<string> {
     `   ✅ опрацьовано: ${seeds?.completed ?? 0} · ⏳ в черзі: ${pending}\n` +
     `   🔄 спарсено сьогодні: ${seeds?.refreshed_today ?? 0}\n\n` +
     `💎 Промоутери: ${totals?.promoters ?? 0} (з email: ${totals?.promoter_emails ?? 0})\n` +
-    `${dbFlag} База: ${mb} / 512 MB` +
+    `${dbFlag} База: ${mb} / 512 MB\n\n` +
+    `— — —\n` +
+    `📤 Розсилка SC ${paused ? "⏸ пауза" : "🟢 активна"}\n` +
+    `   Надіслано: ${out?.sent_today ?? 0} сьогодні · ${out?.sent_total ?? 0} усього\n` +
+    `   💬 Відповіли: ${out?.replied ?? 0} · ↩️ bounce: ${out?.bounced ?? 0} · 🚫 відписки: ${out?.unsub ?? 0}\n` +
+    `   🎯 У черзі на контакт: ${queue?.c ?? 0}` +
     (pending === 0 ? `\n\n✨ Усі канали опрацьовано — йдуть тільки refresh нових підписників.` : "")
   );
 }
