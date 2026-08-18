@@ -65,35 +65,60 @@ export async function GET(request: Request) {
   const pct = parseInt(await getSetting("sc_discount", "20"), 10) || 20;
   const code = await getSetting("sc_promo_code", "SOUND20");
 
-  // Best leads first (tier A gems), one email per address, skip blacklisted.
-  const leads = (await pool.query<{ soundcloud_id: string; username: string; full_name: string | null; email: string }>(
-    `SELECT soundcloud_id, username, full_name, email FROM sc_artists
-     WHERE email IS NOT NULL AND contacted_at IS NULL
-       AND (lead_status IS NULL OR lead_status = 'New')
-       AND track_count >= 1
-       AND LOWER(email) NOT IN (SELECT LOWER(email) FROM email_blacklist)
-     ORDER BY (tier='A') DESC, followers_count DESC LIMIT $1`, [budget]
-  )).rows;
+  // Pick the next lead to email: follow-ups (warmer) before fresh openers, and
+  // only for leads still in 'Contacted' state (a reply/bounce/opt-out flips the
+  // status and drops them out). Touch 2 waits 3 days after touch 1, touch 3
+  // waits 4 more. Never re-contacts a blacklisted or already-replied lead.
+  type Lead = { soundcloud_id: string; username: string; full_name: string | null; email: string; sc_touch: number };
+  const nextTouch = (sql: string): Promise<Lead[]> =>
+    pool.query<Lead>(sql, [budget]).then((r) => r.rows).catch(() => [] as Lead[]);
+  const notBlacklisted = `LOWER(email) NOT IN (SELECT LOWER(email) FROM email_blacklist)`;
+
+  let leads = await nextTouch(
+    `SELECT soundcloud_id, username, full_name, email, sc_touch FROM sc_artists
+     WHERE sc_touch = 2 AND lead_status = 'Contacted' AND contacted_at < now() - interval '4 days'
+       AND email IS NOT NULL AND ${notBlacklisted}
+     ORDER BY (tier='A') DESC, followers_count DESC LIMIT $1`);
+  if (leads.length < budget) {
+    leads = leads.concat(await nextTouch(
+      `SELECT soundcloud_id, username, full_name, email, sc_touch FROM sc_artists
+       WHERE sc_touch = 1 AND lead_status = 'Contacted' AND contacted_at < now() - interval '3 days'
+         AND email IS NOT NULL AND ${notBlacklisted}
+       ORDER BY (tier='A') DESC, followers_count DESC LIMIT $1`));
+  }
+  if (leads.length < budget) {
+    leads = leads.concat(await nextTouch(
+      `SELECT soundcloud_id, username, full_name, email, sc_touch FROM sc_artists
+       WHERE sc_touch = 0 AND (lead_status IS NULL OR lead_status = 'New')
+         AND track_count >= 1 AND email IS NOT NULL AND ${notBlacklisted}
+       ORDER BY (tier='A') DESC, followers_count DESC LIMIT $1`));
+  }
+  leads = leads.slice(0, budget);
 
   let sent = 0;
+  const byTouch: Record<number, number> = { 1: 0, 2: 0, 3: 0 };
   for (const lead of leads) {
     if (sent > 0) await new Promise((r) => setTimeout(r, 20000 + Math.random() * 25000)); // 20-45s apart
+    const touch = (lead.sc_touch + 1) as 1 | 2 | 3;
     const name = lead.full_name || lead.username || "there";
     const unsubUrl = `${BASE_URL}/api/unsubscribe?u=${Buffer.from(lead.email).toString("base64url")}`;
-    const email = buildScEmail({ name, pct, code, unsubUrl });
+    const email = buildScEmail(touch, { name, pct, code, unsubUrl });
     try {
       await transporter.sendMail({ from, replyTo, to: lead.email, subject: email.subject, text: email.text });
       await pool.query(
         `INSERT INTO outreach_events (artist_beatport_id, template_id, channel, contact_value, sent_at, outcome)
-         VALUES ($1,'sc_touch_1','email',$2, now(),'sent')`, [`sc:${lead.soundcloud_id}`, lead.email]
+         VALUES ($1,$2,'email',$3, now(),'sent')`, [`sc:${lead.soundcloud_id}`, `sc_touch_${touch}`, lead.email]
       ).catch(() => {});
-      await pool.query(`UPDATE sc_artists SET lead_status='Contacted', contacted_at=now(), updated_at=now() WHERE soundcloud_id=$1`, [lead.soundcloud_id]).catch(() => {});
-      sent++;
+      // touch 3 is the last — mark done so it isn't picked again.
+      const status = touch === 3 ? "No Response" : "Contacted";
+      await pool.query(`UPDATE sc_artists SET lead_status=$2, sc_touch=$3, contacted_at=now(), updated_at=now() WHERE soundcloud_id=$1`,
+        [lead.soundcloud_id, status, touch]).catch(() => {});
+      sent++; byTouch[touch]++;
     } catch (e) {
       if (isHardBounceError(e)) {
         await pool.query(`UPDATE sc_artists SET lead_status='Bounced', updated_at=now() WHERE soundcloud_id=$1`, [lead.soundcloud_id]).catch(() => {});
       }
     }
   }
-  return NextResponse.json({ ok: true, daysSinceStart, cap, scSentToday: scSentToday + sent, sent, ts: new Date().toISOString() });
+  return NextResponse.json({ ok: true, daysSinceStart, cap, scSentToday: scSentToday + sent, sent, byTouch, ts: new Date().toISOString() });
 }

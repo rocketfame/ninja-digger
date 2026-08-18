@@ -1,12 +1,12 @@
 /**
- * Cold-email copy for SoundCloud leads. Plain text only (best deliverability
- * for a cold list), human 1:1 tone, NO em-dashes / spam words. Positioning:
- * these artists already do SoundCloud reposts (RepostExchange) — so we DON'T
- * sell reposts. We sell the gap: their fans also stream on Spotify/Apple/
- * YouTube, and we cover all of them as one release rollout. SC push is included.
+ * Cold-email copy for SoundCloud leads. Plain text, human 1:1 tone, NO em-dashes
+ * / spam words. Three-touch sequence — the offer is NEVER in the first email
+ * (that reads as spam). Touch 1 is a short, personal, offer-free opener with one
+ * soft question. Touch 2 adds a little value. Touch 3 (only if no reply) makes
+ * the discount offer. Positioning: not reposts (they already do RepostExchange),
+ * but full multi-platform promotion (Spotify/Apple/YouTube + SC as one rollout).
  *
- * Copy is assembled from pools with an ISO-week seed so it rotates weekly and
- * every recipient gets a slightly different, non-fingerprintable message.
+ * Copy rotates weekly via an ISO-week seed so it is not fingerprintable.
  */
 
 function isoWeek(d: Date): number {
@@ -16,69 +16,61 @@ function isoWeek(d: Date): number {
   const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
   return Math.ceil(((+date - +yearStart) / 86400000 + 1) / 7);
 }
+function pick<T>(pool: T[], seed: number): T { return pool[Math.abs(seed) % pool.length]; }
+function hash(s: string): number { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
 
-// Deterministic pick so a given (recipient, week) always yields the same email.
-function pick<T>(pool: T[], seed: number): T {
-  return pool[Math.abs(seed) % pool.length];
-}
-function hash(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return h;
-}
+const GREETINGS = ["Hi {name},", "Hey {name},", "{name}, quick one.", "Hi {name}, hope you're good."];
 
-const SUBJECTS = [
-  "saw your SoundCloud, bigger idea",
-  "your track, every platform",
-  "beyond the SoundCloud reposts",
-  "quick idea for your next release",
-  "your music + a wider push",
+// TOUCH 1 — short, personal, offer-free, one soft question.
+const T1_SUBJECTS = ["your soundcloud", "quick question", "your releases", "liked your track", "your sound"];
+const T1_OPENERS = [
+  "Been listening to your SoundCloud, really like your direction.",
+  "Came across your SoundCloud, the recent stuff is solid.",
+  "Been going through your tracks, you've got a clear sound.",
+];
+const T1_QUESTIONS = [
+  "Are you doing anything to push these on Spotify or Apple Music yet?",
+  "Are you promoting your releases beyond SoundCloud at all yet?",
+  "Are your tracks getting any push on Spotify / Apple / YouTube yet?",
 ];
 
-const GREETINGS = ["Hi {name},", "Hey {name},", "Hi {name}, hope you're good.", "{name}, quick one."];
-
-const OPENINGS = [
-  "Came across your SoundCloud and saw you're actively pushing your music.",
-  "Been listening through your SoundCloud, you're clearly putting in the work on releases.",
-  "Found your tracks on SoundCloud and noticed you're active right now.",
+// TOUCH 2 — brief value, soft CTA. Still no discount.
+const T2_SUBJECTS = ["re: your soundcloud", "following up", "your next release"];
+const T2_BODIES = [
+  "Following up quickly. Most artists we work with were only on SoundCloud, then their releases started landing on Spotify and Apple playlists too. If you'd want that for your next drop, happy to show how.",
+  "Circling back. The artists we help usually start SoundCloud-only, then we get the same release moving on Spotify, Apple Music and YouTube. Worth a look for your next one?",
+  "One more note. We take a release past SoundCloud and get it onto Spotify/Apple playlists and YouTube as one push. Would that be useful for you?",
 ];
 
-const GAPS = [
-  "Most artists stop at SoundCloud reposts. The thing is, your fans also stream on Spotify, Apple Music and YouTube, and that's where a release really grows.",
-  "Reposts are fine, but they only move one platform. Your listeners are also on Spotify, Apple Music and YouTube, and that's the part most artists leave on the table.",
-  "SoundCloud reposts get you so far. Real growth happens when the same release also lands on Spotify, Apple Music and YouTube at once.",
+// TOUCH 3 — the offer, only after no reply.
+const T3_SUBJECTS = ["last note", "one option for you", "re: your releases"];
+const T3_BODIES = [
+  "Last one from me. If you want to try it on a release, I can set you up with {pct}% off your first package (code {code}), so it's low risk. Want the details?",
+  "Won't keep bugging you. If you'd like to test it, here's {pct}% off the first package with code {code}. Happy to send how it works.",
+  "Final note. To make it easy to try, {pct}% off your first package ({code}). Want me to break it down?",
 ];
 
-const PITCHES = [
-  "At PromoSound we run the full rollout across all of them: Spotify playlist pitching, Apple Music, YouTube, plus the SoundCloud push you already know, as one campaign.",
-  "We handle the whole picture: Spotify playlists, Apple Music, YouTube and SoundCloud, packaged so your release hits everywhere instead of one channel.",
-  "PromoSound covers it end to end: Spotify pitching, Apple Music, YouTube and SoundCloud together, so one release works across every platform your fans use.",
-];
+const CLOSERS = ["Max\nPromoSound", "Max, PromoSound", "Cheers,\nMax\nPromoSound"];
 
-const OFFERS = [
-  "Since you're active right now, use {code} for {pct}% off your first package so you can see how it moves your numbers everywhere, not just one platform.",
-  "You're releasing at the right time, so here's {pct}% off your first package with code {code}. Good way to test it on a real release.",
-  "Because you're already putting music out, I can give you {pct}% off the first package ({code}) to see the difference across platforms.",
-];
-
-const CTAS = ["Want the breakdown?", "Want me to send the details?", "Should I send over how it works?", "Open to seeing the numbers?"];
-
-export function buildScEmail(opts: { name: string; pct: number; code: string; unsubUrl: string; now?: Date }): { subject: string; text: string } {
+export function buildScEmail(touch: 1 | 2 | 3, opts: { name: string; pct: number; code: string; unsubUrl: string; now?: Date }): { subject: string; text: string } {
   const now = opts.now ?? new Date();
   const week = isoWeek(now);
-  const seed = hash(opts.name || "artist") + week;
   const name = (opts.name || "there").split(/\s+/)[0].slice(0, 40) || "there";
+  const seed = hash(name) + week + touch;
+  const greet = pick(GREETINGS, seed).replace("{name}", name);
+  const close = pick(CLOSERS, seed);
 
-  const subject = pick(SUBJECTS, seed);
-  const body =
-    pick(GREETINGS, seed).replace("{name}", name) + "\n\n" +
-    pick(OPENINGS, seed + 1) + "\n\n" +
-    pick(GAPS, seed + 2) + "\n\n" +
-    pick(PITCHES, seed + 3) + "\n\n" +
-    pick(OFFERS, seed + 4).replace("{pct}", String(opts.pct)).replace("{code}", opts.code) + "\n\n" +
-    pick(CTAS, seed + 5) + "\n\n" +
-    "Max\nPromoSound\n\n" +
-    "Not the right time? Unsubscribe: " + opts.unsubUrl;
-
-  return { subject, text: body };
+  if (touch === 1) {
+    // Offer-free opener. Opt-out is conversational (a reply is honored) so it
+    // reads like a real 1:1 message, not a marketing blast.
+    const text = `${greet}\n\n${pick(T1_OPENERS, seed + 1)}\n\n${pick(T1_QUESTIONS, seed + 2)}\n\n${close}`;
+    return { subject: pick(T1_SUBJECTS, seed), text };
+  }
+  if (touch === 2) {
+    const text = `${greet}\n\n${pick(T2_BODIES, seed + 1)}\n\n${close}\n\nNot interested? Unsubscribe: ${opts.unsubUrl}`;
+    return { subject: pick(T2_SUBJECTS, seed), text };
+  }
+  const body = pick(T3_BODIES, seed + 1).replace("{pct}", String(opts.pct)).replace("{code}", opts.code);
+  const text = `${greet}\n\n${body}\n\n${close}\n\nNot interested? Unsubscribe: ${opts.unsubUrl}`;
+  return { subject: pick(T3_SUBJECTS, seed), text };
 }
