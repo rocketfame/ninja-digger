@@ -24,9 +24,9 @@ const GREETINGS = ["Hi {name},", "Hey {name},", "{name}, quick one.", "Hi {name}
 // TOUCH 1 — short, personal, offer-free, one soft question.
 const T1_SUBJECTS = ["your soundcloud", "quick question", "your releases", "liked your track", "your sound"];
 const T1_OPENERS = [
-  "Been listening to your SoundCloud, really like your direction.",
+  "Been listening to your SoundCloud, really like your tracks.",
   "Came across your SoundCloud, the recent stuff is solid.",
-  "Been going through your tracks, you've got a clear sound.",
+  "Been going through your SoundCloud, you've got a clear sound.",
 ];
 const T1_QUESTIONS = [
   "Are you pushing these anywhere beyond SoundCloud yet, like Spotify, Bandcamp or Beatport?",
