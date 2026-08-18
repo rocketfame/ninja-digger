@@ -29,17 +29,18 @@ const T1_OPENERS = [
   "Been going through your tracks, you've got a clear sound.",
 ];
 const T1_QUESTIONS = [
-  "Are you doing anything to push these on Spotify or Apple Music yet?",
-  "Are you promoting your releases beyond SoundCloud at all yet?",
-  "Are your tracks getting any push on Spotify / Apple / YouTube yet?",
+  "Are you pushing these anywhere beyond SoundCloud yet, like Spotify, Bandcamp or Beatport?",
+  "Are your releases getting any push on Spotify, Apple Music or Bandcamp yet?",
+  "Anything happening with these on Spotify, Beatport or Bandcamp yet?",
+  "Are you promoting your tracks beyond SoundCloud at all yet (Spotify, Bandcamp, Beatport)?",
 ];
 
 // TOUCH 2 — brief value, soft CTA. Still no discount.
 const T2_SUBJECTS = ["re: your soundcloud", "following up", "your next release"];
 const T2_BODIES = [
-  "Following up quickly. Most artists we work with were only on SoundCloud, then their releases started landing on Spotify and Apple playlists too. If you'd want that for your next drop, happy to show how.",
-  "Circling back. The artists we help usually start SoundCloud-only, then we get the same release moving on Spotify, Apple Music and YouTube. Worth a look for your next one?",
-  "One more note. We take a release past SoundCloud and get it onto Spotify/Apple playlists and YouTube as one push. Would that be useful for you?",
+  "Following up quickly. Most artists we work with were only on SoundCloud, then their releases started landing on Spotify, Apple playlists and Bandcamp too. If you'd want that for your next drop, happy to show how.",
+  "Circling back. The artists we help usually start SoundCloud-only, then we get the same release moving on Spotify, Apple Music, Beatport and Bandcamp. Worth a look for your next one?",
+  "One more note. We take a release past SoundCloud and get it onto Spotify/Apple playlists, YouTube and the niche platforms (Bandcamp, Beatport) as one push. Would that be useful for you?",
 ];
 
 // TOUCH 3 — the offer, only after no reply.
