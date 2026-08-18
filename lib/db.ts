@@ -26,7 +26,8 @@ function getPool(): Pool {
       connectionString,
       max: 8,
       idleTimeoutMillis: 10000,
-      connectionTimeoutMillis: 10000,
+      connectionTimeoutMillis: 12000,
+      keepAlive: true,
     });
   }
   return _pool;
@@ -50,13 +51,28 @@ export async function query<T = unknown>(
   text: string,
   params?: unknown[]
 ): Promise<T[]> {
-  const client = await pool.connect();
-  try {
-    const result = await client.query(text, params);
-    return (result.rows as T[]) ?? [];
-  } finally {
-    client.release();
+  // Neon free-tier compute autosuspends; the first query after idle can fail
+  // with "timeout exceeded when trying to connect" while it wakes. Retry a few
+  // times with backoff so pages never surface a cold-start blip as an error.
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const client = await pool.connect();
+      try {
+        const result = await client.query(text, params);
+        return (result.rows as T[]) ?? [];
+      } finally {
+        client.release();
+      }
+    } catch (e) {
+      lastErr = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      // Only retry transient connection issues, not SQL errors.
+      if (!/timeout|connect|ECONNRESET|terminat|Connection|socket/i.test(msg)) throw e;
+      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    }
   }
+  throw lastErr;
 }
 
 /**
