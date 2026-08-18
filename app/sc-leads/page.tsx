@@ -117,7 +117,7 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
                 {ACTIVITY.map((a) => {
                   const on = sp.activity === a.key;
                   return (
-                    <Link key={a.key} href={qs({ activity: on ? undefined : a.key, tier: undefined })}
+                    <Link key={a.key} href={qs({ activity: on ? undefined : a.key, tier: undefined, promoter: undefined })}
                       className={chip(on)} style={on ? { boxShadow: `inset 0 0 0 2px ${a.color}`, background: `${a.color}1a` } : undefined}>
                       <div className="flex items-center gap-1.5">
                         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: a.color }} />
@@ -146,7 +146,7 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
                 ].map((o) => {
                   const on = (sp.tier ?? "") === o.t;
                   return (
-                    <Link key={o.t || "all"} href={qs({ tier: o.t || undefined, activity: undefined })}
+                    <Link key={o.t || "all"} href={qs({ tier: o.t || undefined, activity: undefined, promoter: undefined })}
                       className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${on ? "border-transparent" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}
                       style={on ? { boxShadow: `inset 0 0 0 2px ${o.color}`, background: `${o.color}1a` } : undefined}>
                       {o.label}{o.hint != null && <span className="text-[var(--text-muted)]">{o.hint}</span>}
@@ -163,12 +163,12 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
                 <h2 className="text-sm font-semibold">Контакт та намір</h2>
               </div>
               <div className="flex flex-wrap gap-2.5">
-                <Link href={qs({ withEmail: sp.withEmail === "1" ? undefined : "1" })}
+                <Link href={qs({ withEmail: sp.withEmail === "1" ? undefined : "1", promoter: undefined })}
                   className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${sp.withEmail === "1" ? "border-transparent" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}
                   style={sp.withEmail === "1" ? { boxShadow: "inset 0 0 0 2px #60a5fa", background: "#60a5fa1a" } : undefined}>
                   Лише з email
                 </Link>
-                <Link href={qs({ promoter: sp.promoter === "1" ? undefined : "1" })}
+                <Link href={qs({ promoter: sp.promoter === "1" ? undefined : "1", tier: undefined, activity: undefined, withEmail: undefined })}
                   className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${sp.promoter === "1" ? "border-transparent" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}
                   style={sp.promoter === "1" ? { boxShadow: "inset 0 0 0 2px #22c55e", background: "#22c55e1a" } : undefined}>
                   Репост-канали (аналітика) · {d.promoters}
