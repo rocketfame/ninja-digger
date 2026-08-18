@@ -37,10 +37,12 @@ const T1_QUESTIONS = [
 
 // TOUCH 2 — brief value, soft CTA. Still no discount.
 const T2_SUBJECTS = ["re: your soundcloud", "following up", "your next release"];
+// Show the full spectrum, but grouped into buckets (streaming / socials / press)
+// so it reads compact and considered, not a spammy 15-platform list.
 const T2_BODIES = [
-  "Following up quickly. Most artists we work with were only on SoundCloud, then their releases started landing on Spotify, Apple playlists and Bandcamp too. If you'd want that for your next drop, happy to show how.",
-  "Circling back. The artists we help usually start SoundCloud-only, then we get the same release moving on Spotify, Apple Music, Beatport and Bandcamp. Worth a look for your next one?",
-  "One more note. We take a release past SoundCloud and get it onto Spotify/Apple playlists, YouTube and the niche platforms (Bandcamp, Beatport) as one push. Would that be useful for you?",
+  "Following up quickly. Most artists we work with were SoundCloud-only, then we got their releases moving across the board: streaming (Spotify, Apple, Beatport, Bandcamp), socials (TikTok, Instagram, Facebook) and scene press like Resident Advisor. If you'd want that for your next drop, happy to show how.",
+  "Circling back. We usually take a SoundCloud release and push it everywhere that counts: Spotify and Apple, Beatport and Bandcamp, TikTok and Instagram, plus press like Resident Advisor. Worth a look for your next one?",
+  "One more note. The artists we help go from SoundCloud-only to a full rollout: streaming, socials (TikTok, Instagram, Facebook) and scene press (Resident Advisor), all from one catalog. Would that be useful for your next release?",
 ];
 
 // TOUCH 3 — the offer, only after no reply.
