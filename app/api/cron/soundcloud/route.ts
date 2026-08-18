@@ -8,6 +8,7 @@ import { pool } from "@/lib/db";
 import { harvestSeedFollowers, verifyActiveArtists, refreshPromoterProfiles } from "@/lib/soundcloud";
 import { enrichScBatch } from "@/lib/soundcloudEnrich";
 import { defendDbSpace } from "@/lib/dbGuard";
+import { sendTelegramMessage } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -54,7 +55,40 @@ export async function GET(request: Request) {
   // Dynamic bloat control: keep the regenerable HTML cache tightly bounded so it
   // never balloons between daily truncates (it was the #1 space hog at 172MB).
   await pool.query("DELETE FROM url_cache WHERE fetched_at < now() - interval '6 hours'").catch(() => {});
-  return NextResponse.json({ ok: true, dbMb, harvestOk, guard, results, verified, promoterProfiles, enriched, ts: new Date().toISOString() });
+
+  // STEADY-STATE ENGINE — the key to running forever without filling the 512MB
+  // tier. The valuable output is the EMAIL. A follower harvested >24h ago with
+  // no email (bio email is extracted at harvest; enrichment had its chance) is
+  // dry ballast for outreach — prune it every run. We KEEP forever: anyone with
+  // an email, every promoter, and every tier-A gem. This holds the DB flat so
+  // the harvest never halts, and lets us sweep all 734 seeds permanently.
+  const pruned = await pool.query(
+    `DELETE FROM sc_artists
+     WHERE email IS NULL AND is_promoter = false AND COALESCE(tier,'C') <> 'A'
+       AND harvested_at < now() - interval '24 hours'`
+  ).then((r) => r.rowCount ?? 0).catch(() => 0);
+
+  // Silent-death watchdog: if we HAD seeds to harvest but every one errored
+  // (SoundCloud changed structure / getClientId broke / IP throttled), the
+  // pipeline is dead. Track the streak and alert on Telegram after 3 bad runs
+  // (~1.5h) so it never dies unnoticed for weeks like the old ingestion did.
+  if (harvestOk && seeds.rows.length > 0) {
+    const allErrored = results.every((r) => r.error);
+    const streakRow = await pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key='sc_harvest_fail_streak'`).then((r) => r.rows[0]?.value).catch(() => "0");
+    const streak = allErrored ? (parseInt(streakRow ?? "0", 10) || 0) + 1 : 0;
+    await pool.query(
+      `INSERT INTO app_settings (key, value) VALUES ('sc_harvest_fail_streak', $1)
+       ON CONFLICT (key) DO UPDATE SET value = $1`, [String(streak)]
+    ).catch(() => {});
+    if (streak === 3) {
+      await sendTelegramMessage(
+        `🔴 SoundCloud-харвест зупинився: 3 прогони поспіль усі сіди повертають помилку.\n` +
+        `Ймовірно, SoundCloud змінив структуру (getClientId) або throttle. Ліди не збираються — треба глянути.`
+      );
+    }
+  }
+
+  return NextResponse.json({ ok: true, dbMb, harvestOk, guard, results, verified, promoterProfiles, enriched, pruned, ts: new Date().toISOString() });
 }
 
 // Manual trigger with a bigger page budget (POST from the /sc-leads button)

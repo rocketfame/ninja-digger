@@ -12,15 +12,22 @@ const JUNK_EMAIL_RE = /(no-?reply|example\.|\.png|\.jpg|sentry|soundcloud\.com)/
 
 let cachedClientId: { id: string; at: number } | null = null;
 
+// All SoundCloud fetches must be bounded — without a timeout a slow/hung SC
+// endpoint burns the whole 120s cron budget and the run produces nothing.
+const SC_TIMEOUT_MS = 12000;
+function scFetch(url: string): Promise<Response> {
+  return fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(SC_TIMEOUT_MS) });
+}
+
 export async function getClientId(): Promise<string | null> {
   if (cachedClientId && Date.now() - cachedClientId.at < 3600e3) return cachedClientId.id;
   try {
-    const page = await fetch("https://soundcloud.com/discover", { headers: { "User-Agent": UA } }).then((r) => r.text());
+    const page = await scFetch("https://soundcloud.com/discover").then((r) => r.text());
     let cid = page.match(/client_id=([a-zA-Z0-9]{20,})/)?.[1] ?? null;
     if (!cid) {
       const scripts = [...page.matchAll(/<script[^>]+src="(https:\/\/a-v2\.sndcdn\.com\/[^"]+)"/g)].map((m) => m[1]);
       for (const s of scripts.reverse()) {
-        const js = await fetch(s, { headers: { "User-Agent": UA } }).then((r) => r.text());
+        const js = await scFetch(s).then((r) => r.text());
         const m = js.match(/client_id:"([a-zA-Z0-9]{20,})"/) || js.match(/client_id=([a-zA-Z0-9]{20,})/);
         if (m) { cid = m[1]; break; }
       }
@@ -50,7 +57,7 @@ export async function fetchScDescription(soundcloudId: string | number): Promise
 async function api<T>(path: string, clientId: string): Promise<T | null> {
   try {
     const sep = path.includes("?") ? "&" : "?";
-    const res = await fetch(`https://api-v2.soundcloud.com${path}${sep}client_id=${clientId}`, { headers: { "User-Agent": UA } });
+    const res = await scFetch(`https://api-v2.soundcloud.com${path}${sep}client_id=${clientId}`);
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {
