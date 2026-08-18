@@ -25,7 +25,7 @@ async function getData(sp: SP) {
   // zeros. Retry a critical query a couple times before giving up.
   async function retryRow<T>(sql: string, p: unknown[] = []): Promise<T | null> {
     for (let attempt = 0; attempt < 3; attempt++) {
-      try { return (await pool.query<T>(sql, p)).rows[0] ?? null; }
+      try { return ((await pool.query(sql, p)).rows[0] as T) ?? null; }
       catch { await new Promise((r) => setTimeout(r, 250 * (attempt + 1))); }
     }
     return null;
