@@ -1,10 +1,11 @@
 /**
- * Cold-email copy for SoundCloud leads (Ukrainian, per request). Plain text,
- * human 1:1 tone. Three-touch sequence — the offer is NEVER in the first email.
- * Touch 1: short, personal opener + one soft question, no offer. Touch 2: value
- * (comprehensive multi-streamer + exclusive Beatport + socials), soft CTA.
- * Touch 3 (only if no reply): the discount offer. No unsubscribe link — opt-out
- * is reply-based and honored by the inbox automation. Copy rotates weekly.
+ * Cold-email copy for SoundCloud leads (Ukrainian). Modern, easy, a bit slang —
+ * the audience is current and cool, not corporate. Plain text, 1:1 tone.
+ * Three touches: 1) genuine compliment + soft question, no offer. 2) value
+ * (campaigns designed for artists at their level + top-chart services on
+ * Beatport/Amazon) + soft invite. 3) the exclusive discount, only if no reply.
+ * No unsubscribe link — opt-out is reply-based, honored by the inbox automation.
+ * Copy rotates weekly so it is not fingerprintable.
  */
 
 function isoWeek(d: Date): number {
@@ -17,39 +18,38 @@ function isoWeek(d: Date): number {
 function pick<T>(pool: T[], seed: number): T { return pool[Math.abs(seed) % pool.length]; }
 function hash(s: string): number { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
 
-const GREETINGS = ["Привіт, {name}!", "Хей, {name}!", "{name}, коротко.", "Привіт, {name}, як справи?"];
+const GREETINGS = ["Привіт, {name}!", "Хей, {name}!", "Йо, {name}!"];
 
-// ДОТИК 1 — коротко, особисто, без оферу, одне м'яке питання.
-const T1_SUBJECTS = ["твій soundcloud", "коротке питання", "твої релізи", "сподобався трек", "твій звук"];
+// ДОТИК 1 — щирий комплімент + м'яке питання, без оферу.
+const T1_SUBJECTS = ["твій soundcloud", "коротке питання", "твої треки", "вражений", "твій звук"];
 const T1_OPENERS = [
-  "Слухав твій SoundCloud, у твого продакшену реально є потенціал.",
-  "Натрапив на твій SoundCloud, продакшн у треках справді вирізняється.",
-  "Переслухав твій SoundCloud, щиро вважаю, що твій продакшн має серйозний потенціал.",
+  "Ми в PromoSound одні з топових провайдерів промо на SoundCloud, тому й натрапив на твій профіль. Чесно скажу, вражений. Круті треки, дуже заходить.",
+  "Ми серйозно рухаємо артистів на SoundCloud, тому й залетів на твій профіль. Відверто, вражений. Треки крутющі, реально подобається.",
+  "Ми одні з топових SoundCloud-промо провайдерів, і твій звук зачепив. Мушу сказати, вражений. Кльові треки, кайфую.",
 ];
 const T1_QUESTIONS = [
-  "Ти вже просуваєш їх десь окрім SoundCloud, типу Spotify, Bandcamp чи Beatport?",
-  "Твої релізи вже отримують просування на Spotify, Apple Music чи Bandcamp?",
-  "З цими треками вже щось відбувається на Spotify, Beatport чи Bandcamp?",
-  "Ти взагалі промоутиш свої треки поза SoundCloud (Spotify, Bandcamp, Beatport)?",
+  "Питання: ти просуваєш їх десь окрім SoundCloud? Може, на Spotify, Bandcamp чи Beatport?",
+  "Скажи, ти пушиш їх десь ще, крім SoundCloud? Spotify, Bandcamp, Beatport?",
+  "Ти вже качаєш їх десь поза SoundCloud, типу Spotify, Bandcamp чи Beatport?",
 ];
 
-// ДОТИК 2 — цінність: комплекс на всіх стрімінгах + ексклюзив Beatport + соцмережі.
-const T2_SUBJECTS = ["re: твій soundcloud", "нагадую про себе", "твій наступний реліз"];
+// ДОТИК 2 — кампанії під артистів твого рівня + окремі топові послуги.
+const T2_SUBJECTS = ["нагадую про себе", "щодо твого релізу", "є ідея"];
 const T2_BODIES = [
-  "Нагадую про себе. Для артистів твого рівня в нас є комплексні кампанії, які одночасно ростять тебе на всіх основних стрімінгах (Spotify, Deezer, Tidal, Apple Music), плюс наше ексклюзивне просування на Beatport і соцмережі зверху. Було б це корисно для твого наступного релізу?",
-  "Повертаюся до тебе. Ми збираємо комплексні пакети для таких артистів, як ти: одночасне зростання на основних стрімінгах (Spotify, Deezer, Tidal, Apple Music), наш ексклюзивний пуш на Beatport і соцмережі в комплекті. Глянемо для твого наступного дропу?",
-  "Ще одне. Для артистів твого етапу ми ведемо повноцінні кампанії на всіх основних стрімінгах (Spotify, Deezer, Tidal, Apple Music), з унікальним просуванням на Beatport і соцмережами зверху. Показати, як це працює?",
+  "Нагадую про себе. Для артистів твого рівня в нас є круті кампанії, які ми спеціально задизайнили саме під таких, як ти. Плюс є кілька окремих топових послуг, наприклад просування в топ-чарти на Beatport, Amazon та інших. Якщо є настрій перетерти про наступний реліз, зберемо тобі гарний пакет і зробимо чудову знижку.",
+  "Знову я. Ми запилили круті кампанії саме під артистів твого рівня. Ще маємо кілька топових окремих послуг, типу заходу в топ-чарти Beatport, Amazon і не тільки. Хочеш поговорити про наступний дроп? Зберемо класний пакет із гарною знижкою.",
+  "Нагадую про себе. Для таких артистів, як ти, у нас є кампанії, які ми задизайнили спеціально під вас. Плюс окремі топові штуки, наприклад пуш у топ-чарти на Beatport, Amazon та інших. Цікаво обговорити наступний реліз? Зробимо крутий пакет і чудову знижку.",
 ];
 
-// ДОТИК 3 — аж тепер оффер, тільки якщо не відповіли.
-const T3_SUBJECTS = ["останнє", "один варіант для тебе", "re: твої релізи"];
+// ДОТИК 3 — ексклюзивна знижка, тільки якщо не відповіли.
+const T3_SUBJECTS = ["останнє від мене", "ексклюзив для тебе", "щодо твоїх релізів"];
 const T3_BODIES = [
-  "Останнє від мене. Якщо хочеш спробувати на релізі, можу дати {pct}% знижки на перший пакет, тож ризик мінімальний. Скинути деталі?",
-  "Не набридатиму. Якщо захочеш протестувати, можу зробити {pct}% знижки на перший пакет. З радістю розповім, як це працює.",
-  "Фінальне. Щоб було простіше спробувати, можу зняти {pct}% з першого пакета. Розписати деталі?",
+  "Останнє від мене. Якщо хочеш протестити наші потужності на своїх релізах, можу дати чудову ексклюзивну знижку {pct}% на наші послуги. Якщо цікаво, напиши.",
+  "Фінальне повідомлення. Хочеш крутнути наші можливості на своїх треках? Тримай ексклюзивну знижку {pct}% на наші послуги. Якщо відгукується, пиши.",
+  "Останній меседж. Готовий спробувати наші потужності на релізах? Дам ексклюзивну знижку {pct}%. Цікаво, напиши.",
 ];
 
-const CLOSERS = ["Max\nPromoSound", "Max, PromoSound", "Гарного дня,\nMax\nPromoSound"];
+const CLOSERS = ["Max\nPromoSound", "Max, PromoSound"];
 
 export function buildScEmail(touch: 1 | 2 | 3, opts: { name: string; pct: number; code: string; unsubUrl: string; now?: Date }): { subject: string; text: string } {
   const now = opts.now ?? new Date();
@@ -59,8 +59,6 @@ export function buildScEmail(touch: 1 | 2 | 3, opts: { name: string; pct: number
   const greet = pick(GREETINGS, seed).replace("{name}", name);
   const close = pick(CLOSERS, seed);
 
-  // No unsubscribe link anywhere (reads as a spam footer). 1:1 style to a
-  // monitored reply-to inbox; the inbox automation honors "stop / not interested".
   if (touch === 1) {
     const text = `${greet}\n\n${pick(T1_OPENERS, seed + 1)}\n\n${pick(T1_QUESTIONS, seed + 2)}\n\n${close}`;
     return { subject: pick(T1_SUBJECTS, seed), text };

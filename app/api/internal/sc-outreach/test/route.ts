@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   const { searchParams } = new URL(request.url);
   const to = searchParams.get("to");
   const name = searchParams.get("name") ?? "Alex";
-  const pct = parseInt(searchParams.get("pct") ?? "20", 10) || 20;
+  const pct = parseInt(searchParams.get("pct") ?? "25", 10) || 25;
   const code = searchParams.get("code") ?? "SOUND20";
   if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
     return NextResponse.json({ ok: false, error: "valid ?to= required" }, { status: 400 });

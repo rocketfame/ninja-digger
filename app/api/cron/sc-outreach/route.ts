@@ -62,7 +62,7 @@ export async function GET(request: Request) {
   const mailer = getOutreachMailer();
   if (!mailer) return NextResponse.json({ ok: false, error: "no mailer" }, { status: 500 });
   const { transporter, from, replyTo } = mailer;
-  const pct = parseInt(await getSetting("sc_discount", "20"), 10) || 20;
+  const pct = parseInt(await getSetting("sc_discount", "25"), 10) || 25;
   const code = await getSetting("sc_promo_code", "SOUND20");
 
   // Pick the next lead to email: follow-ups (warmer) before fresh openers, and

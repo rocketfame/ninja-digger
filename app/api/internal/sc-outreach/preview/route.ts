@@ -14,7 +14,7 @@ function esc(s: string): string {
 }
 
 export async function GET(request: Request) {
-  const pct = parseInt(new URL(request.url).searchParams.get("pct") ?? "20", 10) || 20;
+  const pct = parseInt(new URL(request.url).searchParams.get("pct") ?? "25", 10) || 25;
   const code = new URL(request.url).searchParams.get("code") ?? "SOUND20";
   const unsub = "https://ninja-digger.vercel.app/api/unsubscribe?u=YWxleEBleGFtcGxlLmNvbQ";
 
