@@ -10,6 +10,8 @@ import { RunEnrichmentOnLeadsButton } from "./RunEnrichmentOnLeadsButton";
 import { LeadsTable } from "./LeadsTable";
 import { LeadsGenreHeader } from "./LeadsGenreHeader";
 import { BatchRescanButton } from "./BatchRescanButton";
+import { BeatportActionCard } from "./ActionCard";
+import { Suspense } from "react";
 
 const SEGMENTS_V2 = ["NEWCOMER", "NEW_ENTRY", "CONSISTENT", "FAST_GROWING", "DECLINING", "TOP_PERFORMER"] as const;
 const LEADS_PAGE_SIZE = 100;
@@ -469,6 +471,11 @@ export default async function LeadsPage({
               <div className="mt-0.5 text-xs text-[var(--text-muted)]">Сер. позиція (7д)</div>
             </div>
           </div>
+        )}
+        {!error && (
+          <Suspense fallback={null}>
+            <BeatportActionCard withEmails={kpi.withEmails} />
+          </Suspense>
         )}
         {!error && kpi.withFlagged > 0 && (
           <div className="mb-5 flex items-center gap-3">
