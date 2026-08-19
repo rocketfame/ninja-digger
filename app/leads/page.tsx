@@ -406,55 +406,66 @@ export default async function LeadsPage({
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
       <NavBar />
 
-      <main className="mx-auto max-w-5xl px-4 py-6">
-        <div className="mb-5 flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-[var(--text)]">Ліди</h1>
+      <main className="mx-auto max-w-5xl px-4 py-8">
+        <div className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Beatport Leads</h1>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
+              {kpi.totalLeads.toLocaleString("uk-UA")} лідів у базі{kpi.dataFrom ? ` · дані ${formatDateDDMMYYYY(kpi.dataFrom)} — ${formatDateDDMMYYYY(kpi.dataTo)}` : ""}
+            </p>
+          </div>
           <BptoptrackerBackfill />
         </div>
 
         {/* KPI cards */}
         {!error && (
-          <div className="mb-5 grid grid-cols-3 gap-3 sm:grid-cols-6">
-            <div className="kpi-card rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
-              <div className="text-2xl font-bold tabular-nums text-[var(--text)]">{kpi.totalLeads.toLocaleString()}</div>
+          <div className="mb-6 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3.5">
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-[var(--text-muted)]" />
+                <span className="text-2xl font-bold tabular-nums">{kpi.totalLeads.toLocaleString("uk-UA")}</span>
+              </div>
               <div className="mt-0.5 text-xs text-[var(--text-muted)]">Всього лідів</div>
             </div>
-            <div className="kpi-card rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
-              <div className="text-2xl font-bold tabular-nums text-[var(--accent)]">{kpi.newToday}</div>
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3.5">
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full" style={{ background: "var(--accent)" }} />
+                <span className="text-2xl font-bold tabular-nums text-[var(--accent)]">{kpi.newToday}</span>
+              </div>
               <div className="mt-0.5 text-xs text-[var(--text-muted)]">Нових сьогодні</div>
             </div>
-            <Link
-              href={inWork ? "/leads" : "/leads?inWork=1"}
-              className={`kpi-card rounded-lg border px-4 py-3 transition-colors ${inWork ? "border-[#fbbf24]/50 bg-[#fbbf24]/10" : "border-[var(--border)] bg-[var(--bg-card)] hover:border-[#fbbf24]/30"}`}
-            >
-              <div className="flex items-center gap-2">
-                <svg className="h-4 w-4 shrink-0 text-[#fbbf24]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                <div className="text-2xl font-bold tabular-nums text-[var(--text)]">{kpi.inWork}</div>
+            <Link href={inWork ? "/leads" : "/leads?inWork=1"}
+              className="rounded-xl border px-4 py-3.5 transition-all hover:border-[#fbbf24]/40"
+              style={inWork ? { boxShadow: "inset 0 0 0 2px #fbbf24", background: "#fbbf241a", borderColor: "transparent" } : { borderColor: "var(--border)", background: "var(--bg-card)" }}>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full" style={{ background: "#fbbf24" }} />
+                <span className="text-2xl font-bold tabular-nums text-[#fbbf24]">{kpi.inWork}</span>
               </div>
               <div className="mt-0.5 text-xs text-[var(--text-muted)]">В роботі</div>
             </Link>
-            <Link
-              href={withEmails ? "/leads" : "/leads?withEmails=1"}
-              className={`kpi-card rounded-lg border px-4 py-3 transition-colors ${withEmails ? "border-[#60a5fa]/50 bg-[#60a5fa]/10" : "border-[var(--border)] bg-[var(--bg-card)] hover:border-[#60a5fa]/30"}`}
-            >
-              <div className="flex items-center gap-2">
-                <svg className="h-4 w-4 shrink-0 text-[#60a5fa]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-                <div className="text-2xl font-bold tabular-nums text-[var(--text)]">{kpi.withEmails}</div>
+            <Link href={withEmails ? "/leads" : "/leads?withEmails=1"}
+              className="rounded-xl border px-4 py-3.5 transition-all hover:border-[#60a5fa]/40"
+              style={withEmails ? { boxShadow: "inset 0 0 0 2px #60a5fa", background: "#60a5fa1a", borderColor: "transparent" } : { borderColor: "var(--border)", background: "var(--bg-card)" }}>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full" style={{ background: "#60a5fa" }} />
+                <span className="text-2xl font-bold tabular-nums text-[#60a5fa]">{kpi.withEmails}</span>
               </div>
               <div className="mt-0.5 text-xs text-[var(--text-muted)]">З email</div>
             </Link>
-            <Link
-              href={withSocials ? "/leads" : "/leads?withSocials=1"}
-              className={`kpi-card rounded-lg border px-4 py-3 transition-colors ${withSocials ? "border-[#c084fc]/50 bg-[#c084fc]/10" : "border-[var(--border)] bg-[var(--bg-card)] hover:border-[#c084fc]/30"}`}
-            >
-              <div className="flex items-center gap-2">
-                <svg className="h-4 w-4 shrink-0 text-[#c084fc]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
-                <div className="text-2xl font-bold tabular-nums text-[var(--text)]">{kpi.withSocials}</div>
+            <Link href={withSocials ? "/leads" : "/leads?withSocials=1"}
+              className="rounded-xl border px-4 py-3.5 transition-all hover:border-[#c084fc]/40"
+              style={withSocials ? { boxShadow: "inset 0 0 0 2px #c084fc", background: "#c084fc1a", borderColor: "transparent" } : { borderColor: "var(--border)", background: "var(--bg-card)" }}>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full" style={{ background: "#c084fc" }} />
+                <span className="text-2xl font-bold tabular-nums text-[#c084fc]">{kpi.withSocials}</span>
               </div>
               <div className="mt-0.5 text-xs text-[var(--text-muted)]">З соцмережами</div>
             </Link>
-            <div className="kpi-card rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
-              <div className="text-2xl font-bold tabular-nums text-[var(--text)]">{kpi.avgPosition > 0 ? `#${kpi.avgPosition}` : "—"}</div>
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3.5">
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-[var(--text-muted)]" />
+                <span className="text-2xl font-bold tabular-nums">{kpi.avgPosition > 0 ? `#${kpi.avgPosition}` : "—"}</span>
+              </div>
               <div className="mt-0.5 text-xs text-[var(--text-muted)]">Сер. позиція (7д)</div>
             </div>
           </div>
@@ -485,9 +496,10 @@ export default async function LeadsPage({
             <span className="text-sm text-[var(--text-muted)]">Сегмент:</span>
             <Link
               href={buildQuery({ genre: genreParam ?? undefined, dateFrom: dateFromParam ?? undefined, dateTo: dateToParam ?? undefined, sort, order })}
-              className={`rounded px-2 py-1 text-sm ${!segment ? "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]" : "bg-[var(--bg-card)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"}`}
+              className={`rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${!segment ? "border-transparent" : "border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--text-muted)]"}`}
+              style={!segment ? { boxShadow: "inset 0 0 0 2px var(--accent)", background: "color-mix(in srgb, var(--accent) 10%, transparent)" } : undefined}
             >
-              всі
+              Усі
             </Link>
             {SEGMENTS_V2.map((s) => {
               const colors = SEGMENT_CHIP_COLORS[s];
@@ -496,8 +508,8 @@ export default async function LeadsPage({
                 <Link
                   key={s}
                   href={buildQuery({ segment: s, genre: genreParam ?? undefined, dateFrom: dateFromParam ?? undefined, dateTo: dateToParam ?? undefined, sort, order })}
-                  className={`rounded px-2 py-1 text-sm font-medium transition-colors ${isActive ? "" : "bg-[var(--bg-card)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"}`}
-                  style={isActive && colors ? { backgroundColor: colors.activeBg, color: colors.activeText } : undefined}
+                  className={`rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${isActive ? "border-transparent" : "border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--text-muted)]"}`}
+                  style={isActive && colors ? { boxShadow: `inset 0 0 0 2px ${colors.activeText}`, background: `${colors.activeText}1a`, color: colors.activeText } : undefined}
                 >
                   {SEGMENT_LABELS[s] ?? s}
                 </Link>
