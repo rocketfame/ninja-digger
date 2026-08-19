@@ -9,13 +9,14 @@ import { SC_ACTIVITY_SQL } from "@/lib/scActivity";
 
 export const dynamic = "force-dynamic";
 
-type SP = { tier?: string; withEmail?: string; activity?: string; promoter?: string; gold?: string };
+type SP = { tier?: string; withEmail?: string; activity?: string; promoter?: string; gold?: string; diamond?: string };
 
-// "Gold" = verified base: has email, not bounced/unsubscribed, and shows a sign
-// of life (opened, replied, or at least delivered). This is the top working base.
-const GOLD_SQL = `email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub')
-  AND lead_status IS DISTINCT FROM 'Unsubscribed' AND lead_status IS DISTINCT FROM 'Bounced'
-  AND (opens > 0 OR lead_status = 'Responded' OR delivered_at IS NOT NULL)`;
+const ALIVE = `email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub')
+  AND lead_status IS DISTINCT FROM 'Unsubscribed' AND lead_status IS DISTINCT FROM 'Bounced'`;
+// "Gold" = verified alive base (opened, replied, or at least delivered).
+const GOLD_SQL = `${ALIVE} AND (opens > 0 OR lead_status = 'Responded' OR delivered_at IS NOT NULL)`;
+// "Diamonds" = the hottest subset — actually engaged (opened / clicked / replied).
+const DIAMOND_SQL = `${ALIVE} AND (opens > 0 OR clicks > 0 OR lead_status = 'Responded')`;
 
 const ACTIVITY = [
   { key: "hot", label: "Активні", sub: "останні 6 міс", color: "#22c55e" },
@@ -47,6 +48,7 @@ async function getData(sp: SP) {
   if (sp.tier && ["A", "B", "C"].includes(sp.tier)) { params.push(sp.tier); conds.push(`tier=$${params.length}`); }
   if (sp.withEmail === "1") conds.push("email IS NOT NULL");
   if (sp.gold === "1") conds.push(GOLD_SQL);
+  if (sp.diamond === "1") conds.push(DIAMOND_SQL);
   if (sp.activity && ACTIVITY.some((a) => a.key === sp.activity)) conds.push(`${SC_ACTIVITY_SQL}='${sp.activity}'`);
   const where = `WHERE ${conds.join(" AND ")}`;
 
@@ -54,12 +56,13 @@ async function getData(sp: SP) {
   // email counts) instead of 6 separate queries — fewer connections per page
   // load, so rapid reloads don't saturate the pool and blank the numbers.
   const statsRow = retryRow<{
-    total: number; promoters: number; gold: number; a: number; b: number; c: number;
+    total: number; promoters: number; gold: number; diamond: number; a: number; b: number; c: number;
     hot: number; warm: number; cool: number; dormant: number;
   }>(`SELECT
       COUNT(*) FILTER (WHERE ${HAS_TRACKS})::int total,
       COUNT(*) FILTER (WHERE is_promoter AND track_count=0)::int promoters,
       COUNT(*) FILTER (WHERE ${HAS_TRACKS} AND ${GOLD_SQL})::int gold,
+      COUNT(*) FILTER (WHERE ${HAS_TRACKS} AND ${DIAMOND_SQL})::int diamond,
       COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND tier='A')::int a,
       COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND tier='B')::int b,
       COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND COALESCE(tier,'C')='C')::int c,
@@ -78,7 +81,7 @@ async function getData(sp: SP) {
     q(`SELECT username, full_name, email FROM sc_artists ${where} AND email IS NOT NULL ORDER BY tier, followers_count DESC LIMIT 5`, params) as Promise<{ username: string; full_name: string | null; email: string | null }[]>,
   ]);
   return {
-    total: stats?.total ?? 0, promoters: stats?.promoters ?? 0, gold: stats?.gold ?? 0,
+    total: stats?.total ?? 0, promoters: stats?.promoters ?? 0, gold: stats?.gold ?? 0, diamond: stats?.diamond ?? 0,
     segCount: seg?.c ?? 0, segEmail: seg?.e ?? 0, reexDays, seed, preview,
     actMap: new Map<string, number>([["hot", stats?.hot ?? 0], ["warm", stats?.warm ?? 0], ["cool", stats?.cool ?? 0], ["dormant", stats?.dormant ?? 0]]),
     tierMap: new Map<string, number>([["A", stats?.a ?? 0], ["B", stats?.b ?? 0], ["C", stats?.c ?? 0]]),
@@ -95,7 +98,7 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
   };
   // Promoter toggle = analytics export (repost channels), otherwise real leads.
   const exportUrl = `/api/segments/soundcloud/export${qs({}).replace("/sc-leads", "").replace("promoter=1", "analytics=1")}`;
-  const hasFilter = Boolean(sp.tier || sp.activity || sp.withEmail === "1" || sp.gold === "1");
+  const hasFilter = Boolean(sp.tier || sp.activity || sp.withEmail === "1" || sp.gold === "1" || sp.diamond === "1");
 
   const chip = (active: boolean, accent = "var(--accent)") =>
     `rounded-xl border px-4 py-3 text-left transition-all ${active ? "border-transparent ring-2" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`;
@@ -176,10 +179,15 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
                   style={sp.withEmail === "1" ? { boxShadow: "inset 0 0 0 2px #60a5fa", background: "#60a5fa1a" } : undefined}>
                   Лише з email
                 </Link>
-                <Link href={qs({ gold: sp.gold === "1" ? undefined : "1", promoter: undefined })}
+                <Link href={qs({ gold: sp.gold === "1" ? undefined : "1", diamond: undefined, promoter: undefined })}
                   className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${sp.gold === "1" ? "border-transparent text-[#fbbf24]" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}
                   style={sp.gold === "1" ? { boxShadow: "inset 0 0 0 2px #fbbf24", background: "#fbbf241a" } : undefined}>
                   🏆 Золото · {d.gold.toLocaleString("uk-UA")}
+                </Link>
+                <Link href={qs({ diamond: sp.diamond === "1" ? undefined : "1", gold: undefined, promoter: undefined })}
+                  className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${sp.diamond === "1" ? "border-transparent text-[#38bdf8]" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}
+                  style={sp.diamond === "1" ? { boxShadow: "inset 0 0 0 2px #38bdf8", background: "#38bdf81a" } : undefined}>
+                  💎 Діаманти · {d.diamond.toLocaleString("uk-UA")}
                 </Link>
                 <Link href={qs({ promoter: sp.promoter === "1" ? undefined : "1", tier: undefined, activity: undefined, withEmail: undefined })}
                   className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${sp.promoter === "1" ? "border-transparent" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}

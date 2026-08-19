@@ -29,7 +29,10 @@ export async function GET(request: Request) {
   if (tier && ["A", "B", "C"].includes(tier)) { params.push(tier); conds.push(`tier = $${params.length}`); }
   if (withEmail) conds.push(`email IS NOT NULL`);
   // Gold = verified working base (alive/engaged email).
-  if (searchParams.get("gold") === "1") conds.push(`email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub') AND lead_status IS DISTINCT FROM 'Unsubscribed' AND lead_status IS DISTINCT FROM 'Bounced' AND (opens > 0 OR lead_status = 'Responded' OR delivered_at IS NOT NULL)`);
+  const alive = `email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub') AND lead_status IS DISTINCT FROM 'Unsubscribed' AND lead_status IS DISTINCT FROM 'Bounced'`;
+  if (searchParams.get("gold") === "1") conds.push(`${alive} AND (opens > 0 OR lead_status = 'Responded' OR delivered_at IS NOT NULL)`);
+  // Diamonds = hottest subset (actually engaged).
+  if (searchParams.get("diamond") === "1") conds.push(`${alive} AND (opens > 0 OR clicks > 0 OR lead_status = 'Responded')`);
   if (activity && activity in SC_ACTIVITY) conds.push(`${SC_ACTIVITY_SQL} = '${activity}'`);
   if (searchParams.get("promoter") === "1") conds.push("is_promoter = true");
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
