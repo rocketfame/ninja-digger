@@ -9,7 +9,7 @@ import { fetchScDescription } from "@/lib/soundcloud";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-const JUNK_EMAIL_RE = /(no-?reply|do-?not-?reply|sentry\.io|\bingest\.|\.wixpress|@example\.|\.png|\.jpg|\.gif|@2x|cloudflare|@soundcloud|@w3\.org|@schema\.org|@fontawesome|\.sentry\.|@[0-9a-f]{16,}|\.bandcamp\.com$|@bandcamp\.com$|support@[a-z0-9-]+\.(bandcamp|soundcloud)\.)/i;
+const JUNK_EMAIL_RE = /(no-?reply|do-?not-?reply|sentry\.io|\bingest\.|\.wixpress|@example\.|\.png|\.jpg|\.gif|@2x|cloudflare|@soundcloud|@w3\.org|@schema\.org|@fontawesome|\.sentry\.|@[0-9a-f]{16,}|bandcamp\.com|^(support|help|admin|webmaster|postmaster|abuse|hostmaster|billing|noc|sysadmin|security|privacy|feedback)@)/i;
 const URL_RE = /(https?:\/\/[^\s"'<>)]+|(?:www\.)?[a-z0-9-]+\.(?:com|net|io|co|me|net|link|ee|ai|fm)(?:\/[^\s"'<>)]*)?)/gi;
 
 function cleanEmail(raw: string): string | null {
