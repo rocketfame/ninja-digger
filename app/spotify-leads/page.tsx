@@ -4,6 +4,7 @@ import { Mail, AtSign, Users } from "lucide-react";
 import { SiSpotify, SiSoundcloud } from "react-icons/si";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { SegmentPreview } from "@/app/components/SegmentPreview";
 
 export const dynamic = "force-dynamic";
 
@@ -117,6 +118,13 @@ export default async function SpotifyLeadsPage({ searchParams }: { searchParams:
                 className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-5 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)]">
                 <Mail className="h-4 w-4" /> Завантажити {n(d.seg?.e)} з email
               </a>
+              <SegmentPreview
+                previewUrl={`${exportUrl}${exportUrl.includes("?") ? "&" : "?"}withEmail=1&format=json&limit=200`}
+                downloadUrl={`${exportUrl}${exportUrl.includes("?") ? "&" : "?"}withEmail=1`}
+                count={d.seg?.e ?? 0}
+                accent="#1db954"
+                extraColumns={[{ header: "Фоловери", key: "followers", num: true }, { header: "Spotify", key: "spotify" }, { header: "SC", key: "soundcloud" }]}
+              />
               {(sp.withEmail || sp.source) && (
                 <Link href="/spotify-leads" className="mt-3 inline-block text-xs text-[var(--text-muted)] underline hover:text-[var(--text)]">скинути фільтри</Link>
               )}

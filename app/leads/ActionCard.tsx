@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { getSegmentStats, getSegmentRows } from "@/lib/emailSegments";
+import { SegmentPreview } from "@/app/components/SegmentPreview";
 
 // These are heavy COUNT(DISTINCT) queries that change slowly — cache for 5 min.
 const cachedStats = unstable_cache(() => getSegmentStats(), ["bp-segment-stats"], { revalidate: 300, tags: ["leads"] });
@@ -33,6 +34,12 @@ export async function BeatportActionCard({ withEmails }: { withEmails: number })
           <a href="/api/segments/email/export?type=gems" download className={`${btn} border border-[#fbbf24]/50 text-[#fbbf24] hover:bg-[#fbbf24]/10`}>
             💎 Тільки перлини ({gems.toLocaleString("uk-UA")})
           </a>
+          <SegmentPreview
+            previewUrl="/api/segments/email/export?type=all_email&format=json&limit=200"
+            downloadUrl="/api/segments/email/export?type=all_email"
+            count={withEmails}
+            extraColumns={[{ header: "Tier", key: "tier" }, { header: "Роль", key: "role" }, { header: "Сегмент", key: "segment" }]}
+          />
         </div>
       </div>
 
