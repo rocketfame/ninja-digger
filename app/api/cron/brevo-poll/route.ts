@@ -24,16 +24,20 @@ async function apply(email: string, event: string) {
   await pool.query(`INSERT INTO email_events (email, event, meta) VALUES ($1,$2,'{"src":"poll"}')`, [email, e]).catch(() => {});
   if (e === "delivered") {
     await pool.query(`UPDATE sc_artists SET delivered_at=COALESCE(delivered_at,now()), email_status=CASE WHEN email_status IN ('engaged','bounced','unsub') THEN email_status ELSE 'delivered' END, updated_at=now() WHERE LOWER(email)=$1`, [email]).catch(() => {});
+    await pool.query(`UPDATE spotify_leads SET delivered_at=COALESCE(delivered_at,now()), email_status=CASE WHEN email_status IN ('engaged','bounced','unsub') THEN email_status ELSE 'delivered' END, updated_at=now() WHERE LOWER(email)=$1`, [email]).catch(() => {});
     await pool.query(`UPDATE artist_contacts SET delivered_at=COALESCE(delivered_at,now()) WHERE type='email' AND LOWER(TRIM(value))=$1`, [email]).catch(() => {});
   } else if (e === "opened" || e === "uniqueopened" || e === "click" || e === "clicks") {
     const isClick = e.startsWith("click");
     await pool.query(`UPDATE sc_artists SET opens=opens+${isClick ? 0 : 1}, clicks=clicks+${isClick ? 1 : 0}, first_open_at=COALESCE(first_open_at,now()), email_status=CASE WHEN email_status IN ('bounced','unsub') THEN email_status ELSE 'engaged' END, updated_at=now() WHERE LOWER(email)=$1`, [email]).catch(() => {});
+    await pool.query(`UPDATE spotify_leads SET opens=opens+${isClick ? 0 : 1}, clicks=clicks+${isClick ? 1 : 0}, first_open_at=COALESCE(first_open_at,now()), email_status=CASE WHEN email_status IN ('bounced','unsub') THEN email_status ELSE 'engaged' END, updated_at=now() WHERE LOWER(email)=$1`, [email]).catch(() => {});
     if (!isClick) await pool.query(`UPDATE artist_contacts SET opens=opens+1, first_open_at=COALESCE(first_open_at,now()) WHERE type='email' AND LOWER(TRIM(value))=$1`, [email]).catch(() => {});
   } else if (e === "hardbounces" || e === "hard_bounce" || e === "blocked" || e === "invalid" || e === "error") {
     await pool.query(`UPDATE sc_artists SET email_status='bounced', lead_status='Bounced', updated_at=now() WHERE LOWER(email)=$1`, [email]).catch(() => {});
+    await pool.query(`UPDATE spotify_leads SET email_status='bounced', lead_status='Bounced', updated_at=now() WHERE LOWER(email)=$1`, [email]).catch(() => {});
     await pool.query(`UPDATE artist_contacts SET status='bounced' WHERE type='email' AND LOWER(TRIM(value))=$1`, [email]).catch(() => {});
   } else if (e === "unsubscribed" || e === "spam") {
     await pool.query(`UPDATE sc_artists SET email_status='unsub', lead_status='Unsubscribed', updated_at=now() WHERE LOWER(email)=$1`, [email]).catch(() => {});
+    await pool.query(`UPDATE spotify_leads SET email_status='unsub', lead_status='Unsubscribed', updated_at=now() WHERE LOWER(email)=$1`, [email]).catch(() => {});
     await pool.query(`UPDATE artist_contacts SET status='blocked' WHERE type='email' AND LOWER(TRIM(value))=$1`, [email]).catch(() => {});
     await pool.query(`INSERT INTO email_blacklist (email, reason) VALUES ($1,'brevo:'||$2) ON CONFLICT DO NOTHING`, [email, e]).catch(() => {});
   }

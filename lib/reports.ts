@@ -169,6 +169,7 @@ export async function buildFullReport(): Promise<string> {
   const [
     scArtists, scSeedsDone, scSeeds, scEmail, scGold, scDiamond, scSentToday, scOpened, scReplied,
     bpLeads, bpEmail, bpSentToday, bpReplied, bpWon, dbMb, scPaused,
+    spLeads, spEmail, spGold, spSpotify, spSentToday, spOpened, spReplied, spPaused,
   ] = await Promise.all([
     n("SELECT COUNT(*)::int c FROM sc_artists WHERE track_count>=1"),
     n("SELECT COUNT(*)::int c FROM sc_seed_accounts WHERE active AND completed_at IS NOT NULL"),
@@ -186,6 +187,14 @@ export async function buildFullReport(): Promise<string> {
     n("SELECT COUNT(*)::int c FROM lead_profiles WHERE status='Won'"),
     pool.query<{ c: number }>("SELECT (pg_database_size(current_database())/1048576.0)::numeric(10,1) c").then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0),
     getSetting("sc_outreach_paused"),
+    n("SELECT COUNT(*)::int c FROM spotify_leads"),
+    n("SELECT COUNT(email)::int c FROM spotify_leads"),
+    n("SELECT COUNT(*)::int c FROM spotify_leads WHERE email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub') AND (opens>0 OR lead_status='Responded' OR delivered_at IS NOT NULL)"),
+    n("SELECT COUNT(spotify_url)::int c FROM spotify_leads"),
+    n("SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sp_touch_%' AND sent_at >= CURRENT_DATE"),
+    n("SELECT COUNT(*)::int c FROM spotify_leads WHERE opens>0"),
+    n("SELECT COUNT(*)::int c FROM spotify_leads WHERE lead_status='Responded'"),
+    getSetting("sp_outreach_paused"),
   ]);
   const dbFlag = dbMb > 460 ? "🔴" : dbMb > 400 ? "🟡" : "🟢";
   return (
@@ -199,6 +208,11 @@ export async function buildFullReport(): Promise<string> {
     `  🔎 Лідів: ${bpLeads} · 📧 з email: ${bpEmail}\n` +
     `  📤 Надіслано сьогодні: ${bpSentToday}\n` +
     `  💬 Відповіли: ${bpReplied} · 🏆 Won: ${bpWon}\n\n` +
+    `🟢 <b>Spotify</b>\n` +
+    `  🔎 Лідів: ${spLeads} · 📧 email: ${spEmail} · 🎧 Spotify: ${spSpotify}\n` +
+    `  🏆 золото: ${spGold}\n` +
+    `  📤 Надіслано сьогодні: ${spSentToday} (${spPaused === "1" ? "⏸ пауза" : "🟢 активна"})\n` +
+    `  👀 Відкрили: ${spOpened} · 💬 відповіли: ${spReplied}\n\n` +
     `${dbFlag} База: ${dbMb} / 512 MB`
   );
 }

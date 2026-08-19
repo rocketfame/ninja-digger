@@ -93,6 +93,8 @@ export async function GET(request: Request) {
   const replyFrom: { addr: string; subject: string; uid: number }[] = [];
   const autoReplies: { addr: string; uid: number }[] = [];
   const bounceUids: number[] = [];
+  const junkUids: number[] = []; // bounce notices + own [TEST] mail → moved to Trash after processing
+  let trashed = 0;
 
   try {
     await client.connect();
@@ -109,8 +111,10 @@ export async function GET(request: Request) {
         if (!fromAddr) continue;
         if (BOUNCE_FROM_RE.test(fromAddr) || BOUNCE_FROM_RE.test(fromName)) {
           bounceUids.push(msg.uid);
+          junkUids.push(msg.uid); // non-delivery notice — clutter once processed
         } else if (fromAddr === user.toLowerCase() || TECHNICAL_SENDER_RE.test(fromAddr)) {
-          // own mail / technical senders — ignore
+          // own mail / technical senders — ignore; sweep our own [TEST] review mails
+          if (/^\[test\b/i.test(subject.trim())) junkUids.push(msg.uid);
         } else if (AUTO_REPLY_SUBJECT_RE.test(subject.trim())) {
           autoReplies.push({ addr: fromAddr, uid: msg.uid }); // OOO etc. — snooze, harvest contacts
         } else if (
@@ -200,6 +204,23 @@ export async function GET(request: Request) {
           bouncedMarked += await invalidateContactEmail(email, "async bounce (mailer-daemon)");
           // SC leads: a bounce also drops them out of the outreach sequence.
           await pool.query(`UPDATE sc_artists SET lead_status='Bounced', updated_at=now() WHERE LOWER(email)=$1 AND lead_status='Contacted'`, [email]).catch(() => {});
+          await pool.query(`UPDATE spotify_leads SET lead_status='Bounced', email_status='bounced', updated_at=now() WHERE LOWER(email)=$1 AND lead_status='Contacted'`, [email]).catch(() => {});
+        }
+      }
+
+      // Auto-clean: move processed junk (non-delivery notices + our own [TEST]
+      // review mails) to Trash so the inbox stays clean. Reversible — Gmail keeps
+      // Trash 30 days; we never expunge/hard-delete. Toggle: app_settings
+      // 'inbox_autoclean'='0' turns it off.
+      if (junkUids.length > 0) {
+        const autoclean = await pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key='inbox_autoclean'`)
+          .then((r) => r.rows[0]?.value ?? "1").catch(() => "1");
+        if (autoclean !== "0") {
+          const boxes = await client.list().catch(() => []);
+          const trash = boxes.find((b) => b.specialUse === "\\Trash")?.path || "[Gmail]/Trash";
+          const uniqueJunk = [...new Set(junkUids)];
+          const moved = await client.messageMove(uniqueJunk, trash, { uid: true }).catch(() => null);
+          if (moved) trashed = uniqueJunk.length;
         }
       }
 
@@ -233,6 +254,22 @@ export async function GET(request: Request) {
           const excerpt = uid ? await downloadText(client, uid) : null;
           await sendTelegramMessage(
             `💬 SC-відповідь від <b>${row.full_name || row.username}</b>\n${row.email}` +
+            (excerpt ? `\n\n${excerpt.slice(0, 400)}` : "")
+          ).catch(() => {});
+        }
+
+        // Spotify leads: same reply-stops-sequence behaviour as the SC barrel.
+        const spReplied = await pool.query<{ ig_username: string; full_name: string | null; email: string }>(
+          `UPDATE spotify_leads SET lead_status='Responded', updated_at=now()
+           WHERE LOWER(email) = ANY($1::text[]) AND lead_status='Contacted'
+           RETURNING ig_username, full_name, email`, [unique]
+        ).catch(() => ({ rows: [] as { ig_username: string; full_name: string | null; email: string }[] }));
+        for (const row of spReplied.rows) {
+          replies++;
+          const uid = uidByAddr.get(row.email.toLowerCase().trim());
+          const excerpt = uid ? await downloadText(client, uid) : null;
+          await sendTelegramMessage(
+            `💬 Spotify-відповідь від <b>${row.full_name || row.ig_username}</b>\n${row.email}` +
             (excerpt ? `\n\n${excerpt.slice(0, 400)}` : "")
           ).catch(() => {});
         }
@@ -387,6 +424,7 @@ export async function GET(request: Request) {
     replies,
     snoozed,
     harvested,
+    trashed,
     ts: new Date().toISOString(),
   });
 }
