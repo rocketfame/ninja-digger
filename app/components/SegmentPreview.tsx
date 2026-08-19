@@ -72,7 +72,7 @@ export function SegmentPreview({
                 <table className="w-full text-left text-xs">
                   <thead className="sticky top-0 bg-[var(--bg-card)] text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
                     <tr className="border-b border-[var(--border)]">
-                      <th className="px-4 py-2.5 font-medium">Ім'я</th>
+                      <th className="px-4 py-2.5 font-medium">Імʼя</th>
                       <th className="px-4 py-2.5 font-medium">Email</th>
                       {extraColumns.map((c) => (
                         <th key={c.key} className={`px-4 py-2.5 font-medium ${c.num ? "text-right" : ""}`}>{c.header}</th>
