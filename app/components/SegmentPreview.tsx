@@ -31,7 +31,7 @@ export function SegmentPreview({
     }
   }
 
-  const num = (v: unknown) => (typeof v === "number" ? v.toLocaleString("uk-UA") : v ?? "—");
+  const num = (v: unknown): string => (typeof v === "number" ? v.toLocaleString("uk-UA") : v == null || v === "" ? "—" : String(v));
 
   return (
     <>
