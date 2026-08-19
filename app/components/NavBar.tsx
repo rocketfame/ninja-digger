@@ -2,13 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Disc3, Cloud, Music2, BarChart3, type LucideIcon } from "lucide-react";
+import { Home, BarChart3 } from "lucide-react";
+import { SiBeatport, SiSoundcloud, SiSpotify } from "react-icons/si";
+import type { ComponentType } from "react";
 
-const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; exact?: boolean }[] = [
+type IconCmp = ComponentType<{ className?: string; style?: React.CSSProperties }>;
+
+const NAV_ITEMS: { href: string; label: string; icon: IconCmp; brand?: string; exact?: boolean }[] = [
   { href: "/", label: "Головна", icon: Home, exact: true },
-  { href: "/leads", label: "Beatport", icon: Disc3 },
-  { href: "/sc-leads", label: "SoundCloud", icon: Cloud },
-  { href: "/spotify-leads", label: "Spotify", icon: Music2 },
+  { href: "/leads", label: "Beatport", icon: SiBeatport, brand: "#a3ff12" },
+  { href: "/sc-leads", label: "SoundCloud", icon: SiSoundcloud, brand: "#ff5500" },
+  { href: "/spotify-leads", label: "Spotify", icon: SiSpotify, brand: "#1db954" },
   { href: "/analytics", label: "Аналітика", icon: BarChart3 },
 ];
 
@@ -32,6 +36,7 @@ export function NavBar() {
         {NAV_ITEMS.map((item) => {
           const isActive = item.exact ? pathname === item.href : pathname.startsWith(item.href);
           const Icon = item.icon;
+          const iconColor = isActive ? (item.brand ?? "var(--accent)") : undefined;
           return (
             <Link
               key={item.href}
@@ -40,9 +45,9 @@ export function NavBar() {
                 isActive ? "text-[var(--text)]" : "text-[var(--text-muted)] hover:text-[var(--text)]"
               }`}
             >
-              <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} style={isActive ? { color: "var(--accent)" } : undefined} />
+              <Icon className="h-[17px] w-[17px]" style={iconColor ? { color: iconColor } : undefined} />
               <span className="font-medium">{item.label}</span>
-              {isActive && <span className="absolute bottom-0 left-3 right-3 h-[2px] rounded-full bg-[var(--accent)]" />}
+              {isActive && <span className="absolute bottom-0 left-3 right-3 h-[2px] rounded-full" style={{ background: item.brand ?? "var(--accent)" }} />}
             </Link>
           );
         })}

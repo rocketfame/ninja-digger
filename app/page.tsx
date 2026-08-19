@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { NavBar } from "@/app/components/NavBar";
 import { pool } from "@/lib/db";
-import { Disc3, Cloud, Music2, BarChart3, Send, Trophy, ArrowRight } from "lucide-react";
+import { BarChart3, Send, Trophy, ArrowRight } from "lucide-react";
+import { SiBeatport, SiSoundcloud, SiSpotify } from "react-icons/si";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +51,7 @@ export default async function HomePage() {
           <Link href="/leads" className="group rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6 transition-all hover:border-[var(--accent)]/50">
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent)]/10"><Disc3 className="h-5 w-5 text-[var(--accent)]" /></span>
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent)]/10"><SiBeatport className="h-5 w-5" style={{color:"#a3ff12"}} /></span>
                 <span className="text-lg font-semibold">Beatport Leads</span>
               </div>
               <ArrowRight className="h-5 w-5 text-[var(--text-muted)] transition-transform group-hover:translate-x-1" />
@@ -64,7 +65,7 @@ export default async function HomePage() {
           <Link href="/sc-leads" className="group rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6 transition-all hover:border-[var(--accent)]/50">
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent)]/10"><Cloud className="h-5 w-5 text-[var(--accent)]" /></span>
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent)]/10"><SiSoundcloud className="h-5 w-5" style={{color:"#ff5500"}} /></span>
                 <span className="text-lg font-semibold">SoundCloud Leads</span>
               </div>
               <ArrowRight className="h-5 w-5 text-[var(--text-muted)] transition-transform group-hover:translate-x-1" />
@@ -79,7 +80,7 @@ export default async function HomePage() {
           <Link href="/spotify-leads" className="group rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6 transition-all hover:border-[#1db954]/50">
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#1db954]/10"><Music2 className="h-5 w-5 text-[#1db954]" /></span>
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#1db954]/10"><SiSpotify className="h-5 w-5" style={{color:"#1db954"}} /></span>
                 <span className="text-lg font-semibold">Spotify Leads</span>
               </div>
               <ArrowRight className="h-5 w-5 text-[var(--text-muted)] transition-transform group-hover:translate-x-1" />
