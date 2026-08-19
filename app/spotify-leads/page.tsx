@@ -1,99 +1,141 @@
 import { pool } from "@/lib/db";
 import { NavBar } from "@/app/components/NavBar";
-import { Music2, Mail, Sparkles, AtSign } from "lucide-react";
+import { Mail, AtSign, Users } from "lucide-react";
+import { SiSpotify, SiSoundcloud } from "react-icons/si";
+import Link from "next/link";
+import type { ReactNode } from "react";
 
 export const dynamic = "force-dynamic";
 
-type Lead = {
-  ig_username: string; full_name: string | null; email: string | null;
-  spotify_url: string | null; soundcloud_url: string | null; source_post: string | null; enriched_at: string | null;
-};
+type SP = { withEmail?: string; source?: string };
+type Lead = { ig_username: string; full_name: string | null; email: string | null };
 
-async function getData() {
-  const one = <T extends Record<string, unknown>>(sql: string) => pool.query<T>(sql).then((r) => r.rows[0]).catch(() => undefined);
-  const [stats, rows] = await Promise.all([
-    one<{ total: number; emails: number; enriched: number; sources: number; spotify: number }>(
-      `SELECT COUNT(*)::int total, COUNT(email)::int emails, COUNT(enriched_at)::int enriched,
-              COUNT(DISTINCT source_post)::int sources, COUNT(spotify_url)::int spotify
-       FROM spotify_leads`
+async function getData(sp: SP) {
+  const one = <T extends Record<string, unknown>>(sql: string, p: unknown[] = []) => pool.query<T>(sql, p).then((r) => r.rows[0]).catch(() => undefined);
+  const conds: string[] = [];
+  const params: string[] = [];
+  if (sp.withEmail === "1") conds.push("email IS NOT NULL");
+  if (sp.source) { params.push(sp.source); conds.push(`source_post = $${params.length}`); }
+  const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+
+  const [stats, sources, seg, preview] = await Promise.all([
+    one<{ total: number; emails: number; spotify: number; soundcloud: number }>(
+      `SELECT COUNT(*)::int total, COUNT(email)::int emails, COUNT(spotify_url)::int spotify, COUNT(soundcloud_url)::int soundcloud FROM spotify_leads`
     ),
-    pool.query<Lead>(
-      `SELECT ig_username, full_name, email, spotify_url, soundcloud_url, source_post, enriched_at::text
-       FROM spotify_leads ORDER BY (email IS NOT NULL) DESC, created_at DESC LIMIT 100`
-    ).then((r) => r.rows).catch(() => [] as Lead[]),
+    pool.query<{ source_post: string; c: number }>(`SELECT source_post, COUNT(*)::int c FROM spotify_leads WHERE source_post IS NOT NULL GROUP BY 1 ORDER BY c DESC LIMIT 8`).then((r) => r.rows).catch(() => []),
+    one<{ c: number; e: number }>(`SELECT COUNT(*)::int c, COUNT(email)::int e FROM spotify_leads ${where}`, params),
+    pool.query<Lead>(`SELECT ig_username, full_name, email FROM spotify_leads ${where} ORDER BY (email IS NOT NULL) DESC, created_at DESC LIMIT 8`, params).then((r) => r.rows).catch(() => [] as Lead[]),
   ]);
-  return { stats, rows };
+  return { stats, sources, seg, preview };
 }
 
-export default async function SpotifyLeadsPage() {
-  const { stats, rows } = await getData();
+function Card({ icon, label, value, color }: { icon: ReactNode; label: string; value: string; color?: string }) {
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3.5">
+      <div className="mb-0.5 flex items-center gap-1.5 text-[var(--text-muted)]">{icon}</div>
+      <div className="text-2xl font-bold tabular-nums" style={color ? { color } : undefined}>{value}</div>
+      <div className="text-xs text-[var(--text-muted)]">{label}</div>
+    </div>
+  );
+}
+
+export default async function SpotifyLeadsPage({ searchParams }: { searchParams: Promise<SP> }) {
+  const sp = await searchParams;
+  const d = await getData(sp);
   const n = (x: number | undefined) => (x ?? 0).toLocaleString("uk-UA");
+  const qs = (extra: Partial<SP>) => {
+    const m = { ...sp, ...extra };
+    const parts = Object.entries(m).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`);
+    return `/spotify-leads${parts.length ? `?${parts.join("&")}` : ""}`;
+  };
+  const exportUrl = `/api/segments/spotify/export${sp.withEmail === "1" ? "?withEmail=1" : ""}`;
 
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
       <NavBar />
       <main className="mx-auto max-w-5xl px-4 py-8">
-        <div className="mb-8 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight"><Music2 className="h-6 w-6 text-[#1db954]" /> Spotify Leads</h1>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">Коментатори промо-креаторів в Instagram — гарячі ліди, що шукають просування.</p>
-          </div>
-          <a href="/api/segments/spotify/export?withEmail=1" download
-            className="flex items-center gap-2 rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[var(--accent-hover)]">
-            <Mail className="h-4 w-4" /> Експорт email
-          </a>
+        <div className="mb-8">
+          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight"><SiSpotify style={{ color: "#1db954" }} className="h-6 w-6" /> Spotify Leads</h1>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">Коментатори промо-креаторів в Instagram — гарячі ліди, що шукають просування.</p>
         </div>
 
-        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3.5">
-            <div className="flex items-center gap-1.5"><AtSign className="h-3.5 w-3.5 text-[var(--text-muted)]" /><span className="text-2xl font-bold tabular-nums">{n(stats?.total)}</span></div>
-            <div className="mt-0.5 text-xs text-[var(--text-muted)]">Лідів зібрано</div>
-          </div>
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3.5">
-            <div className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5 text-[#60a5fa]" /><span className="text-2xl font-bold tabular-nums text-[#60a5fa]">{n(stats?.emails)}</span></div>
-            <div className="mt-0.5 text-xs text-[var(--text-muted)]">З email</div>
-          </div>
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3.5">
-            <div className="flex items-center gap-1.5"><Music2 className="h-3.5 w-3.5 text-[#1db954]" /><span className="text-2xl font-bold tabular-nums text-[#1db954]">{n(stats?.spotify)}</span></div>
-            <div className="mt-0.5 text-xs text-[var(--text-muted)]">Зі Spotify</div>
-          </div>
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3.5">
-            <div className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5 text-[#fbbf24]" /><span className="text-2xl font-bold tabular-nums">{n(stats?.enriched)}</span></div>
-            <div className="mt-0.5 text-xs text-[var(--text-muted)]">Збагачено</div>
-          </div>
-        </div>
+        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+          <div className="space-y-6">
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--bg-card)] text-xs font-bold text-[var(--text-muted)]">1</span>
+                <h2 className="text-sm font-semibold">Зібрано з Instagram</h2>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                <Card icon={<AtSign className="h-3.5 w-3.5" />} label="Лідів" value={n(d.stats?.total)} />
+                <Card icon={<Mail className="h-3.5 w-3.5 text-[#60a5fa]" />} label="З email" value={n(d.stats?.emails)} color="#60a5fa" />
+                <Card icon={<SiSpotify className="h-3.5 w-3.5" style={{ color: "#1db954" }} />} label="Spotify" value={n(d.stats?.spotify)} color="#1db954" />
+                <Card icon={<SiSoundcloud className="h-3.5 w-3.5" style={{ color: "#ff5500" }} />} label="SoundCloud" value={n(d.stats?.soundcloud)} color="#ff5500" />
+              </div>
+            </section>
 
-        <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]">
-          <table className="w-full text-left text-sm">
-            <thead className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
-              <tr className="border-b border-[var(--border)]">
-                <th className="px-4 py-3 font-medium">Instagram</th>
-                <th className="px-4 py-3 font-medium">Імʼя</th>
-                <th className="px-4 py-3 font-medium">Email</th>
-                <th className="px-4 py-3 font-medium">Профілі</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr><td colSpan={4} className="px-4 py-10 text-center text-[var(--text-muted)]">Поки порожньо. Збір коментаторів триває…</td></tr>
-              ) : rows.map((r) => (
-                <tr key={r.ig_username} className="border-b border-[var(--border)]/50 hover:bg-white/[0.02]">
-                  <td className="px-4 py-2.5">
-                    <a href={`https://instagram.com/${r.ig_username}`} target="_blank" rel="noreferrer" className="font-medium text-[var(--text)] hover:text-[var(--accent)]">@{r.ig_username}</a>
-                  </td>
-                  <td className="px-4 py-2.5 text-[var(--text-muted)]">{r.full_name || "—"}</td>
-                  <td className="px-4 py-2.5">{r.email ? <span className="text-[#60a5fa]">{r.email}</span> : <span className="text-[var(--text-muted)]">—</span>}</td>
-                  <td className="px-4 py-2.5 text-xs">
-                    {r.spotify_url && <a href={r.spotify_url} target="_blank" rel="noreferrer" className="mr-2 text-[#1db954]">Spotify</a>}
-                    {r.soundcloud_url && <a href={r.soundcloud_url} target="_blank" rel="noreferrer" className="text-[#ff7700]">SoundCloud</a>}
-                    {!r.spotify_url && !r.soundcloud_url && <span className="text-[var(--text-muted)]">—</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--bg-card)] text-xs font-bold text-[var(--text-muted)]">2</span>
+                <h2 className="text-sm font-semibold">Контакт</h2>
+              </div>
+              <Link href={qs({ withEmail: sp.withEmail === "1" ? undefined : "1" })}
+                className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${sp.withEmail === "1" ? "border-transparent" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}
+                style={sp.withEmail === "1" ? { boxShadow: "inset 0 0 0 2px #60a5fa", background: "#60a5fa1a" } : undefined}>
+                Лише з email
+              </Link>
+            </section>
+
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--bg-card)] text-xs font-bold text-[var(--text-muted)]">3</span>
+                <h2 className="text-sm font-semibold">Джерела (креатори)</h2>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {d.sources.length === 0 ? <span className="text-xs text-[var(--text-muted)]">Ще нема джерел.</span> :
+                  d.sources.map((s) => {
+                    const on = sp.source === s.source_post;
+                    return (
+                      <Link key={s.source_post} href={qs({ source: on ? undefined : s.source_post })}
+                        className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition-all ${on ? "border-transparent" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}
+                        style={on ? { boxShadow: "inset 0 0 0 2px #1db954", background: "#1db9541a" } : undefined}>
+                        <Users className="h-3 w-3" /> {s.source_post?.replace(/^https?:\/\/(www\.)?instagram\.com\//, "").replace(/\/$/, "") || s.source_post} · {s.c}
+                      </Link>
+                    );
+                  })}
+              </div>
+              <p className="mt-3 text-[11px] text-[var(--text-muted)]">Email/Spotify/SoundCloud дотягуються на етапі збагачення профілів.</p>
+            </section>
+          </div>
+
+          <aside className="lg:sticky lg:top-6 lg:self-start">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6 text-center">
+              <div className="text-xs uppercase tracking-wider text-[var(--text-muted)]">Готові до розсилки</div>
+              <div className="my-2 text-5xl font-bold tabular-nums text-[var(--accent)]">{n(d.seg?.e)}</div>
+              <div className="text-sm text-[var(--text-muted)]">з email · всього в сегменті <span className="font-semibold text-[var(--text)]">{n(d.seg?.c)}</span></div>
+              <a href={`${exportUrl}${exportUrl.includes("?") ? "&" : "?"}withEmail=1`} download
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-5 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)]">
+                <Mail className="h-4 w-4" /> Завантажити {n(d.seg?.e)} з email
+              </a>
+              {(sp.withEmail || sp.source) && (
+                <Link href="/spotify-leads" className="mt-3 inline-block text-xs text-[var(--text-muted)] underline hover:text-[var(--text)]">скинути фільтри</Link>
+              )}
+              {d.preview.length > 0 && (
+                <div className="mt-5 border-t border-[var(--border)] pt-4 text-left">
+                  <div className="mb-2 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Приклад із сегмента</div>
+                  <ul className="space-y-1.5 text-xs">
+                    {d.preview.map((p) => (
+                      <li key={p.ig_username} className="truncate">
+                        <a href={`https://instagram.com/${p.ig_username}`} target="_blank" rel="noreferrer" className="font-medium hover:text-[var(--accent)]">{p.full_name || "@" + p.ig_username}</a>
+                        {p.email && <span className="text-[var(--text-muted)]"> · {p.email}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </aside>
         </div>
-        <p className="mt-3 text-xs text-[var(--text-muted)]">Показано перші 100 (з email — вгорі). Email/Spotify/SoundCloud заповнюються на етапі збагачення.</p>
       </main>
     </div>
   );
