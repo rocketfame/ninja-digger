@@ -17,6 +17,23 @@ const CORS = {
 };
 export function OPTIONS() { return new NextResponse(null, { headers: CORS }); }
 
+// Image-beacon ingest: bypasses Instagram's CSP (which blocks fetch/XHR to our
+// domain but allows img-src). Browser sends `new Image().src=?u=user1,user2&post=`.
+const GIF = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
+export async function GET(request: Request) {
+  const sp = new URL(request.url).searchParams;
+  const post = sp.get("post");
+  const usernames = (sp.get("u") || "").split(",").map((s) => s.trim().replace(/^@/, "").toLowerCase()).filter((x) => x && x.length <= 60);
+  for (const username of usernames) {
+    await pool.query(
+      `INSERT INTO spotify_leads (ig_username, source_post, lead_status) VALUES ($1,$2,'New')
+       ON CONFLICT (ig_username) DO UPDATE SET source_post = COALESCE(spotify_leads.source_post, EXCLUDED.source_post), updated_at = now()`,
+      [username, post]
+    ).catch(() => {});
+  }
+  return new NextResponse(GIF, { headers: { "Content-Type": "image/gif", "Cache-Control": "no-store", ...CORS } });
+}
+
 type Commenter = { username?: string; full_name?: string; comment?: string };
 
 export async function POST(request: Request) {
