@@ -104,7 +104,7 @@ export async function GET(request: Request) {
     const unsubUrl = `${BASE_URL}/api/unsubscribe?u=${Buffer.from(lead.email).toString("base64url")}`;
     const email = buildScEmail(touch, { name, pct, code, unsubUrl });
     try {
-      await transporter.sendMail({ from, replyTo, to: lead.email, subject: email.subject, text: email.text });
+      await transporter.sendMail({ from, replyTo, to: lead.email, subject: email.subject, text: email.text, html: email.html });
       await pool.query(
         `INSERT INTO outreach_events (artist_beatport_id, template_id, channel, contact_value, sent_at, outcome)
          VALUES ($1,$2,'email',$3, now(),'sent')`, [`sc:${lead.soundcloud_id}`, `sc_touch_${touch}`, lead.email]

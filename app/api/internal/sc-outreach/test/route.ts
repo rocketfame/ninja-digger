@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   const sent: number[] = [];
   for (const touch of [1, 2, 3] as const) {
     const e = buildScEmail(touch, { name, pct, code, unsubUrl });
-    await transporter.sendMail({ from, replyTo, to, subject: `[TEST ${touch}/3] ${e.subject}`, text: e.text });
+    await transporter.sendMail({ from, replyTo, to, subject: `[TEST ${touch}/3] ${e.subject}`, text: e.text, html: e.html });
     sent.push(touch);
   }
   return NextResponse.json({ ok: true, to, sent, note: "3 touches delivered" });
