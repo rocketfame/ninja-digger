@@ -46,12 +46,15 @@ export async function GET() {
 
   let processed = 0;
   let offset = 0;
+  const debug: Record<string, unknown> = {};
   for (let page = 0; page < 20; page++) {
     const url = `https://api.brevo.com/v3/smtp/statistics/events?limit=500&offset=${offset}&startDate=${startDate}&endDate=${endDate}&sort=desc`;
-    const res = await fetch(url, { headers: { "api-key": key, accept: "application/json" } }).catch(() => null);
-    if (!res || !res.ok) break;
+    const res = await fetch(url, { headers: { "api-key": key, accept: "application/json" } }).catch((e) => { debug.fetchErr = String(e); return null; });
+    if (!res) break;
+    if (!res.ok) { debug.status = res.status; debug.body = (await res.text().catch(() => "")).slice(0, 300); break; }
     const data = (await res.json().catch(() => ({}))) as { events?: BrevoEvent[] };
     const events = data.events ?? [];
+    if (page === 0) { debug.startDate = startDate; debug.count = events.length; debug.sample = events[0]; }
     if (events.length === 0) break;
     for (const ev of events) {
       if (ev.email && ev.event) { await apply(ev.email.trim().toLowerCase(), ev.event); processed++; }
@@ -60,5 +63,5 @@ export async function GET() {
     offset += 500;
   }
   await setSetting("brevo_poll_since", new Date(Date.now() - 6 * 3600000).toISOString().slice(0, 10));
-  return NextResponse.json({ ok: true, processed, ts: new Date().toISOString() });
+  return NextResponse.json({ ok: true, processed, debug, ts: new Date().toISOString() });
 }
