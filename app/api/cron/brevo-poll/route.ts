@@ -42,7 +42,7 @@ export async function GET() {
   // Poll a rolling window (last 2 days), deduped by email_events (idempotent-ish).
   const since = (await getSetting("brevo_poll_since", "")) || new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
   const startDate = since.slice(0, 10);
-  const endDate = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  const endDate = new Date().toISOString().slice(0, 10); // today; Brevo rejects future dates
 
   let processed = 0;
   let offset = 0;
