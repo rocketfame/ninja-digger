@@ -68,7 +68,7 @@ export default async function SpotifyLeadsPage() {
             <thead className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
               <tr className="border-b border-[var(--border)]">
                 <th className="px-4 py-3 font-medium">Instagram</th>
-                <th className="px-4 py-3 font-medium">Ім'я</th>
+                <th className="px-4 py-3 font-medium">Імʼя</th>
                 <th className="px-4 py-3 font-medium">Email</th>
                 <th className="px-4 py-3 font-medium">Профілі</th>
               </tr>
