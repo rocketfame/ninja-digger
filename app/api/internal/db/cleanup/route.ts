@@ -72,6 +72,10 @@ export async function POST() {
   actions.dropped = dropped;
 
   // 3. Bounded retention delete for the heavy Beatport tables (56 days).
+  // Purge junk emails scraped from Bandcamp subdomains (not real mailboxes).
+  const jb = await pool.query(`UPDATE sc_artists SET email=NULL, email_source=NULL WHERE email ILIKE '%bandcamp.com'`).catch(() => ({ rowCount: 0 }));
+  actions.bandcampEmailsCleaned = jb.rowCount ?? 0;
+
   const c1 = await pool.query(`DELETE FROM chart_entries WHERE snapshot_date < CURRENT_DATE - 56`).catch(() => ({ rowCount: 0 }));
   const c2 = await pool.query(`DELETE FROM bptoptracker_daily WHERE snapshot_date < CURRENT_DATE - 56`).catch(() => ({ rowCount: 0 }));
   actions.retentionDeleted = { chart_entries: c1.rowCount ?? 0, bptoptracker_daily: c2.rowCount ?? 0 };
