@@ -2,40 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Home, Disc3, Cloud, BarChart3, type LucideIcon } from "lucide-react";
 
-const NAV_ITEMS = [
-  {
-    href: "/",
-    label: "Головна",
-    icon: (
-      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1" />
-      </svg>
-    ),
-    exact: true,
-  },
-  {
-    href: "/leads",
-    label: "Beatport Leads",
-  },
-  {
-    href: "/sc-leads",
-    label: "SoundCloud Leads",
-    icon: (
-      <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 18V5l12-2v13M9 9l12-2M6 21a3 3 0 100-6 3 3 0 000 6z" />
-      </svg>
-    ),
-  },
-  {
-    href: "/analytics",
-    label: "Аналітика",
-    icon: (
-      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-      </svg>
-    ),
-  },
+const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; exact?: boolean }[] = [
+  { href: "/", label: "Головна", icon: Home, exact: true },
+  { href: "/leads", label: "Beatport Leads", icon: Disc3 },
+  { href: "/sc-leads", label: "SoundCloud Leads", icon: Cloud },
+  { href: "/analytics", label: "Аналітика", icon: BarChart3 },
 ];
 
 export function NavBar() {
@@ -44,11 +17,7 @@ export function NavBar() {
   return (
     <header className="border-b border-[var(--border)] bg-[var(--bg-header)] px-4 py-0">
       <nav className="mx-auto flex max-w-5xl items-center gap-1">
-        {/* Logo */}
-        <Link
-          href="/"
-          className="mr-4 flex items-center gap-2 py-3 text-[var(--accent)] hover:text-[var(--accent-hover)]"
-        >
+        <Link href="/" className="mr-4 flex items-center gap-2 py-3 text-[var(--accent)] hover:text-[var(--accent-hover)]">
           <svg width="20" height="20" viewBox="0 0 32 32" fill="none" className="flex-shrink-0">
             <rect width="32" height="32" rx="5" fill="currentColor" opacity="0.15" />
             <rect x="6" y="18" width="3" height="8" rx="1" fill="currentColor" />
@@ -59,27 +28,20 @@ export function NavBar() {
           <span className="text-sm font-bold tracking-tight">Ninja Digger</span>
         </Link>
 
-        {/* Nav items */}
         {NAV_ITEMS.map((item) => {
-          const isActive = item.exact
-            ? pathname === item.href
-            : pathname.startsWith(item.href);
-
+          const isActive = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+          const Icon = item.icon;
           return (
             <Link
               key={item.href}
               href={item.href}
               className={`relative flex items-center gap-1.5 px-3 py-3 text-sm transition-colors ${
-                isActive
-                  ? "text-[var(--text)]"
-                  : "text-[var(--text-muted)] hover:text-[var(--text)]"
+                isActive ? "text-[var(--text)]" : "text-[var(--text-muted)] hover:text-[var(--text)]"
               }`}
             >
-              <span className={isActive ? "text-[var(--accent)]" : "opacity-60"}>{item.icon}</span>
+              <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} style={isActive ? { color: "var(--accent)" } : undefined} />
               <span className="font-medium">{item.label}</span>
-              {isActive && (
-                <span className="absolute bottom-0 left-3 right-3 h-[2px] rounded-full bg-[var(--accent)]" />
-              )}
+              {isActive && <span className="absolute bottom-0 left-3 right-3 h-[2px] rounded-full bg-[var(--accent)]" />}
             </Link>
           );
         })}
