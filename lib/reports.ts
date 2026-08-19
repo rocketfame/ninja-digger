@@ -167,7 +167,7 @@ export async function buildScReport(): Promise<string> {
 export async function buildFullReport(): Promise<string> {
   const n = (sql: string) => pool.query<{ c: number }>(sql).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
   const [
-    scArtists, scSeedsDone, scSeeds, scEmail, scGold, scSentToday, scOpened, scReplied,
+    scArtists, scSeedsDone, scSeeds, scEmail, scGold, scDiamond, scSentToday, scOpened, scReplied,
     bpLeads, bpEmail, bpSentToday, bpReplied, bpWon, dbMb, scPaused,
   ] = await Promise.all([
     n("SELECT COUNT(*)::int c FROM sc_artists WHERE track_count>=1"),
@@ -175,6 +175,7 @@ export async function buildFullReport(): Promise<string> {
     n("SELECT COUNT(*)::int c FROM sc_seed_accounts WHERE active"),
     n("SELECT COUNT(email)::int c FROM sc_artists WHERE track_count>=1"),
     n("SELECT COUNT(*)::int c FROM sc_artists WHERE track_count>=1 AND email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub') AND (opens>0 OR lead_status='Responded' OR delivered_at IS NOT NULL)"),
+    n("SELECT COUNT(*)::int c FROM sc_artists WHERE track_count>=1 AND email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub') AND (opens>0 OR clicks>0 OR lead_status='Responded')"),
     n("SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sc_touch_%' AND sent_at >= CURRENT_DATE"),
     n("SELECT COUNT(*)::int c FROM sc_artists WHERE opens>0"),
     n("SELECT COUNT(*)::int c FROM sc_artists WHERE lead_status='Responded'"),
@@ -191,7 +192,7 @@ export async function buildFullReport(): Promise<string> {
     `🥷 <b>Ninja Digger — повний звіт</b>\n\n` +
     `☁️ <b>SoundCloud</b>\n` +
     `  🔎 Артистів: ${scArtists} · канали ${scSeedsDone}/${scSeeds}\n` +
-    `  📧 Email: ${scEmail} · 🏆 золото: ${scGold}\n` +
+    `  📧 Email: ${scEmail} · 🏆 золото: ${scGold} · 💎 діаманти: ${scDiamond}\n` +
     `  📤 Надіслано сьогодні: ${scSentToday} (${scPaused === "1" ? "⏸ пауза" : "🟢 активна"})\n` +
     `  👀 Відкрили: ${scOpened} · 💬 відповіли: ${scReplied}\n\n` +
     `💿 <b>Beatport</b>\n` +
