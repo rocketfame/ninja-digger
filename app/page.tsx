@@ -40,7 +40,7 @@ export default async function HomePage() {
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
       <NavBar />
-      <main className="mx-auto max-w-5xl px-4 py-8">
+      <main className="mx-auto max-w-5xl px-5 py-10">
         <div className="mb-8">
           <h1 className="text-2xl font-bold tracking-tight">Ninja Digger</h1>
           <p className="mt-1 text-sm text-[var(--text-muted)]">Панель лідогену — Beatport та SoundCloud, розсилка й аналітика.</p>

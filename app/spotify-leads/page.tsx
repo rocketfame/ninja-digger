@@ -53,7 +53,7 @@ export default async function SpotifyLeadsPage({ searchParams }: { searchParams:
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
       <NavBar />
-      <main className="mx-auto max-w-5xl px-4 py-8">
+      <main className="mx-auto max-w-5xl px-5 py-10">
         <div className="mb-8">
           <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight"><SiSpotify style={{ color: "#1db954" }} className="h-6 w-6" /> Spotify Leads</h1>
           <p className="mt-1 text-sm text-[var(--text-muted)]">Коментатори промо-креаторів в Instagram — гарячі ліди, що шукають просування.</p>

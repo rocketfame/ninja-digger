@@ -106,7 +106,7 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
       <NavBar />
-      <main className="mx-auto max-w-5xl px-4 py-8">
+      <main className="mx-auto max-w-5xl px-5 py-10">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold tracking-tight">SoundCloud Leads</h1>

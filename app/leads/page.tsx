@@ -408,7 +408,7 @@ export default async function LeadsPage({
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
       <NavBar />
 
-      <main className="mx-auto max-w-5xl px-4 py-8">
+      <main className="mx-auto max-w-5xl px-5 py-10">
         <div className="mb-8 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Beatport Leads</h1>

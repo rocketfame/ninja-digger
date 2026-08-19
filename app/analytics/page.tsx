@@ -61,7 +61,7 @@ export default async function AnalyticsPage() {
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
       <NavBar />
-      <main className="mx-auto max-w-5xl px-4 py-8">
+      <main className="mx-auto max-w-5xl px-5 py-10">
         <div className="mb-8">
           <h1 className="text-2xl font-bold tracking-tight">Аналітика</h1>
           <p className="mt-1 text-sm text-[var(--text-muted)]">Розсилка й конверсії по каналах.</p>

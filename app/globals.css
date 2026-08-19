@@ -4,17 +4,17 @@
 
 /* Dark theme — референси: BP Top Tracker, Beatstats, Ableton */
 :root {
-  --bg-page: #1a1a1a;
-  --bg-card: #242424;
-  --bg-header: #1e1e1e;
-  --bg-table-header: #2a2a2a;
-  --bg-hover: #2e2e2e;
+  --bg-page: #141414;
+  --bg-card: #1f1f1f;
+  --bg-header: #171717;
+  --bg-table-header: #242424;
+  --bg-hover: #282828;
   --accent: #22c55e;
   --accent-hover: #16a34a;
   --accent-muted: #15803d;
-  --text: #f5f5f5;
-  --text-muted: #a3a3a3;
-  --border: #3f3f3f;
+  --text: #f4f4f5;
+  --text-muted: #9a9a9f;
+  --border: #2b2b2b;
   --danger: #ef4444;
   --danger-muted: #b91c1c;
 }
