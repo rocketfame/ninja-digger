@@ -174,12 +174,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, hour, actions: ["paused"], ts: new Date().toISOString() });
   }
 
-  // Beatport outreach: 60% chance, skip night. Daily cap (app_settings) guards
-  // the post-burn reputation ramp-up.
+  // Beatport outreach: 60% chance, skip night. Warm-up ramp: floor 20/day,
+  // grow +3/day (mirrors SoundCloud), capped at 130 so BP + SC stay under
+  // Brevo's ~300/day free ceiling. Ramp start is stamped on first run.
   if (hour >= 6 && hour <= 21 && rand < 0.65) {
-    const cap = await pool.query<{ value: string }>(
-      `SELECT value FROM app_settings WHERE key = 'daily_send_cap'`
-    ).then((r) => parseInt(r.rows[0]?.value ?? "999", 10) || 999).catch(() => 999);
+    let bpStart = await pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key='bp_outreach_start'`)
+      .then((r) => r.rows[0]?.value).catch(() => undefined);
+    if (!bpStart) {
+      bpStart = new Date().toISOString();
+      await pool.query(`INSERT INTO app_settings (key,value) VALUES ('bp_outreach_start',$1) ON CONFLICT (key) DO NOTHING`, [bpStart]).catch(() => {});
+    }
+    const bpDays = Math.floor((Date.now() - Date.parse(bpStart)) / 86400000);
+    const cap = Math.min(130, 20 + bpDays * 3);
     const sentToday = await pool.query<{ c: number }>(
       `SELECT COUNT(*)::int c FROM outreach_events WHERE channel='email' AND template_id LIKE 'email_touch_%' AND sent_at >= CURRENT_DATE`
     ).then((r) => r.rows[0]?.c ?? 0).catch(() => 0);

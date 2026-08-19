@@ -15,7 +15,7 @@ export const maxDuration = 300;
 
 const BASE_URL = "https://ninja-digger.vercel.app";
 const PER_RUN = 4;          // spread the daily quota across hourly runs
-const DOMAIN_DAILY_MAX = 150; // combined Beatport + SC ceiling for the domain
+const DOMAIN_DAILY_MAX = 280; // combined Beatport + SC ceiling (Brevo free ~300/day)
 
 async function getSetting(key: string, fallback: string): Promise<string> {
   return pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key=$1`, [key])
@@ -25,12 +25,10 @@ async function setSetting(key: string, value: string): Promise<void> {
   await pool.query(`INSERT INTO app_settings (key,value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=$2`, [key, value]).catch(() => {});
 }
 
-// Warm-up ladder: how many SC emails/day allowed given days since start.
+// Warm-up ladder: start at 20/day, grow +3/day, cap at 130 (so SC + Beatport
+// together stay under Brevo's ~300/day free ceiling).
 function rampCap(daysSinceStart: number): number {
-  if (daysSinceStart < 3) return 20;
-  if (daysSinceStart < 7) return 40;
-  if (daysSinceStart < 14) return 70;
-  return 100;
+  return Math.min(130, 20 + daysSinceStart * 3);
 }
 
 export async function GET(request: Request) {
