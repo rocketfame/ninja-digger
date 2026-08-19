@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Disc3, Cloud, BarChart3, type LucideIcon } from "lucide-react";
+import { Home, Disc3, Cloud, Music2, BarChart3, type LucideIcon } from "lucide-react";
 
 const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; exact?: boolean }[] = [
   { href: "/", label: "Головна", icon: Home, exact: true },
-  { href: "/leads", label: "Beatport Leads", icon: Disc3 },
-  { href: "/sc-leads", label: "SoundCloud Leads", icon: Cloud },
+  { href: "/leads", label: "Beatport", icon: Disc3 },
+  { href: "/sc-leads", label: "SoundCloud", icon: Cloud },
+  { href: "/spotify-leads", label: "Spotify", icon: Music2 },
   { href: "/analytics", label: "Аналітика", icon: BarChart3 },
 ];
 
