@@ -25,10 +25,12 @@ async function setSetting(key: string, value: string): Promise<void> {
   await pool.query(`INSERT INTO app_settings (key,value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=$2`, [key, value]).catch(() => {});
 }
 
-// Warm-up ladder: start at 20/day, grow +3/day, cap at 130 (so SC + Beatport
-// together stay under Brevo's ~300/day free ceiling).
-function rampCap(daysSinceStart: number): number {
-  return Math.min(130, 20 + daysSinceStart * 3);
+// Progressive warm-up: 20/day, growing ~25%/day (geometric), so we reach the
+// ceiling in ~10 days instead of weeks. Ceiling is app_settings 'outreach_ramp_max'
+// (default 130, under Brevo free ~300/day combined) — raise it after a Brevo
+// upgrade and the system jumps higher with no redeploy.
+function rampCap(daysSinceStart: number, max: number): number {
+  return Math.min(max, Math.round(20 * Math.pow(1.25, daysSinceStart)));
 }
 
 export async function GET(request: Request) {
@@ -47,7 +49,8 @@ export async function GET(request: Request) {
   let start = await getSetting("sc_outreach_start", "");
   if (!start) { start = new Date().toISOString(); await setSetting("sc_outreach_start", start); }
   const daysSinceStart = Math.floor((Date.now() - Date.parse(start)) / 86400000);
-  const cap = rampCap(daysSinceStart);
+  const rampMax = parseInt(await getSetting("outreach_ramp_max", "130"), 10) || 130;
+  const cap = rampCap(daysSinceStart, rampMax);
 
   const q = (sql: string) => pool.query<{ c: number }>(sql).then((r) => r.rows[0]?.c ?? 0).catch(() => 0);
   const scSentToday = await q(`SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sc_touch_%' AND sent_at >= CURRENT_DATE`);

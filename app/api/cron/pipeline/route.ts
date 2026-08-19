@@ -185,7 +185,9 @@ export async function GET(request: Request) {
       await pool.query(`INSERT INTO app_settings (key,value) VALUES ('bp_outreach_start',$1) ON CONFLICT (key) DO NOTHING`, [bpStart]).catch(() => {});
     }
     const bpDays = Math.floor((Date.now() - Date.parse(bpStart)) / 86400000);
-    const cap = Math.min(130, 20 + bpDays * 3);
+    const rampMax = await pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key='outreach_ramp_max'`)
+      .then((r) => parseInt(r.rows[0]?.value ?? "130", 10) || 130).catch(() => 130);
+    const cap = Math.min(rampMax, Math.round(20 * Math.pow(1.25, bpDays)));
     const sentToday = await pool.query<{ c: number }>(
       `SELECT COUNT(*)::int c FROM outreach_events WHERE channel='email' AND template_id LIKE 'email_touch_%' AND sent_at >= CURRENT_DATE`
     ).then((r) => r.rows[0]?.c ?? 0).catch(() => 0);
