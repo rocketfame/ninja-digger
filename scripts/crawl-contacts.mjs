@@ -31,6 +31,9 @@ function pickEmail(html) {
     const e = raw.trim().toLowerCase().replace(/[.,;]+$/, "");
     if (e.length > 120 || seen.has(e)) continue;
     seen.add(e);
+    // reject machine/tracking addresses: long hex local parts, or sentry/wixpress
+    // anywhere in the domain (incl. deep subdomains the anchored JUNK re misses)
+    if (/^[0-9a-f]{16,}@/.test(e) || /sentry|wixpress|\bingest\.|amazonaws|cloudfront/.test(e)) continue;
     if (!JUNK.test(e)) return e;
   }
   return null;
