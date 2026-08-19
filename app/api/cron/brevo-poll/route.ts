@@ -63,5 +63,5 @@ export async function GET() {
     offset += 500;
   }
   await setSetting("brevo_poll_since", new Date(Date.now() - 6 * 3600000).toISOString().slice(0, 10));
-  return NextResponse.json({ ok: true, processed, debug, ts: new Date().toISOString() });
+  return NextResponse.json({ ok: true, processed, ts: new Date().toISOString() });
 }
