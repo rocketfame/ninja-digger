@@ -25,7 +25,9 @@ const JUNK = /(^(support|help|admin|webmaster|postmaster|abuse|hostmaster|billin
 
 function pickEmail(html) {
   const seen = new Set();
-  for (const raw of html.match(EMAIL_RE) || []) {
+  // decode common HTML/unicode escapes so ">contact@" -> "contact@"
+  const clean = html.replace(/&[a-z]+;|\\u00[0-9a-f]{2}|u00[0-9a-f]{2}(?=[a-z])/gi, " ");
+  for (const raw of clean.match(EMAIL_RE) || []) {
     const e = raw.trim().toLowerCase().replace(/[.,;]+$/, "");
     if (e.length > 120 || seen.has(e)) continue;
     seen.add(e);
