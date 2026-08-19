@@ -1,4 +1,9 @@
+import { unstable_cache } from "next/cache";
 import { getSegmentStats, getSegmentRows } from "@/lib/emailSegments";
+
+// These are heavy COUNT(DISTINCT) queries that change slowly — cache for 5 min.
+const cachedStats = unstable_cache(() => getSegmentStats(), ["bp-segment-stats"], { revalidate: 300, tags: ["leads"] });
+const cachedGems = unstable_cache(() => getSegmentRows("gems"), ["bp-gems-rows"], { revalidate: 300, tags: ["leads"] });
 
 /**
  * Big "ready to send" action card for Beatport leads — the same visual language
@@ -6,9 +11,9 @@ import { getSegmentStats, getSegmentRows } from "@/lib/emailSegments";
  * subset (💎 gems), one-click CSV export, and a few example contacts.
  */
 export async function BeatportActionCard({ withEmails }: { withEmails: number }) {
-  const stats = await getSegmentStats().catch(() => []);
+  const stats = await cachedStats().catch(() => []);
   const gems = stats.find((s) => s.type === "gems")?.count ?? 0;
-  const examples = (await getSegmentRows("gems").catch(() => [])).slice(0, 5);
+  const examples = (await cachedGems().catch(() => [])).slice(0, 5);
 
   const btn = "flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition-colors";
   return (

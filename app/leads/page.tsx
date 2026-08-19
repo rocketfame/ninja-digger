@@ -291,10 +291,10 @@ export default async function LeadsPage({
   try {
     const [leadsResult, genresResult, kpiRow] = await Promise.all([
       getCachedLeads(),
-      query<{ g: string }>(
+      unstable_cache(() => query<{ g: string }>(
         `SELECT DISTINCT unnest(genres) AS g FROM artist_metrics WHERE genres IS NOT NULL AND array_length(genres, 1) > 0 ORDER BY g LIMIT 800`
-      ),
-      query<{
+      ), ["leads-genres"], { revalidate: 600 })(),
+      unstable_cache(() => query<{
         total_leads: number;
         new_today: number;
         with_contacts: number;
@@ -320,7 +320,7 @@ export default async function LeadsPage({
               UNION
               SELECT ac_fl.artist_beatport_id AS aid FROM artist_contacts ac_fl WHERE ac_fl.status = 'flagged'
             ) x JOIN lead_scores ls_fl ON ls_fl.artist_beatport_id = x.aid) AS with_flagged
-         `),
+         `), ["leads-kpi"], { revalidate: 120, tags: ["leads"] })(),
     ]);
     const { rows, totalCount: total } = leadsResult;
     leads = rows;
