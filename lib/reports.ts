@@ -161,3 +161,43 @@ export async function buildScReport(): Promise<string> {
     (pending === 0 ? `\n\n✨ Усі канали опрацьовано — йдуть тільки refresh нових підписників.` : "")
   );
 }
+
+/** Full cross-system report for the /звіт command — search + send + engagement
+ * across both channels in one message. */
+export async function buildFullReport(): Promise<string> {
+  const n = (sql: string) => pool.query<{ c: number }>(sql).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
+  const [
+    scArtists, scSeedsDone, scSeeds, scEmail, scGold, scSentToday, scOpened, scReplied,
+    bpLeads, bpEmail, bpSentToday, bpReplied, bpWon, dbMb, scPaused,
+  ] = await Promise.all([
+    n("SELECT COUNT(*)::int c FROM sc_artists WHERE track_count>=1"),
+    n("SELECT COUNT(*)::int c FROM sc_seed_accounts WHERE active AND completed_at IS NOT NULL"),
+    n("SELECT COUNT(*)::int c FROM sc_seed_accounts WHERE active"),
+    n("SELECT COUNT(email)::int c FROM sc_artists WHERE track_count>=1"),
+    n("SELECT COUNT(*)::int c FROM sc_artists WHERE track_count>=1 AND email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub') AND (opens>0 OR lead_status='Responded' OR delivered_at IS NOT NULL)"),
+    n("SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sc_touch_%' AND sent_at >= CURRENT_DATE"),
+    n("SELECT COUNT(*)::int c FROM sc_artists WHERE opens>0"),
+    n("SELECT COUNT(*)::int c FROM sc_artists WHERE lead_status='Responded'"),
+    n("SELECT COUNT(*)::int c FROM lead_scores"),
+    n("SELECT COUNT(DISTINCT artist_beatport_id)::int c FROM artist_contacts WHERE type='email' AND (status IS NULL OR status='ok')"),
+    n("SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'email_touch_%' AND sent_at >= CURRENT_DATE"),
+    n("SELECT COUNT(*)::int c FROM lead_profiles WHERE status IN ('Responded','In Progress','Won')"),
+    n("SELECT COUNT(*)::int c FROM lead_profiles WHERE status='Won'"),
+    pool.query<{ c: number }>("SELECT (pg_database_size(current_database())/1048576.0)::numeric(10,1) c").then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0),
+    getSetting("sc_outreach_paused"),
+  ]);
+  const dbFlag = dbMb > 460 ? "🔴" : dbMb > 400 ? "🟡" : "🟢";
+  return (
+    `🥷 <b>Ninja Digger — повний звіт</b>\n\n` +
+    `☁️ <b>SoundCloud</b>\n` +
+    `  🔎 Артистів: ${scArtists} · канали ${scSeedsDone}/${scSeeds}\n` +
+    `  📧 Email: ${scEmail} · 🏆 золото: ${scGold}\n` +
+    `  📤 Надіслано сьогодні: ${scSentToday} (${scPaused === "1" ? "⏸ пауза" : "🟢 активна"})\n` +
+    `  👀 Відкрили: ${scOpened} · 💬 відповіли: ${scReplied}\n\n` +
+    `💿 <b>Beatport</b>\n` +
+    `  🔎 Лідів: ${bpLeads} · 📧 з email: ${bpEmail}\n` +
+    `  📤 Надіслано сьогодні: ${bpSentToday}\n` +
+    `  💬 Відповіли: ${bpReplied} · 🏆 Won: ${bpWon}\n\n` +
+    `${dbFlag} База: ${dbMb} / 512 MB`
+  );
+}

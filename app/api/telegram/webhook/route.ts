@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import * as nodemailer from "nodemailer";
 import { pool } from "@/lib/db";
 import { sendTelegramMessage, tgEscape, answerCallbackQuery, type InlineButton } from "@/lib/telegram";
-import { buildStats, buildDailyReport } from "@/lib/reports";
+import { buildStats, buildDailyReport, buildFullReport, buildScReport } from "@/lib/reports";
 import { wrapEmailHtml, TEXT_SIGNATURE } from "@/lib/emailTemplate";
 
 export const dynamic = "force-dynamic";
@@ -31,10 +31,12 @@ type TgUpdate = {
 };
 
 const MENU_KEYBOARD: InlineButton[][] = [
+  [{ text: "📋 Повний звіт (всі системи)", callback_data: "full" }],
+  [{ text: "☁️ SoundCloud звіт", callback_data: "screport" }, { text: "💿 Beatport звіт", callback_data: "report" }],
   [{ text: "📊 Статус", callback_data: "stats" }, { text: "🎯 Черга", callback_data: "queue" }],
-  [{ text: "📈 Звіт за сьогодні", callback_data: "report" }],
   [{ text: "⏸ Пауза", callback_data: "pause" }, { text: "▶️ Відновити", callback_data: "resume" }],
-  [{ text: "🌐 Дашборд", url: "https://ninja-digger.vercel.app/" }, { text: "👥 Ліди", url: "https://ninja-digger.vercel.app/leads" }],
+  [{ text: "🌐 Дашборд", url: "https://ninja-digger.vercel.app/" }],
+  [{ text: "💿 Beatport", url: "https://ninja-digger.vercel.app/leads" }, { text: "☁️ SoundCloud", url: "https://ninja-digger.vercel.app/sc-leads" }],
 ];
 
 
@@ -65,6 +67,13 @@ async function handleCommand(cmd: string): Promise<void> {
       break;
     case "/report":
       await sendTelegramMessage(await buildDailyReport(), MENU_KEYBOARD);
+      break;
+    case "/full":
+    case "/звіт":
+      await sendTelegramMessage(await buildFullReport(), MENU_KEYBOARD);
+      break;
+    case "/screport":
+      await sendTelegramMessage(await buildScReport(), MENU_KEYBOARD);
       break;
     case "/queue": {
       const next = await pool.query<{ name: string; segment: string | null }>(
