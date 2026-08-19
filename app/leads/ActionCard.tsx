@@ -44,7 +44,7 @@ export async function BeatportActionCard({ withEmails }: { withEmails: number })
             ))}
           </ul>
         ) : (
-          <p className="text-xs text-[var(--text-muted)]">Перлин поки нема — з'являться, щойно набереться база tier-A з email.</p>
+          <p className="text-xs text-[var(--text-muted)]">Перлин поки нема, зʼявляться щойно набереться база tier-A з email.</p>
         )}
       </div>
     </div>
