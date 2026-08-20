@@ -19,24 +19,25 @@ export function OPTIONS() { return new NextResponse(null, { headers: CORS }); }
 const STRONG = /(promo|playlist|curator|submit (your|music)|music marketing|grow your|grow on|spotify growth|a&r|record label|feature your|get your music|music promotion|distribut|independent artists?|music network|exposure|get heard|upload your music|go viral|help (musicians|artists|music)|more streams|get more|pitch your|get signed|music career|scouting|monetiz|sync licensing)/i;
 const MED = /(marketing|producer|mixing|mastering|beats|music biz|artist development|management|records|studio|\bdj\b|songwriter|blog|network|viral|billboard|platinum|coach|mentor)/i;
 
-// Niche signals. Our ONLY target is Spotify/streaming music promotion. "Viral"
-// alone is a trap — rapvilleuk farms comments but sells viral VIDEO/content shoots
-// (its commenters are content creators, not artists chasing streams).
-const STREAMING = /spotify|playlist|stream(s|ing)?|apple music|deezer|tidal|get (your )?music (heard|out|on)|get playlisted|editorial|distribut|music promotion|submit your music|pitch your (song|music|track|record)|more (streams|listeners)|get discovered|record (deal|label)|\ba&r\b|music marketing|blow (up|your)|charts?/i;
-const CONTENT = /viral (video|content|reel|clip)|content (shoot|creator|creation|studio|strateg)|\breels?\b|video (production|shoot|edit|content|team)|videograph|filmmaker|\bfilm\b|cinematograph|photograph|shoot with us|book (your|a) (shoot|content|next)|social media (growth|content|manager)|grow on (instagram|ig|tiktok|social)|instagram growth|content ideas|go viral/i;
+// Niche signals. Target = MUSIC promotion (Spotify/streams/exposure/fans). The
+// trap is VIDEO-content promo: rapvilleuk farms comments but sells viral VIDEO /
+// content shoots (commenters are content creators, not artists chasing streams).
+// The discriminator is music-promo vs video-content — not Spotify-only.
+const MUSIC_PROMO = /spotify|playlist|stream(s|ing)?|apple music|deezer|tidal|exposure|help (musicians|artists|music)|get more (fans|streams|listeners|exposure|plays)|music promotion|music marketing|grow your (music|streams|spotify|audience|fanbase|fans)|submit your music|get (your )?music (heard|out|on)|get heard|get discovered|distribut|record (deal|label)|\ba&r\b|pitch your (song|music|track)|get playlisted|more (streams|listeners|fans)/i;
+const CONTENT = /viral (production|video|content|reel|clip)|content (shoot|creator|creation|strateg|ideas)|videograph|filmmaker|cinematograph|book (your|a) (shoot|content|next|session)|shoot with us|video (production|shoot|editing|team)|social media (manager|content|growth)|grow on (instagram|ig|tiktok|social)|reels? (strateg|tips|growth)|instagram growth|\bphotograph|\bfilm\b/i;
 const PRODUCER = /fl studio|ableton|logic pro|mixing|mastering|\bplugin|sample pack|preset|beat (tutorial|tips)|how to produce|music production tutorial|sound design|one knob|drum (sample|kit)/i;
 
-/** Classify a creator's niche from bio+category and caption signal counts. */
+/** Classify a creator's niche. Music-promo is the target; video-content, producer
+ *  education and IG-growth are off-target even when they farm comments. */
 function classifyNiche(text: string, promoHits: number, contentHits: number): string {
-  const stream = STREAMING.test(text);
+  const music = MUSIC_PROMO.test(text);
   const content = CONTENT.test(text);
   const producer = PRODUCER.test(text);
-  // Viral-video/content wins when content signals dominate and there's no real
-  // streaming angle — this is the rapvilleuk trap.
-  if ((content || contentHits >= 2) && !stream && promoHits <= contentHits) return "viral_video";
-  if (stream || promoHits >= 1) return "spotify_promo";
+  // Unambiguous video-content signals win — unless music-promo clearly dominates.
+  if (content && (!music || contentHits > promoHits)) return content && /grow on (instagram|ig)|instagram growth/.test(text) ? "ig_growth" : "viral_video";
+  if (music || promoHits >= 1) return "spotify_promo";
   if (producer) return "producer_edu";
-  if (content || contentHits > 0) return "viral_video";
+  if (contentHits > 0) return "viral_video";
   return "other";
 }
 
@@ -57,7 +58,7 @@ function scoreCreator(o: { bio: string; category: string | null; followers: numb
   if (avg >= 300) s += 45; else if (avg >= 100) s += 35; else if (avg >= 40) s += 22; else if (avg >= 15) s += 10;
   const hits = o.mechanicHits ?? 0;
   if (hits >= 3) s += 25; else if (hits >= 1) s += 12;
-  if (STREAMING.test(text)) s += 15;
+  if (MUSIC_PROMO.test(text)) s += 15;
   if (promoHits >= 3) s += 20; else if (promoHits >= 1) s += 10;
   const f = o.followers ?? 0;
   if (f >= 2000 && f <= 500000) s += 8;
