@@ -68,6 +68,12 @@ export default async function SpotifyCreatorsPage() {
           </div>
         ) : (
           <div className="space-y-2">
+            <div className="mb-1 flex flex-wrap gap-x-5 gap-y-1 rounded-lg border border-[var(--border)] bg-[var(--bg-card)]/50 px-4 py-2.5 text-[11px] text-[var(--text-muted)]">
+              <span className="font-semibold text-[var(--text)]">Як читати:</span>
+              <span>💬 <b className="text-[var(--text)]">сер. коментів/пост</b> — механіка збору лідів (зелений ≥100)</span>
+              <span>⚡ <b className="text-[var(--text)]">captions фармлять коментарі</b></span>
+              <span><b className="text-[var(--text)]">скор</b> — релевантність як Spotify-промо-джерела (≥60 = топ)</span>
+            </div>
             {creators.map((c) => (
               <div key={c.ig_username} className="flex items-center gap-4 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
                 <a href={`https://instagram.com/${c.ig_username}`} target="_blank" rel="noreferrer" title="Відкрити канал в Instagram"
@@ -97,10 +103,11 @@ export default async function SpotifyCreatorsPage() {
                   <div className="flex items-center gap-1 text-sm font-medium tabular-nums"><Users className="h-3 w-3 text-[var(--text-muted)]" />{n(c.followers)}</div>
                   {c.discovered_from && <div className="text-[10px] text-[var(--text-muted)]">від @{c.discovered_from}</div>}
                 </div>
-                <div className="flex-shrink-0" title="релевантність як джерела">
-                  <span className={`rounded-md px-2 py-1 text-xs font-bold tabular-nums ${c.score >= 60 ? "bg-[#1db954]/15 text-[#1db954]" : c.score >= 30 ? "bg-[#fbbf24]/15 text-[#fbbf24]" : "bg-[var(--bg-hover)] text-[var(--text-muted)]"}`}>
+                <div className="flex-shrink-0 text-center" title="скор релевантності як Spotify-промо-джерела (0–100). ≥60 = топ">
+                  <span className={`inline-block rounded-md px-2 py-1 text-xs font-bold tabular-nums ${c.score >= 60 ? "bg-[#1db954]/15 text-[#1db954]" : c.score >= 30 ? "bg-[#fbbf24]/15 text-[#fbbf24]" : "bg-[var(--bg-hover)] text-[var(--text-muted)]"}`}>
                     {c.score}
                   </span>
+                  <div className="mt-0.5 text-[10px] text-[var(--text-muted)]">скор</div>
                 </div>
                 <a href={`https://instagram.com/${c.ig_username}`} target="_blank" rel="noreferrer" title="Відкрити канал в Instagram"
                   className="flex flex-shrink-0 items-center gap-1.5 rounded-md border border-[var(--border)] px-2.5 py-1 text-xs font-medium text-[var(--text-muted)] transition-colors hover:border-[#e1306c]/60 hover:text-[#e1306c]">
