@@ -225,7 +225,7 @@ export async function buildFullReport(period?: string): Promise<string> {
   ]);
 
   const f = (x: number) => x.toLocaleString("uk-UA");
-  const plus = (x: number) => (x > 0 ? ` (+${f(x)})` : "");
+  const plus = (x: number) => ` (+${f(x)})`;
   const status = (p: string | null) => (p === "1" ? "пауза" : "активна");
   const date = new Date().toISOString().slice(0, 10);
   const head = `NINJA DIGGER — ЗВІТ${period ? ` · ${period}` : ""} · ${date}`;
