@@ -1,7 +1,8 @@
 import { pool } from "@/lib/db";
 import { NavBar } from "@/app/components/NavBar";
 import { SiInstagram, SiSpotify } from "react-icons/si";
-import { Users, ExternalLink } from "lucide-react";
+import { Users, ExternalLink, Target, Film, SlidersHorizontal, TrendingUp, Minus } from "lucide-react";
+import type { ComponentType } from "react";
 import { CreatorActions } from "./CreatorActions";
 import { SpotifyTabs } from "@/app/components/SpotifyTabs";
 
@@ -14,13 +15,13 @@ type Creator = {
   avg_comments: number | null; mechanic_hits: number | null; niche: string | null;
 };
 
-const NICHE: Record<string, { label: string; on: boolean }> = {
-  spotify_promo: { label: "🎵 Spotify-промо", on: true },
-  viral_video: { label: "🎬 Вірусне відео", on: false },
-  producer_edu: { label: "🎛 Продюсер-освіта", on: false },
-  ig_growth: { label: "📈 IG-ріст", on: false },
-  artist: { label: "🎤 Артист", on: false },
-  other: { label: "· інше", on: false },
+const NICHE: Record<string, { label: string; icon: ComponentType<{ className?: string }>; on: boolean }> = {
+  spotify_promo: { label: "Таргет · Spotify-промо", icon: Target, on: true },
+  viral_video: { label: "Вірусне відео", icon: Film, on: false },
+  producer_edu: { label: "Продюсер-освіта", icon: SlidersHorizontal, on: false },
+  ig_growth: { label: "IG-ріст", icon: TrendingUp, on: false },
+  artist: { label: "Артист", icon: Minus, on: false },
+  other: { label: "інше", icon: Minus, on: false },
 };
 
 async function getData() {
@@ -84,7 +85,7 @@ export default async function SpotifyCreatorsPage() {
               <span><b className="text-[var(--text)]">скор</b> — релевантність як Spotify-промо-джерела (≥60 = топ)</span>
             </div>
             {creators.map((c) => (
-              <div key={c.ig_username} className="flex items-start gap-4 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
+              <div key={c.ig_username} className={`flex items-start gap-4 rounded-xl border bg-[var(--bg-card)] px-4 py-3 ${c.niche === "spotify_promo" ? "border-[#1db954]/40 shadow-[inset_3px_0_0_0_#1db954]" : "border-[var(--border)]"}`}>
                 <a href={`https://instagram.com/${c.ig_username}`} target="_blank" rel="noreferrer" title="Відкрити канал в Instagram"
                   className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-[#e1306c]/10 transition-colors hover:bg-[#e1306c]/25">
                   <SiInstagram className="h-4 w-4 text-[#e1306c]" />
@@ -95,8 +96,10 @@ export default async function SpotifyCreatorsPage() {
                       {c.full_name || c.ig_username}
                     </a>
                     <span className="text-xs text-[var(--text-muted)]">@{c.ig_username}</span>
-                    {(() => { const nm = NICHE[c.niche ?? "other"] ?? NICHE.other; return (
-                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${nm.on ? "bg-[#1db954]/15 text-[#1db954]" : "bg-[var(--bg-hover)] text-[var(--text-muted)]"}`}>{nm.label}</span>
+                    {(() => { const nm = NICHE[c.niche ?? "other"] ?? NICHE.other; const Ic = nm.icon; return (
+                      <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${nm.on ? "bg-[#1db954] text-white shadow-[0_0_0_1px_rgba(29,185,84,0.3)]" : "bg-[var(--bg-hover)] text-[var(--text-muted)]"}`}>
+                        <Ic className="h-3 w-3" /> {nm.label}
+                      </span>
                     ); })()}
                   </div>
                   <div className="mt-0.5 whitespace-pre-line text-xs leading-snug text-[var(--text-muted)]">
