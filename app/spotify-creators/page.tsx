@@ -26,8 +26,6 @@ const NICHE: Record<string, { label: string; icon: ComponentType<{ className?: s
 
 async function getData(view: string) {
   const rows = <T extends Record<string, unknown>>(sql: string) => pool.query<T>(sql).then((r) => r.rows).catch(() => [] as T[]);
-  // Root seed (its21master) is the discovery origin, never a candidate.
-  const base = "COALESCE(discovered_from,'') <> 'seed'";
   const cond =
     view === "approved" ? "status='approved'" :
     view === "parsed" ? "status='parsed'" :
@@ -35,13 +33,12 @@ async function getData(view: string) {
     "status='candidate' AND niche='spotify_promo'"; // targets (default)
   const [creators, stats] = await Promise.all([
     rows<Creator>(`SELECT ig_username, full_name, followers, bio, category, score, status, discovered_from, leads_found, avg_comments, mechanic_hits, niche
-                   FROM spotify_creators WHERE ${base} AND ${cond} ORDER BY score DESC, followers DESC NULLS LAST LIMIT 300`),
-    pool.query<{ total: number; targets: number; allcand: number; approved: number; parsed: number }>(
-      `SELECT COUNT(*)::int total,
-              COUNT(*) FILTER (WHERE status='candidate' AND niche='spotify_promo' AND ${base})::int targets,
-              COUNT(*) FILTER (WHERE status='candidate' AND ${base})::int allcand,
+                   FROM spotify_creators WHERE ${cond} ORDER BY score DESC, followers DESC NULLS LAST LIMIT 300`),
+    pool.query<{ targets: number; allcand: number; approved: number; parsed: number }>(
+      `SELECT COUNT(*) FILTER (WHERE status='candidate' AND niche='spotify_promo')::int targets,
+              COUNT(*) FILTER (WHERE status='candidate')::int allcand,
               COUNT(*) FILTER (WHERE status='approved')::int approved,
-              COUNT(*) FILTER (WHERE status='parsed' AND ${base})::int parsed
+              COUNT(*) FILTER (WHERE status='parsed')::int parsed
        FROM spotify_creators`).then((r) => r.rows[0]).catch(() => undefined),
   ]);
   return { creators, stats };
@@ -68,32 +65,20 @@ export default async function SpotifyCreatorsPage({ searchParams }: { searchPara
 
         <SpotifyTabs />
 
+        {/* Clickable filter widgets — each is a view */}
         <div className="mb-6 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
           {[
-            { label: "Всього знайдено", value: stats?.total, color: undefined },
-            { label: "Таргети на розгляді", value: stats?.targets, color: "#1db954" },
-            { label: "Схвалено", value: stats?.approved, color: "#fbbf24" },
-            { label: "Спарсено", value: stats?.parsed, color: "#60a5fa" },
-          ].map((c) => (
-            <div key={c.label} className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3.5">
-              <div className="text-2xl font-bold tabular-nums" style={c.color ? { color: c.color } : undefined}>{n(c.value)}</div>
-              <div className="text-xs text-[var(--text-muted)]">{c.label}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="mb-4 flex flex-wrap items-center gap-1 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-1 text-sm">
-          {[
-            { v: "targets", label: `🎯 Таргети`, count: stats?.targets, on: "#1db954" },
-            { v: "all", label: `Усі кандидати`, count: stats?.allcand, on: "var(--bg-hover)" },
-            { v: "approved", label: `Схвалені`, count: stats?.approved, on: "var(--bg-hover)" },
-            { v: "parsed", label: `Спарсені`, count: stats?.parsed, on: "var(--bg-hover)" },
-          ].map((t) => {
-            const active = view === t.v;
+            { v: "targets", label: "Таргети на розгляді", value: stats?.targets, color: "#1db954", href: "/spotify-creators" },
+            { v: "all", label: "Усі кандидати", value: stats?.allcand, color: undefined, href: "/spotify-creators?view=all" },
+            { v: "approved", label: "Схвалено", value: stats?.approved, color: "#fbbf24", href: "/spotify-creators?view=approved" },
+            { v: "parsed", label: "Спарсено", value: stats?.parsed, color: "#60a5fa", href: "/spotify-creators?view=parsed" },
+          ].map((c) => {
+            const active = view === c.v;
             return (
-              <a key={t.v} href={t.v === "targets" ? "/spotify-creators" : `/spotify-creators?view=${t.v}`}
-                className={`rounded-lg px-3.5 py-1.5 font-medium transition-colors ${active ? (t.v === "targets" ? "bg-[#1db954] text-white" : "bg-[var(--bg-hover)] text-[var(--text)]") : "text-[var(--text-muted)] hover:text-[var(--text)]"}`}>
-                {t.label} ({n(t.count)})
+              <a key={c.v} href={c.href}
+                className={`rounded-xl border bg-[var(--bg-card)] px-4 py-3.5 transition-colors ${active ? "border-[var(--text)]/40 ring-1 ring-[var(--text)]/20" : "border-[var(--border)] hover:border-[var(--text-muted)]"}`}>
+                <div className="text-2xl font-bold tabular-nums" style={c.color ? { color: c.color } : undefined}>{n(c.value)}</div>
+                <div className="text-xs text-[var(--text-muted)]">{c.label}</div>
               </a>
             );
           })}
