@@ -4,7 +4,7 @@ import { pool } from "@/lib/db";
 import { SeedControl } from "./SeedControl";
 import { EnrichButton } from "./EnrichButton";
 import { ReexSync } from "./ReexSync";
-import { SegmentPreview } from "./SegmentPreview";
+import { SendReadyCard } from "@/app/components/SendReadyCard";
 import { SC_ACTIVITY_SQL } from "@/lib/scActivity";
 
 export const dynamic = "force-dynamic";
@@ -207,44 +207,17 @@ export default async function ScLeadsPage({ searchParams }: { searchParams: Prom
 
           {/* Right: sticky result */}
           <aside className="lg:sticky lg:top-6 lg:self-start">
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6 text-center">
-              <div className="text-xs uppercase tracking-wider text-[var(--text-muted)]">Готові до розсилки</div>
-              <div className="my-2 text-5xl font-bold tabular-nums text-[var(--accent)]">{d.segEmail.toLocaleString("uk-UA")}</div>
-              <div className="text-sm text-[var(--text-muted)]">
-                з email · всього в сегменті <span className="font-semibold text-[var(--text)]">{d.segCount.toLocaleString("uk-UA")}</span>
-              </div>
-
-              <a href={`${exportUrl}${exportUrl.includes("?") ? "&" : "?"}withEmail=1`} download
-                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-5 py-3.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[var(--accent-hover)]">
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" /></svg>
-                Завантажити {d.segEmail} з email
-              </a>
-              <SegmentPreview
-                previewUrl={`${exportUrl}${exportUrl.includes("?") ? "&" : "?"}withEmail=1&format=json&limit=200`}
-                downloadUrl={`${exportUrl}${exportUrl.includes("?") ? "&" : "?"}withEmail=1`}
-                count={d.segEmail}
-              />
-              <EnrichButton />
-              {hasFilter && (
-                <Link href="/sc-leads" className="mt-3 inline-block text-xs text-[var(--text-muted)] underline hover:text-[var(--text)]">
-                  скинути фільтри
-                </Link>
-              )}
-
-              {d.preview.length > 0 && (
-                <div className="mt-5 border-t border-[var(--border)] pt-4 text-left">
-                  <div className="mb-2 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Приклад із сегмента</div>
-                  <ul className="space-y-1.5 text-xs">
-                    {d.preview.map((p, i) => (
-                      <li key={i} className="truncate">
-                        <span className="font-medium">{p.full_name || p.username}</span>
-                        {p.email && <span className="text-[var(--text-muted)]"> · {p.email}</span>}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
+            <SendReadyCard
+              count={d.segEmail}
+              downloadUrl={`${exportUrl}${exportUrl.includes("?") ? "&" : "?"}withEmail=1`}
+              downloadLabel={`Завантажити ${d.segEmail.toLocaleString("uk-UA")} з email`}
+              previewUrl={`${exportUrl}${exportUrl.includes("?") ? "&" : "?"}withEmail=1&format=json&limit=200`}
+              previewColumns={[{ header: "Треки", key: "track_count", num: true }, { header: "Фоловери", key: "followers_count", num: true }, { header: "Активність", key: "activity" }, { header: "Країна", key: "country_code" }]}
+              subline={<>з email · всього в сегменті <span className="font-semibold text-[var(--text)]">{d.segCount.toLocaleString("uk-UA")}</span></>}
+              examples={d.preview.map((p) => ({ name: p.full_name || p.username, email: p.email }))}
+              secondaryActions={<EnrichButton />}
+              footer={hasFilter ? <Link href="/sc-leads" className="mt-3 inline-block text-xs text-[var(--text-muted)] underline hover:text-[var(--text)]">скинути фільтри</Link> : undefined}
+            />
           </aside>
         </div>
       </main>

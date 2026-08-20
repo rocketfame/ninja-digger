@@ -473,73 +473,80 @@ export default async function LeadsPage({
           </div>
         )}
         {!error && (
-          <Suspense fallback={null}>
-            <BeatportActionCard withEmails={kpi.withEmails} />
-          </Suspense>
-        )}
-        {!error && kpi.withFlagged > 0 && (
-          <div className="mb-5 flex items-center gap-3">
-            <Link
-              href={withFlagged ? "/leads" : "/leads?withFlagged=1"}
-              className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${withFlagged ? "border-red-500/50 bg-red-500/15 text-red-400" : "border-red-500/30 bg-red-500/5 text-red-400 hover:bg-red-500/10"}`}
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              <span className="font-bold tabular-nums">{kpi.withFlagged}</span> {kpi.withFlagged === 1 ? "артист" : "артистів"} з помилковими контактами
-            </Link>
-            {withFlagged && <BatchRescanButton />}
-          </div>
-        )}
+          <div className="mb-6 grid gap-6 lg:grid-cols-[1fr_320px]">
+            {/* Left: filters + context */}
+            <div className="order-2 min-w-0 space-y-4 lg:order-1">
+              {/* Data range hint */}
+              {kpi.dataFrom && (
+                <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                  <svg className="h-3.5 w-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                  <span title="Діапазон дат у БД (chart_entries). Таблиця за замовчуванням відсортована за «Востаннє» — спочатку артисти з найсвіжішими датами.">Дані: <span className="tabular-nums font-medium text-[var(--text)]">{formatDateDDMMYYYY(kpi.dataFrom)}</span> — <span className="tabular-nums font-medium text-[var(--text)]">{formatDateDDMMYYYY(kpi.dataTo)}</span></span>
+                </div>
+              )}
 
-        {/* Data range hint */}
-        {!error && kpi.dataFrom && (
-          <div className="mb-4 flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
-            <svg className="h-3.5 w-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-            <span title="Діапазон дат у БД (chart_entries). Таблиця за замовчуванням відсортована за «Востаннє» — спочатку артисти з найсвіжішими датами.">Дані: <span className="tabular-nums font-medium text-[var(--text)]">{formatDateDDMMYYYY(kpi.dataFrom)}</span> — <span className="tabular-nums font-medium text-[var(--text)]">{formatDateDDMMYYYY(kpi.dataTo)}</span></span>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-[var(--text-muted)]">Сегмент:</span>
+                  <Link
+                    href={buildQuery({ genre: genreParam ?? undefined, dateFrom: dateFromParam ?? undefined, dateTo: dateToParam ?? undefined, sort, order })}
+                    className={`rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${!segment ? "border-transparent" : "border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--text-muted)]"}`}
+                    style={!segment ? { boxShadow: "inset 0 0 0 2px var(--accent)", background: "color-mix(in srgb, var(--accent) 10%, transparent)" } : undefined}
+                  >
+                    Усі
+                  </Link>
+                  {SEGMENTS_V2.map((s) => {
+                    const colors = SEGMENT_CHIP_COLORS[s];
+                    const isActive = segment === s;
+                    return (
+                      <Link
+                        key={s}
+                        href={buildQuery({ segment: s, genre: genreParam ?? undefined, dateFrom: dateFromParam ?? undefined, dateTo: dateToParam ?? undefined, sort, order })}
+                        className={`rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${isActive ? "border-transparent" : "border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--text-muted)]"}`}
+                        style={isActive && colors ? { boxShadow: `inset 0 0 0 2px ${colors.activeText}`, background: `${colors.activeText}1a`, color: colors.activeText } : undefined}
+                      >
+                        {SEGMENT_LABELS[s] ?? s}
+                      </Link>
+                    );
+                  })}
+                </div>
+                <LeadsDateRangeFilter
+                  segment={segment ?? undefined}
+                  genre={genreParam ?? undefined}
+                  dateFrom={dateFromParam ?? undefined}
+                  dateTo={dateToParam ?? undefined}
+                  sort={sort}
+                  order={order}
+                />
+                <RunEnrichmentOnLeadsButton
+                  segment={segment ?? null}
+                  genre={genreParam ?? null}
+                  dateFrom={dateFromParam ?? null}
+                  dateTo={dateToParam ?? null}
+                />
+              </div>
+
+              {kpi.withFlagged > 0 && (
+                <div className="flex items-center gap-3">
+                  <Link
+                    href={withFlagged ? "/leads" : "/leads?withFlagged=1"}
+                    className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${withFlagged ? "border-red-500/50 bg-red-500/15 text-red-400" : "border-red-500/30 bg-red-500/5 text-red-400 hover:bg-red-500/10"}`}
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    <span className="font-bold tabular-nums">{kpi.withFlagged}</span> {kpi.withFlagged === 1 ? "артист" : "артистів"} з помилковими контактами
+                  </Link>
+                  {withFlagged && <BatchRescanButton />}
+                </div>
+              )}
+            </div>
+
+            {/* Right: sticky send-ready card */}
+            <aside className="order-1 lg:order-2 lg:sticky lg:top-6 lg:self-start">
+              <Suspense fallback={null}>
+                <BeatportActionCard withEmails={kpi.withEmails} />
+              </Suspense>
+            </aside>
           </div>
         )}
-
-        <div className="mb-4 flex flex-wrap items-center gap-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-[var(--text-muted)]">Сегмент:</span>
-            <Link
-              href={buildQuery({ genre: genreParam ?? undefined, dateFrom: dateFromParam ?? undefined, dateTo: dateToParam ?? undefined, sort, order })}
-              className={`rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${!segment ? "border-transparent" : "border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--text-muted)]"}`}
-              style={!segment ? { boxShadow: "inset 0 0 0 2px var(--accent)", background: "color-mix(in srgb, var(--accent) 10%, transparent)" } : undefined}
-            >
-              Усі
-            </Link>
-            {SEGMENTS_V2.map((s) => {
-              const colors = SEGMENT_CHIP_COLORS[s];
-              const isActive = segment === s;
-              return (
-                <Link
-                  key={s}
-                  href={buildQuery({ segment: s, genre: genreParam ?? undefined, dateFrom: dateFromParam ?? undefined, dateTo: dateToParam ?? undefined, sort, order })}
-                  className={`rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${isActive ? "border-transparent" : "border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--text-muted)]"}`}
-                  style={isActive && colors ? { boxShadow: `inset 0 0 0 2px ${colors.activeText}`, background: `${colors.activeText}1a`, color: colors.activeText } : undefined}
-                >
-                  {SEGMENT_LABELS[s] ?? s}
-                </Link>
-              );
-            })}
-          </div>
-          <LeadsDateRangeFilter
-            segment={segment ?? undefined}
-            genre={genreParam ?? undefined}
-            dateFrom={dateFromParam ?? undefined}
-            dateTo={dateToParam ?? undefined}
-            sort={sort}
-            order={order}
-          />
-          {!error && (
-            <RunEnrichmentOnLeadsButton
-              segment={segment ?? null}
-              genre={genreParam ?? null}
-              dateFrom={dateFromParam ?? null}
-              dateTo={dateToParam ?? null}
-            />
-          )}
-        </div>
 
         {error && (
           <p className="mb-4 rounded bg-amber-500/20 px-3 py-2 text-sm text-amber-200">

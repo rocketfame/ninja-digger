@@ -4,7 +4,7 @@ import { Mail, AtSign, Users } from "lucide-react";
 import { SiSpotify, SiSoundcloud } from "react-icons/si";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { SegmentPreview } from "@/app/components/SegmentPreview";
+import { SendReadyCard } from "@/app/components/SendReadyCard";
 import { SpotifyTabs } from "@/app/components/SpotifyTabs";
 
 export const dynamic = "force-dynamic";
@@ -113,38 +113,17 @@ export default async function SpotifyLeadsPage({ searchParams }: { searchParams:
           </div>
 
           <aside className="lg:sticky lg:top-6 lg:self-start">
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6 text-center">
-              <div className="text-xs uppercase tracking-wider text-[var(--text-muted)]">Готові до розсилки</div>
-              <div className="my-2 text-5xl font-bold tabular-nums text-[var(--accent)]">{n(d.seg?.e)}</div>
-              <div className="text-sm text-[var(--text-muted)]">з email · всього в сегменті <span className="font-semibold text-[var(--text)]">{n(d.seg?.c)}</span></div>
-              <a href={`${exportUrl}${exportUrl.includes("?") ? "&" : "?"}withEmail=1`} download
-                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-5 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)]">
-                <Mail className="h-4 w-4" /> Завантажити {n(d.seg?.e)} з email
-              </a>
-              <SegmentPreview
-                previewUrl={`${exportUrl}${exportUrl.includes("?") ? "&" : "?"}withEmail=1&format=json&limit=200`}
-                downloadUrl={`${exportUrl}${exportUrl.includes("?") ? "&" : "?"}withEmail=1`}
-                count={d.seg?.e ?? 0}
-                accent="#1db954"
-                extraColumns={[{ header: "Фоловери", key: "followers", num: true }, { header: "Spotify", key: "spotify", link: true }, { header: "SC", key: "soundcloud", link: true }, { header: "Сайт/лінк", key: "site", link: true }, { header: "Джерело", key: "source" }]}
-              />
-              {(sp.withEmail || sp.source) && (
-                <Link href="/spotify-leads" className="mt-3 inline-block text-xs text-[var(--text-muted)] underline hover:text-[var(--text)]">скинути фільтри</Link>
-              )}
-              {d.preview.length > 0 && (
-                <div className="mt-5 border-t border-[var(--border)] pt-4 text-left">
-                  <div className="mb-2 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Приклад із сегмента</div>
-                  <ul className="space-y-1.5 text-xs">
-                    {d.preview.map((p) => (
-                      <li key={p.ig_username} className="truncate">
-                        <a href={`https://instagram.com/${p.ig_username}`} target="_blank" rel="noreferrer" className="font-medium hover:text-[var(--accent)]">{p.full_name || "@" + p.ig_username}</a>
-                        {p.email && <span className="text-[var(--text-muted)]"> · {p.email}</span>}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
+            <SendReadyCard
+              count={d.seg?.e ?? 0}
+              downloadUrl={`${exportUrl}${exportUrl.includes("?") ? "&" : "?"}withEmail=1`}
+              downloadLabel={`Завантажити ${n(d.seg?.e)} з email`}
+              previewUrl={`${exportUrl}${exportUrl.includes("?") ? "&" : "?"}withEmail=1&format=json&limit=200`}
+              accent="#1db954"
+              previewColumns={[{ header: "Фоловери", key: "followers", num: true }, { header: "Spotify", key: "spotify", link: true }, { header: "SC", key: "soundcloud", link: true }, { header: "Сайт/лінк", key: "site", link: true }, { header: "Джерело", key: "source" }]}
+              subline={<>з email · всього в сегменті <span className="font-semibold text-[var(--text)]">{n(d.seg?.c)}</span></>}
+              examples={d.preview.map((p) => ({ name: p.full_name || "@" + p.ig_username, email: p.email, link: `https://instagram.com/${p.ig_username}` }))}
+              footer={(sp.withEmail || sp.source) ? <Link href="/spotify-leads" className="mt-3 inline-block text-xs text-[var(--text-muted)] underline hover:text-[var(--text)]">скинути фільтри</Link> : undefined}
+            />
           </aside>
         </div>
       </main>

@@ -47,7 +47,9 @@ export async function GET(request: Request) {
       ).then((r) => r.rows),
       pool.query(`SELECT COUNT(*)::int c FROM sc_artists ${where}`, params).then((r) => r.rows[0]?.c ?? 0),
     ]);
-    return NextResponse.json({ total: totalRow, shown: rows.length, rows });
+    // Add name/link so the shared SegmentPreview renders (keeps original fields).
+    const mapped = rows.map((r) => ({ ...r, name: r.full_name || r.username, link: r.permalink_url }));
+    return NextResponse.json({ total: totalRow, shown: mapped.length, rows: mapped });
   }
 
   const rows = (await pool.query(
