@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-type Col = { header: string; key: string; num?: boolean };
+type Col = { header: string; key: string; num?: boolean; link?: boolean };
 type Row = { name?: string | null; link?: string | null; email?: string | null } & Record<string, unknown>;
 
 /** Generic "preview this email segment" modal, shared across channels. The
@@ -88,11 +88,21 @@ export function SegmentPreview({
                           ) : (
                             <span className="font-medium text-[var(--text)]">{r.name || "—"}</span>
                           )}
+                          {typeof r.handle === "string" && r.handle && <div className="text-[10px] text-[var(--text-muted)]">{r.handle}</div>}
                         </td>
                         <td className="px-4 py-2.5 text-[var(--text-muted)]">{r.email ?? "—"}</td>
-                        {extraColumns.map((c) => (
-                          <td key={c.key} className={`px-4 py-2.5 text-[var(--text-muted)] ${c.num ? "text-right tabular-nums" : ""}`}>{num(r[c.key])}</td>
-                        ))}
+                        {extraColumns.map((c) => {
+                          const v = r[c.key];
+                          if (c.link) {
+                            const url = typeof v === "string" && v ? v : "";
+                            return (
+                              <td key={c.key} className="px-4 py-2.5">
+                                {url ? <a href={url} target="_blank" rel="noreferrer" className="text-[var(--accent)] hover:underline">↗</a> : <span className="text-[var(--text-muted)]">—</span>}
+                              </td>
+                            );
+                          }
+                          return <td key={c.key} className={`px-4 py-2.5 text-[var(--text-muted)] ${c.num ? "text-right tabular-nums" : ""}`}>{num(v)}</td>;
+                        })}
                       </tr>
                     ))}
                   </tbody>

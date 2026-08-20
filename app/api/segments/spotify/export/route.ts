@@ -16,21 +16,25 @@ export async function GET(request: Request) {
   const limit = isJson ? Math.min(parseInt(sp.get("limit") || "200", 10) || 200, 500) : 20000;
   const where = withEmail ? "WHERE email IS NOT NULL" : "";
   const rows = (await pool.query(
-    `SELECT ig_username, full_name, email, followers, spotify_url, soundcloud_url, website, linktree, source_post, lead_status
+    `SELECT ig_username, full_name, email, email_source, followers, spotify_url, soundcloud_url, website, linktree, source_post, lead_status
      FROM spotify_leads ${where} ORDER BY (email IS NOT NULL) DESC, followers DESC NULLS LAST, created_at DESC LIMIT ${limit}`
   ).catch(() => ({ rows: [] }))).rows;
 
   if (isJson) {
     const total = (await pool.query<{ c: number }>(`SELECT COUNT(*)::int c FROM spotify_leads ${where}`).catch(() => ({ rows: [{ c: 0 }] }))).rows[0]?.c ?? 0;
+    const SRC: Record<string, string> = { link_crawl: "з лінку", ig_bio: "з біо", business: "бізнес-email" };
     return NextResponse.json({
       total,
       rows: rows.map((r) => ({
         name: r.full_name || r.ig_username,
+        handle: "@" + r.ig_username,
         link: `https://instagram.com/${r.ig_username}`,
         email: r.email,
         followers: r.followers ?? 0,
-        spotify: r.spotify_url ? "✓" : "",
-        soundcloud: r.soundcloud_url ? "✓" : "",
+        spotify: r.spotify_url || "",
+        soundcloud: r.soundcloud_url || "",
+        site: r.website || r.linktree || "",
+        source: r.email_source ? (SRC[r.email_source] ?? r.email_source) : "",
       })),
     });
   }

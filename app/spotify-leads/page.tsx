@@ -126,7 +126,7 @@ export default async function SpotifyLeadsPage({ searchParams }: { searchParams:
                 downloadUrl={`${exportUrl}${exportUrl.includes("?") ? "&" : "?"}withEmail=1`}
                 count={d.seg?.e ?? 0}
                 accent="#1db954"
-                extraColumns={[{ header: "Фоловери", key: "followers", num: true }, { header: "Spotify", key: "spotify" }, { header: "SC", key: "soundcloud" }]}
+                extraColumns={[{ header: "Фоловери", key: "followers", num: true }, { header: "Spotify", key: "spotify", link: true }, { header: "SC", key: "soundcloud", link: true }, { header: "Сайт/лінк", key: "site", link: true }, { header: "Джерело", key: "source" }]}
               />
               {(sp.withEmail || sp.source) && (
                 <Link href="/spotify-leads" className="mt-3 inline-block text-xs text-[var(--text-muted)] underline hover:text-[var(--text)]">скинути фільтри</Link>
