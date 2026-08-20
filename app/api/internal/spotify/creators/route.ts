@@ -16,8 +16,8 @@ export function OPTIONS() { return new NextResponse(null, { headers: CORS }); }
 
 // Signals that an account is a promo/curator/marketing hub (a good lead source),
 // not just an artist. Higher weight = stronger source signal.
-const STRONG = /(promo|playlist|curator|submit your|music marketing|grow your|spotify growth|a&r|record label|blog|feature your|get your music|music promotion|streams|distribut|independent artists|music network)/i;
-const MED = /(marketing|producer|mixing|mastering|beats|music biz|artist development|management|records|studio|dj)/i;
+const STRONG = /(promo|playlist|curator|submit (your|music)|music marketing|grow your|grow on|spotify growth|a&r|record label|feature your|get your music|music promotion|distribut|independent artists?|music network|exposure|get heard|upload your music|go viral|help (musicians|artists|music)|more streams|get more|pitch your|get signed|music career|scouting|monetiz|sync licensing)/i;
+const MED = /(marketing|producer|mixing|mastering|beats|music biz|artist development|management|records|studio|\bdj\b|songwriter|blog|network|viral|billboard|platinum|coach|mentor)/i;
 
 function scoreCreator(bio: string, category: string | null, followers: number | null): number {
   let s = 0;
