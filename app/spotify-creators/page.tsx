@@ -24,23 +24,30 @@ const NICHE: Record<string, { label: string; icon: ComponentType<{ className?: s
   other: { label: "інше", icon: Minus, on: false, hint: "Нішу не розпізнано за біо/постами — не потрапив у жоден чіткий тип. Точно не таргет." },
 };
 
-async function getData() {
+async function getData(showAll: boolean) {
   const rows = <T extends Record<string, unknown>>(sql: string) => pool.query<T>(sql).then((r) => r.rows).catch(() => [] as T[]);
+  // Default view hides niches the system already judged off-target — show only the
+  // Spotify-promo targets (plus anything already approved/parsed). ?all=1 shows all.
+  const where = showAll ? "" : "WHERE niche = 'spotify_promo' OR status IN ('approved','parsed')";
   const [creators, stats] = await Promise.all([
     rows<Creator>(`SELECT ig_username, full_name, followers, bio, category, score, status, discovered_from, leads_found, avg_comments, mechanic_hits, niche
-                   FROM spotify_creators ORDER BY (status='candidate') DESC, score DESC, followers DESC NULLS LAST LIMIT 300`),
-    pool.query<{ total: number; candidate: number; approved: number; parsed: number }>(
+                   FROM spotify_creators ${where} ORDER BY (status='candidate') DESC, score DESC, followers DESC NULLS LAST LIMIT 300`),
+    pool.query<{ total: number; candidate: number; approved: number; parsed: number; targets: number; offtarget: number }>(
       `SELECT COUNT(*)::int total,
               COUNT(*) FILTER (WHERE status='candidate')::int candidate,
               COUNT(*) FILTER (WHERE status='approved')::int approved,
-              COUNT(*) FILTER (WHERE status='parsed')::int parsed
+              COUNT(*) FILTER (WHERE status='parsed')::int parsed,
+              COUNT(*) FILTER (WHERE niche='spotify_promo' AND status='candidate')::int targets,
+              COUNT(*) FILTER (WHERE niche IS DISTINCT FROM 'spotify_promo' AND status='candidate')::int offtarget
        FROM spotify_creators`).then((r) => r.rows[0]).catch(() => undefined),
   ]);
   return { creators, stats };
 }
 
-export default async function SpotifyCreatorsPage() {
-  const { creators, stats } = await getData();
+export default async function SpotifyCreatorsPage({ searchParams }: { searchParams: Promise<{ all?: string }> }) {
+  const sp = await searchParams;
+  const showAll = sp.all === "1";
+  const { creators, stats } = await getData(showAll);
   const n = (x: number | null | undefined) => (x ?? 0).toLocaleString("uk-UA");
 
   return (
@@ -72,9 +79,18 @@ export default async function SpotifyCreatorsPage() {
           ))}
         </div>
 
+        <div className="mb-4 flex items-center gap-1 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-1 text-sm">
+          <a href="/spotify-creators" className={`rounded-lg px-3.5 py-1.5 font-medium transition-colors ${!showAll ? "bg-[#1db954] text-white" : "text-[var(--text-muted)] hover:text-[var(--text)]"}`}>
+            🎯 Тільки таргети ({n(stats?.targets)})
+          </a>
+          <a href="/spotify-creators?all=1" className={`rounded-lg px-3.5 py-1.5 font-medium transition-colors ${showAll ? "bg-[var(--bg-hover)] text-[var(--text)]" : "text-[var(--text-muted)] hover:text-[var(--text)]"}`}>
+            Усі ({n((stats?.targets ?? 0) + (stats?.offtarget ?? 0))}) <span className="text-[var(--text-muted)]">· +{n(stats?.offtarget)} нерелевантних</span>
+          </a>
+        </div>
+
         {creators.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center text-sm text-[var(--text-muted)]">
-            Ще нема кандидатів. Запусти дискаверинг від its21master.
+            {showAll ? "Ще нема кандидатів. Запусти дискаверинг." : "Нема таргет-джерел на розгляді. Глянь «Усі» або запусти дискаверинг."}
           </div>
         ) : (
           <div className="space-y-2">
