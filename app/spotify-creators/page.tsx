@@ -10,12 +10,13 @@ type Creator = {
   ig_username: string; full_name: string | null; followers: number | null;
   bio: string | null; category: string | null; score: number; status: string;
   discovered_from: string | null; leads_found: number;
+  avg_comments: number | null; mechanic_hits: number | null;
 };
 
 async function getData() {
   const rows = <T extends Record<string, unknown>>(sql: string) => pool.query<T>(sql).then((r) => r.rows).catch(() => [] as T[]);
   const [creators, stats] = await Promise.all([
-    rows<Creator>(`SELECT ig_username, full_name, followers, bio, category, score, status, discovered_from, leads_found
+    rows<Creator>(`SELECT ig_username, full_name, followers, bio, category, score, status, discovered_from, leads_found, avg_comments, mechanic_hits
                    FROM spotify_creators ORDER BY (status='candidate') DESC, score DESC, followers DESC NULLS LAST LIMIT 300`),
     pool.query<{ total: number; candidate: number; approved: number; parsed: number }>(
       `SELECT COUNT(*)::int total,
@@ -80,7 +81,15 @@ export default async function SpotifyCreatorsPage() {
                     {c.bio ? c.bio.replace(/\n/g, " · ").slice(0, 90) : <span className="italic">без біо</span>}
                   </div>
                 </div>
-                <div className="hidden flex-shrink-0 text-right sm:block">
+                <div className="hidden flex-shrink-0 text-right sm:block" title="середня к-сть коментарів на пост — сигнал механіки збору лідів">
+                  {c.avg_comments != null ? (
+                    <div className={`flex items-center justify-end gap-1 text-sm font-semibold tabular-nums ${c.avg_comments >= 100 ? "text-[#1db954]" : c.avg_comments >= 40 ? "text-[#fbbf24]" : "text-[var(--text-muted)]"}`}>
+                      💬 {n(c.avg_comments)}{c.mechanic_hits ? <span className="text-[10px]">⚡</span> : null}
+                    </div>
+                  ) : <div className="text-xs text-[var(--text-muted)]">—</div>}
+                  <div className="text-[10px] text-[var(--text-muted)]">сер. коментів/пост</div>
+                </div>
+                <div className="hidden flex-shrink-0 text-right md:block">
                   <div className="flex items-center gap-1 text-sm font-medium tabular-nums"><Users className="h-3 w-3 text-[var(--text-muted)]" />{n(c.followers)}</div>
                   {c.discovered_from && <div className="text-[10px] text-[var(--text-muted)]">від @{c.discovered_from}</div>}
                 </div>
