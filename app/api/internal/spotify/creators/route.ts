@@ -25,18 +25,23 @@ const MED = /(marketing|producer|mixing|mastering|beats|music biz|artist develop
 // The discriminator is music-promo vs video-content — not Spotify-only.
 const MUSIC_PROMO = /spotify|playlist|stream(s|ing)?|apple music|deezer|tidal|exposure|help (musicians|artists|music)|get more (fans|streams|listeners|exposure|plays)|music promotion|music marketing|grow your (music|streams|spotify|audience|fanbase|fans)|submit your music|get (your )?music (heard|out|on)|get heard|get discovered|distribut|record (deal|label)|\ba&r\b|pitch your (song|music|track)|get playlisted|more (streams|listeners|fans)/i;
 const CONTENT = /viral (production|video|content|reel|clip)|content (shoot|creator|creation|strateg|ideas)|videograph|filmmaker|cinematograph|book (your|a) (shoot|content|next|session)|shoot with us|video (production|shoot|editing|team)|social media (manager|content|growth)|grow on (instagram|ig|tiktok|social)|reels? (strateg|tips|growth)|instagram growth|\bphotograph|\bfilm\b/i;
-const PRODUCER = /fl studio|ableton|logic pro|mixing|mastering|\bplugin|sample pack|preset|beat (tutorial|tips)|how to produce|music production tutorial|sound design|one knob|drum (sample|kit)/i;
+const PRODUCER = /fl studio|ableton|logic pro|mixing|master(ing|ed)?|mix engineer|audio engineer|your mixes|\bmixes\b|\bplugin|sample pack|preset|beat(maker| (tutorial|tips))|how to produce|music production|sound design|one knob|drum (sample|kit)|mix (&|and) master|vocal (mix|chain|preset)|\bbeats\b|mix with/i;
+const ARTIST = /platinum (billboard )?(recording )?artist|billboard(-| )?(charting )?artist|grammy|recording artist|singer.?songwriter|\bsinger\b|\brapper\b|\bvocalist\b|my (debut |new )?(single|album|ep|song|music) (out|is|available)|out now|new (single|release) (out|available)|\bmy music\b/i;
 
 /** Classify a creator's niche. Music-promo is the target; video-content, producer
- *  education and IG-growth are off-target even when they farm comments. */
+ *  education, IG-growth and artists (leads, not sources) are off-target even when
+ *  they farm comments. Uses bio + full name + category. */
 function classifyNiche(text: string, promoHits: number, contentHits: number): string {
   const music = MUSIC_PROMO.test(text);
   const content = CONTENT.test(text);
   const producer = PRODUCER.test(text);
+  const artist = ARTIST.test(text);
   // Unambiguous video-content signals win — unless music-promo clearly dominates.
-  if (content && (!music || contentHits > promoHits)) return content && /grow on (instagram|ig)|instagram growth/.test(text) ? "ig_growth" : "viral_video";
-  if (music || promoHits >= 1) return "spotify_promo";
+  if (content && (!music || contentHits > promoHits)) return /grow on (instagram|ig)|instagram growth/.test(text) ? "ig_growth" : "viral_video";
+  // Music-promo is the target, but a plain artist bio (no service offer) is a lead.
+  if ((music || promoHits >= 1) && !(artist && !music)) return "spotify_promo";
   if (producer) return "producer_edu";
+  if (artist) return "artist";
   if (contentHits > 0) return "viral_video";
   return "other";
 }
@@ -47,8 +52,8 @@ function classifyNiche(text: string, promoHits: number, contentHits: number): st
  * (viral video, producer education, IG growth) is capped low no matter how many
  * comments — its commenters aren't artists chasing streams.
  */
-function scoreCreator(o: { bio: string; category: string | null; followers: number | null; avgComments?: number | null; mechanicHits?: number | null; promoHits?: number | null; contentHits?: number | null }): { score: number; niche: string } {
-  const text = `${o.bio} ${o.category ?? ""}`;
+function scoreCreator(o: { bio: string; name?: string | null; category: string | null; followers: number | null; avgComments?: number | null; mechanicHits?: number | null; promoHits?: number | null; contentHits?: number | null }): { score: number; niche: string } {
+  const text = `${o.bio} ${o.name ?? ""} ${o.category ?? ""}`;
   const promoHits = o.promoHits ?? 0;
   const contentHits = o.contentHits ?? 0;
   const niche = classifyNiche(text, promoHits, contentHits);
@@ -79,7 +84,7 @@ export async function POST(request: Request) {
   for (const it of items) {
     const username = String(it.username ?? "").trim().replace(/^@/, "").toLowerCase();
     if (!username) continue;
-    const { score, niche } = scoreCreator({ bio: it.bio ?? "", category: it.category ?? null, followers: it.followers ?? null, avgComments: it.avgComments, mechanicHits: it.mechanicHits, promoHits: it.promoHits, contentHits: it.contentHits });
+    const { score, niche } = scoreCreator({ bio: it.bio ?? "", name: it.full_name ?? null, category: it.category ?? null, followers: it.followers ?? null, avgComments: it.avgComments, mechanicHits: it.mechanicHits, promoHits: it.promoHits, contentHits: it.contentHits });
     const res = await pool.query(
       `INSERT INTO spotify_creators (ig_username, ig_id, full_name, followers, bio, category, score, niche, discovered_from, avg_comments, mechanic_hits, promo_hits, content_hits, sampled_posts, is_reel_heavy, status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'candidate')
