@@ -177,7 +177,7 @@ export async function buildFullReport(period?: string): Promise<string> {
     // Spotify
     spLeads, spNew, spEmail, spEnriched, spGold, spDiamond, spSentToday, spSentTotal, spReplied, spOpened, spCreators, spTargets, spPaused,
     // shared
-    domSent, dbMb,
+    domSent, dbMb, bpEmailNew, spEmailNew,
   ] = await Promise.all([
     n("SELECT COUNT(*)::int c FROM lead_scores"),
     n("SELECT COUNT(*)::int c FROM artist_metrics WHERE first_seen >= CURRENT_DATE"),
@@ -220,6 +220,8 @@ export async function buildFullReport(period?: string): Promise<string> {
     getSetting("sp_outreach_paused"),
     n("SELECT COUNT(*)::int c FROM outreach_events WHERE channel='email' AND sent_at >= CURRENT_DATE"),
     pool.query<{ c: number }>("SELECT (pg_database_size(current_database())/1048576.0)::numeric(10,1) c").then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0),
+    n("SELECT COUNT(DISTINCT artist_beatport_id)::int c FROM artist_contacts WHERE type='email' AND created_at >= CURRENT_DATE"),
+    n("SELECT COUNT(*)::int c FROM spotify_leads WHERE enriched_at >= CURRENT_DATE AND email IS NOT NULL"),
   ]);
 
   const f = (x: number) => x.toLocaleString("uk-UA");
@@ -231,24 +233,24 @@ export async function buildFullReport(period?: string): Promise<string> {
   return (
     `<b>${head}</b>\n` +
     `\n<b>━ BEATPORT</b> · ${status(bpPaused)}\n` +
-    `Лідів у базі: <b>${f(bpLeads)}</b>${plus(bpNew)}\n` +
-    `📧 email: ${f(bpEmail)}  ·  🥇 золото: ${f(bpGold)}  ·  💎 діаманти: ${f(bpDiamond)}\n` +
+    `Лідів знайдено: <b>${f(bpLeads)}</b>${plus(bpNew)}\n` +
+    `📧 ${f(bpEmail)}${plus(bpEmailNew)}   🥇 ${f(bpGold)}   💎 ${f(bpDiamond)}\n` +
     `Надіслано: ${f(bpSentToday)} сьогодні · ${f(bpSentTotal)} всього\n` +
-    `Відповіли: <b>${f(bpReplied)}</b>  ·  угод: ${f(bpWon)}  ·  черга: ${f(bpQueue)}\n` +
+    `💬 відповіли: <b>${f(bpReplied)}</b>  ·  угод: ${f(bpWon)}  ·  черга: ${f(bpQueue)}\n` +
     `\n<b>━ SOUNDCLOUD</b> · ${status(scPaused)}\n` +
-    `Артистів: <b>${f(scArtists)}</b>${plus(scNew)}\n` +
-    `📧 email: ${f(scEmail)}${plus(scEmailNew)}  ·  🥇 золото: ${f(scGold)}  ·  💎 діаманти: ${f(scDiamond)}\n` +
+    `Артистів знайдено: <b>${f(scArtists)}</b>${plus(scNew)}\n` +
+    `📧 ${f(scEmail)}${plus(scEmailNew)}   🥇 ${f(scGold)}   💎 ${f(scDiamond)}\n` +
     `Надіслано: ${f(scSentToday)} сьогодні · ${f(scSentTotal)} всього\n` +
-    `Відповіли: <b>${f(scReplied)}</b>  ·  bounce: ${f(scBounce)}  ·  відписки: ${f(scUnsub)}\n` +
-    `Черга: ${f(scQueue)}  ·  канали опрацьовано: ${f(scSeedsDone)}/${f(scSeeds)}\n` +
+    `💬 відповіли: <b>${f(scReplied)}</b>  ·  bounce: ${f(scBounce)}  ·  відписки: ${f(scUnsub)}\n` +
+    `Черга: ${f(scQueue)}  ·  канали: ${f(scSeedsDone)}/${f(scSeeds)}\n` +
     `\n<b>━ SPOTIFY</b> · ${status(spPaused)}\n` +
-    `Лідів: <b>${f(spLeads)}</b>${plus(spNew)}  ·  збагачено: ${f(spEnriched)}\n` +
-    `📧 email: ${f(spEmail)}  ·  🥇 золото: ${f(spGold)}  ·  💎 діаманти: ${f(spDiamond)}\n` +
+    `Лідів знайдено: <b>${f(spLeads)}</b>${plus(spNew)}\n` +
+    `📧 ${f(spEmail)}${plus(spEmailNew)}   🥇 ${f(spGold)}   💎 ${f(spDiamond)}\n` +
     `Надіслано: ${f(spSentToday)} сьогодні · ${f(spSentTotal)} всього\n` +
-    `Відповіли: <b>${f(spReplied)}</b>  ·  відкрили: ${f(spOpened)}\n` +
-    `Креатори-джерела: ${f(spCreators)}  ·  таргетів: ${f(spTargets)}\n` +
+    `💬 відповіли: <b>${f(spReplied)}</b>  ·  відкрили: ${f(spOpened)}\n` +
+    `Джерела-креатори: ${f(spCreators)}  ·  🎯 таргетів: ${f(spTargets)}\n` +
     `\n<b>━ РАЗОМ</b>\n` +
-    `Розсилка сьогодні: ${f(bpSentToday + scSentToday + spSentToday)} (домен ${f(domSent)}/280)\n` +
+    `Надіслано сьогодні: ${f(bpSentToday + scSentToday + spSentToday)} (домен ${f(domSent)}/280)\n` +
     `База: ${dbMb} / 512 MB`
   );
 }
