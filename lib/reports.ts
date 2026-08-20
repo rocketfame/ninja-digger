@@ -169,7 +169,7 @@ export async function buildFullReport(): Promise<string> {
   const [
     scArtists, scSeedsDone, scSeeds, scEmail, scGold, scDiamond, scSentToday, scOpened, scReplied,
     bpLeads, bpEmail, bpSentToday, bpReplied, bpWon, dbMb, scPaused,
-    spLeads, spEmail, spGold, spSpotify, spSentToday, spOpened, spReplied, spPaused,
+    spLeads, spEmail, spGold, spSpotify, spSentToday, spOpened, spReplied, spPaused, spCreators, spTargets,
   ] = await Promise.all([
     n("SELECT COUNT(*)::int c FROM sc_artists WHERE track_count>=1"),
     n("SELECT COUNT(*)::int c FROM sc_seed_accounts WHERE active AND completed_at IS NOT NULL"),
@@ -195,6 +195,8 @@ export async function buildFullReport(): Promise<string> {
     n("SELECT COUNT(*)::int c FROM spotify_leads WHERE opens>0"),
     n("SELECT COUNT(*)::int c FROM spotify_leads WHERE lead_status='Responded'"),
     getSetting("sp_outreach_paused"),
+    n("SELECT COUNT(*)::int c FROM spotify_creators").catch(() => 0),
+    n("SELECT COUNT(*) FILTER (WHERE status='candidate' AND niche='spotify_promo')::int c FROM spotify_creators").catch(() => 0),
   ]);
   const dbFlag = dbMb > 460 ? "🔴" : dbMb > 400 ? "🟡" : "🟢";
   return (
@@ -212,7 +214,8 @@ export async function buildFullReport(): Promise<string> {
     `  🔎 Лідів: ${spLeads} · 📧 email: ${spEmail} · 🎧 Spotify: ${spSpotify}\n` +
     `  🏆 золото: ${spGold}\n` +
     `  📤 Надіслано сьогодні: ${spSentToday} (${spPaused === "1" ? "⏸ пауза" : "🟢 активна"})\n` +
-    `  👀 Відкрили: ${spOpened} · 💬 відповіли: ${spReplied}\n\n` +
+    `  👀 Відкрили: ${spOpened} · 💬 відповіли: ${spReplied}\n` +
+    `  🔍 Креатори-джерела: ${spCreators} · 🎯 таргетів: ${spTargets}\n\n` +
     `${dbFlag} База: ${dbMb} / 512 MB`
   );
 }
