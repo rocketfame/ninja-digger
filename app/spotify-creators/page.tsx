@@ -1,7 +1,7 @@
 import { pool } from "@/lib/db";
 import { NavBar } from "@/app/components/NavBar";
 import { SiInstagram, SiSpotify } from "react-icons/si";
-import { Users } from "lucide-react";
+import { Users, ExternalLink } from "lucide-react";
 import { CreatorActions } from "./CreatorActions";
 import { SpotifyTabs } from "@/app/components/SpotifyTabs";
 
@@ -70,9 +70,10 @@ export default async function SpotifyCreatorsPage() {
           <div className="space-y-2">
             {creators.map((c) => (
               <div key={c.ig_username} className="flex items-center gap-4 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
-                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-[#1db954]/10">
+                <a href={`https://instagram.com/${c.ig_username}`} target="_blank" rel="noreferrer" title="Відкрити канал в Instagram"
+                  className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-[#e1306c]/10 transition-colors hover:bg-[#e1306c]/25">
                   <SiInstagram className="h-4 w-4 text-[#e1306c]" />
-                </div>
+                </a>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <a href={`https://instagram.com/${c.ig_username}`} target="_blank" rel="noreferrer" className="truncate font-semibold hover:text-[var(--accent)]">
@@ -101,6 +102,10 @@ export default async function SpotifyCreatorsPage() {
                     {c.score}
                   </span>
                 </div>
+                <a href={`https://instagram.com/${c.ig_username}`} target="_blank" rel="noreferrer" title="Відкрити канал в Instagram"
+                  className="flex flex-shrink-0 items-center gap-1.5 rounded-md border border-[var(--border)] px-2.5 py-1 text-xs font-medium text-[var(--text-muted)] transition-colors hover:border-[#e1306c]/60 hover:text-[#e1306c]">
+                  <ExternalLink className="h-3.5 w-3.5" /> <span className="hidden lg:inline">Канал</span>
+                </a>
                 <div className="flex-shrink-0">
                   <CreatorActions username={c.ig_username} status={c.status} />
                 </div>
