@@ -15,13 +15,13 @@ type Creator = {
   avg_comments: number | null; mechanic_hits: number | null; niche: string | null;
 };
 
-const NICHE: Record<string, { label: string; icon: ComponentType<{ className?: string; style?: React.CSSProperties }>; on: boolean }> = {
-  spotify_promo: { label: "Таргет · Spotify-промо", icon: SiSpotify, on: true },
-  viral_video: { label: "Вірусне відео", icon: Film, on: false },
-  producer_edu: { label: "Продюсер-освіта", icon: SlidersHorizontal, on: false },
-  ig_growth: { label: "IG-ріст", icon: SiInstagram, on: false },
-  artist: { label: "Артист", icon: Music, on: false },
-  other: { label: "інше", icon: Minus, on: false },
+const NICHE: Record<string, { label: string; icon: ComponentType<{ className?: string; style?: React.CSSProperties }>; on: boolean; hint: string }> = {
+  spotify_promo: { label: "Таргет · Spotify-промо", icon: SiSpotify, on: true, hint: "🎯 НАШ ТАРГЕТ. Просуває музику на Spotify/стрімінгах — його коментатори це артисти, що шукають просування (гарячі ліди)." },
+  viral_video: { label: "Вірусне відео", icon: Film, on: false, hint: "Продає вірусні відео/reels/зйомки контенту. Коментатори — контент-креатори, а не музиканти. НЕ таргет." },
+  producer_edu: { label: "Продюсер-освіта", icon: SlidersHorizontal, on: false, hint: "Вчить зводити/продюсувати (FL Studio, mixing, mastering). Коментатори — продюсери, не промо-ліди. НЕ таргет." },
+  ig_growth: { label: "IG-ріст", icon: SiInstagram, on: false, hint: "Вчить рости в Instagram. Про соцмережі, не про Spotify-стрімінг. НЕ таргет." },
+  artist: { label: "Артист", icon: Music, on: false, hint: "Сам виконавець/артист. Це радше ЛІД, ніж джерело лідів. НЕ таргет як сід." },
+  other: { label: "інше", icon: Minus, on: false, hint: "Нішу не розпізнано за біо/постами — не потрапив у жоден чіткий тип. Точно не таргет." },
 };
 
 async function getData() {
@@ -97,8 +97,9 @@ export default async function SpotifyCreatorsPage() {
                     </a>
                     <span className="text-xs text-[var(--text-muted)]">@{c.ig_username}</span>
                     {(() => { const nm = NICHE[c.niche ?? "other"] ?? NICHE.other; const Ic = nm.icon; return (
-                      <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${nm.on ? "bg-[#1db954] text-white shadow-[0_0_0_1px_rgba(29,185,84,0.3)]" : "bg-[var(--bg-hover)] text-[var(--text-muted)]"}`}>
+                      <span title={nm.hint} className={`inline-flex cursor-help items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${nm.on ? "bg-[#1db954] text-white shadow-[0_0_0_1px_rgba(29,185,84,0.3)]" : "bg-[var(--bg-hover)] text-[var(--text-muted)]"}`}>
                         <Ic className="h-3 w-3" /> {nm.label}
+                        <span className="opacity-60">ⓘ</span>
                       </span>
                     ); })()}
                   </div>
