@@ -28,7 +28,9 @@ async function getData(showAll: boolean) {
   const rows = <T extends Record<string, unknown>>(sql: string) => pool.query<T>(sql).then((r) => r.rows).catch(() => [] as T[]);
   // Default view hides niches the system already judged off-target — show only the
   // Spotify-promo targets (plus anything already approved/parsed). ?all=1 shows all.
-  const where = showAll ? "" : "WHERE niche = 'spotify_promo' OR status IN ('approved','parsed')";
+  // Always hide the root seed (its21master) — it's the discovery origin, not a candidate.
+  const base = "COALESCE(discovered_from,'') <> 'seed'";
+  const where = showAll ? `WHERE ${base}` : `WHERE ${base} AND (niche = 'spotify_promo' OR status IN ('approved','parsed'))`;
   const [creators, stats] = await Promise.all([
     rows<Creator>(`SELECT ig_username, full_name, followers, bio, category, score, status, discovered_from, leads_found, avg_comments, mechanic_hits, niche
                    FROM spotify_creators ${where} ORDER BY (status='candidate') DESC, score DESC, followers DESC NULLS LAST LIMIT 300`),
