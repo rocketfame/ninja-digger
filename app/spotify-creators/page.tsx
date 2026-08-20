@@ -1,8 +1,9 @@
 import { pool } from "@/lib/db";
 import { NavBar } from "@/app/components/NavBar";
 import { SiInstagram, SiSpotify } from "react-icons/si";
-import { Users, Search } from "lucide-react";
+import { Users } from "lucide-react";
 import { CreatorActions } from "./CreatorActions";
+import { SpotifyTabs } from "@/app/components/SpotifyTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -38,12 +39,14 @@ export default async function SpotifyCreatorsPage() {
       <main className="mx-auto max-w-5xl px-5 py-10">
         <div className="mb-8">
           <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
-            <Search className="h-6 w-6 text-[#1db954]" /> Пошук креаторів
+            <SiSpotify style={{ color: "#1db954" }} className="h-6 w-6" /> Spotify · Креатори
           </h1>
           <p className="mt-1 text-sm text-[var(--text-muted)]">
-            Схожі на its21master промо-акаунти в Instagram. Схвалюй найкращі — і кожен стане джерелом сотень нових лідів.
+            Джерела лідів — промо-акаунти в Instagram зі Spotify-механікою коментарів. Схвалюй найкращі, кожен = сотні нових лідів.
           </p>
         </div>
+
+        <SpotifyTabs />
 
         <div className="mb-8 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
           {[

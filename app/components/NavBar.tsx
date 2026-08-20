@@ -2,18 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, BarChart3, Search } from "lucide-react";
+import { Home, BarChart3 } from "lucide-react";
 import { SiBeatport, SiSoundcloud, SiSpotify } from "react-icons/si";
 import type { ComponentType } from "react";
 
 type IconCmp = ComponentType<{ className?: string; style?: React.CSSProperties }>;
 
-const NAV_ITEMS: { href: string; label: string; icon: IconCmp; brand?: string; exact?: boolean }[] = [
+const NAV_ITEMS: { href: string; label: string; icon: IconCmp; brand?: string; exact?: boolean; match?: string }[] = [
   { href: "/", label: "Головна", icon: Home, exact: true },
   { href: "/leads", label: "Beatport", icon: SiBeatport, brand: "#a3ff12" },
   { href: "/sc-leads", label: "SoundCloud", icon: SiSoundcloud, brand: "#ff5500" },
-  { href: "/spotify-leads", label: "Spotify", icon: SiSpotify, brand: "#1db954" },
-  { href: "/spotify-creators", label: "Креатори", icon: Search, brand: "#1db954" },
+  { href: "/spotify-leads", label: "Spotify", icon: SiSpotify, brand: "#1db954", match: "/spotify-" },
   { href: "/analytics", label: "Аналітика", icon: BarChart3 },
 ];
 
@@ -36,7 +35,7 @@ export function NavBar() {
 
         <div className="flex items-center gap-0.5">
           {NAV_ITEMS.map((item) => {
-            const isActive = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+            const isActive = item.exact ? pathname === item.href : pathname.startsWith(item.match ?? item.href);
             const Icon = item.icon;
             return (
               <Link

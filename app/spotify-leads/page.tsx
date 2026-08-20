@@ -5,6 +5,7 @@ import { SiSpotify, SiSoundcloud } from "react-icons/si";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { SegmentPreview } from "@/app/components/SegmentPreview";
+import { SpotifyTabs } from "@/app/components/SpotifyTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,8 @@ export default async function SpotifyLeadsPage({ searchParams }: { searchParams:
           <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight"><SiSpotify style={{ color: "#1db954" }} className="h-6 w-6" /> Spotify Leads</h1>
           <p className="mt-1 text-sm text-[var(--text-muted)]">Коментатори промо-креаторів в Instagram — гарячі ліди, що шукають просування.</p>
         </div>
+
+        <SpotifyTabs />
 
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           <div className="space-y-6">
