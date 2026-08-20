@@ -75,20 +75,20 @@ export default async function SpotifyCreatorsPage() {
               <span><b className="text-[var(--text)]">скор</b> — релевантність як Spotify-промо-джерела (≥60 = топ)</span>
             </div>
             {creators.map((c) => (
-              <div key={c.ig_username} className="flex items-center gap-4 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
+              <div key={c.ig_username} className="flex items-start gap-4 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
                 <a href={`https://instagram.com/${c.ig_username}`} target="_blank" rel="noreferrer" title="Відкрити канал в Instagram"
                   className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-[#e1306c]/10 transition-colors hover:bg-[#e1306c]/25">
                   <SiInstagram className="h-4 w-4 text-[#e1306c]" />
                 </a>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <a href={`https://instagram.com/${c.ig_username}`} target="_blank" rel="noreferrer" className="truncate font-semibold hover:text-[var(--accent)]">
+                  <div className="flex flex-wrap items-center gap-x-2">
+                    <a href={`https://instagram.com/${c.ig_username}`} target="_blank" rel="noreferrer" className="font-semibold hover:text-[var(--accent)]">
                       {c.full_name || c.ig_username}
                     </a>
                     <span className="text-xs text-[var(--text-muted)]">@{c.ig_username}</span>
                   </div>
-                  <div className="truncate text-xs text-[var(--text-muted)]">
-                    {c.bio ? c.bio.replace(/\n/g, " · ").slice(0, 90) : <span className="italic">без біо</span>}
+                  <div className="mt-0.5 whitespace-pre-line text-xs leading-snug text-[var(--text-muted)]">
+                    {c.bio || <span className="italic">без біо</span>}
                   </div>
                 </div>
                 <div className="hidden flex-shrink-0 text-right sm:block" title="середня к-сть коментарів на пост — сигнал механіки збору лідів">
