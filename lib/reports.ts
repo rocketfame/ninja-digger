@@ -232,18 +232,18 @@ export async function buildFullReport(period?: string): Promise<string> {
     `<b>${head}</b>\n` +
     `\n<b>━ BEATPORT</b> · ${status(bpPaused)}\n` +
     `Лідів у базі: <b>${f(bpLeads)}</b>${plus(bpNew)}\n` +
-    `З email: ${f(bpEmail)}  ·  золото: ${f(bpGold)}  ·  діаманти: ${f(bpDiamond)}\n` +
+    `📧 email: ${f(bpEmail)}  ·  🥇 золото: ${f(bpGold)}  ·  💎 діаманти: ${f(bpDiamond)}\n` +
     `Надіслано: ${f(bpSentToday)} сьогодні · ${f(bpSentTotal)} всього\n` +
     `Відповіли: <b>${f(bpReplied)}</b>  ·  угод: ${f(bpWon)}  ·  черга: ${f(bpQueue)}\n` +
     `\n<b>━ SOUNDCLOUD</b> · ${status(scPaused)}\n` +
     `Артистів: <b>${f(scArtists)}</b>${plus(scNew)}\n` +
-    `З email: ${f(scEmail)}${plus(scEmailNew)}  ·  золото: ${f(scGold)}  ·  діаманти: ${f(scDiamond)}\n` +
+    `📧 email: ${f(scEmail)}${plus(scEmailNew)}  ·  🥇 золото: ${f(scGold)}  ·  💎 діаманти: ${f(scDiamond)}\n` +
     `Надіслано: ${f(scSentToday)} сьогодні · ${f(scSentTotal)} всього\n` +
     `Відповіли: <b>${f(scReplied)}</b>  ·  bounce: ${f(scBounce)}  ·  відписки: ${f(scUnsub)}\n` +
     `Черга: ${f(scQueue)}  ·  канали опрацьовано: ${f(scSeedsDone)}/${f(scSeeds)}\n` +
     `\n<b>━ SPOTIFY</b> · ${status(spPaused)}\n` +
     `Лідів: <b>${f(spLeads)}</b>${plus(spNew)}  ·  збагачено: ${f(spEnriched)}\n` +
-    `З email: ${f(spEmail)}  ·  золото: ${f(spGold)}  ·  діаманти: ${f(spDiamond)}\n` +
+    `📧 email: ${f(spEmail)}  ·  🥇 золото: ${f(spGold)}  ·  💎 діаманти: ${f(spDiamond)}\n` +
     `Надіслано: ${f(spSentToday)} сьогодні · ${f(spSentTotal)} всього\n` +
     `Відповіли: <b>${f(spReplied)}</b>  ·  відкрили: ${f(spOpened)}\n` +
     `Креатори-джерела: ${f(spCreators)}  ·  таргетів: ${f(spTargets)}\n` +
