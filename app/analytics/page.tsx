@@ -1,7 +1,8 @@
 import { pool } from "@/lib/db";
 import { NavBar } from "@/app/components/NavBar";
 import { STATUS_UA } from "@/lib/statusLabels";
-import { Disc3, Cloud, Send, MailOpen, Trophy, TriangleAlert, Reply } from "lucide-react";
+import { Send, MailOpen, Trophy, TriangleAlert, Reply, Gem } from "lucide-react";
+import { SiSoundcloud, SiBeatport, SiSpotify } from "react-icons/si";
 import type { ReactNode } from "react";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,7 @@ async function getData() {
   const [
     bpToday, bpTotal, bpEmail, bpBounced, bpReplied, bpWon, bpStatuses, bpTouches, bpDaily,
     scSentTotal, scSentToday, scDelivered, scOpened, scGold, scReplied, scBounced, scTouches,
+    spSentTotal, spSentToday, spDelivered, spOpened, spGold, spDiamond, spReplied, spBounced, spTouches,
   ] = await Promise.all([
     q("SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'email_touch_%' AND sent_at >= CURRENT_DATE"),
     q("SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'email_touch_%'"),
@@ -35,11 +37,21 @@ async function getData() {
     q("SELECT COUNT(*)::int c FROM sc_artists WHERE lead_status='Responded'"),
     q("SELECT COUNT(*)::int c FROM sc_artists WHERE lead_status='Bounced'"),
     rows<TouchRow>(`SELECT template_id, COUNT(*)::int total, COUNT(*) FILTER (WHERE sent_at >= CURRENT_DATE-7)::int last7d FROM outreach_events WHERE template_id LIKE 'sc_touch_%' GROUP BY 1 ORDER BY 1`),
+    q("SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sp_touch_%'"),
+    q("SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sp_touch_%' AND sent_at >= CURRENT_DATE"),
+    q("SELECT COUNT(*)::int c FROM spotify_leads WHERE delivered_at IS NOT NULL"),
+    q("SELECT COUNT(*)::int c FROM spotify_leads WHERE opens > 0"),
+    q("SELECT COUNT(*)::int c FROM spotify_leads WHERE email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub') AND (opens>0 OR lead_status='Responded' OR delivered_at IS NOT NULL)"),
+    q("SELECT COUNT(*)::int c FROM spotify_leads WHERE email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub') AND (opens>0 OR clicks>0 OR lead_status='Responded')"),
+    q("SELECT COUNT(*)::int c FROM spotify_leads WHERE lead_status='Responded'"),
+    q("SELECT COUNT(*)::int c FROM spotify_leads WHERE lead_status='Bounced'"),
+    rows<TouchRow>(`SELECT template_id, COUNT(*)::int total, COUNT(*) FILTER (WHERE sent_at >= CURRENT_DATE-7)::int last7d FROM outreach_events WHERE template_id LIKE 'sp_touch_%' GROUP BY 1 ORDER BY 1`),
   ]);
 
   return {
     bp: { today: bpToday, total: bpTotal, email: bpEmail, bounced: bpBounced, replied: bpReplied, won: bpWon, statuses: bpStatuses, touches: bpTouches, daily: bpDaily },
     sc: { sentTotal: scSentTotal, sentToday: scSentToday, delivered: scDelivered, opened: scOpened, gold: scGold, replied: scReplied, bounced: scBounced, touches: scTouches },
+    sp: { sentTotal: spSentTotal, sentToday: spSentToday, delivered: spDelivered, opened: spOpened, gold: spGold, diamond: spDiamond, replied: spReplied, bounced: spBounced, touches: spTouches },
   };
 }
 
@@ -57,6 +69,7 @@ function Stat({ icon, label, value, color }: { icon: ReactNode; label: string; v
 export default async function AnalyticsPage() {
   const d = await getData();
   const openRate = d.sc.delivered > 0 ? Math.round((d.sc.opened / d.sc.delivered) * 100) : 0;
+  const spOpenRate = d.sp.delivered > 0 ? Math.round((d.sp.opened / d.sp.delivered) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
@@ -67,10 +80,27 @@ export default async function AnalyticsPage() {
           <p className="mt-1 text-sm text-[var(--text-muted)]">Розсилка й конверсії по каналах.</p>
         </div>
 
+        {/* Spotify */}
+        <section className="mb-8">
+          <div className="mb-3 flex items-center gap-2">
+            <SiSpotify className="h-5 w-5" style={{ color: "#1db954" }} />
+            <h2 className="text-lg font-semibold">Spotify</h2>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <Stat icon={<Send className="h-3.5 w-3.5" />} label="Надіслано" value={d.sp.sentTotal} color="#1db954" />
+            <Stat icon={<Send className="h-3.5 w-3.5" />} label="Сьогодні" value={d.sp.sentToday} />
+            <Stat icon={<MailOpen className="h-3.5 w-3.5" />} label="Відкрили" value={d.sp.opened} color="#60a5fa" />
+            <Stat icon={<Reply className="h-3.5 w-3.5" />} label="Відповіли" value={d.sp.replied} color="#4ade80" />
+            <Stat icon={<Trophy className="h-3.5 w-3.5" />} label="Золото" value={d.sp.gold} color="#fbbf24" />
+            <Stat icon={<Gem className="h-3.5 w-3.5" />} label="Діаманти" value={d.sp.diamond} color="#38bdf8" />
+          </div>
+          <div className="mt-2 text-xs text-[var(--text-muted)]">Open-rate: <span className="font-semibold text-[var(--text)]">{spOpenRate}%</span> (відкрили {d.sp.opened} з {d.sp.delivered} доставлених) · дотики: {d.sp.touches.map((t) => `${t.template_id.slice(-1)}:${t.total}`).join(" · ") || "—"}</div>
+        </section>
+
         {/* SoundCloud */}
         <section className="mb-8">
           <div className="mb-3 flex items-center gap-2">
-            <Cloud className="h-5 w-5 text-[var(--accent)]" />
+            <SiSoundcloud className="h-5 w-5" style={{ color: "#ff5500" }} />
             <h2 className="text-lg font-semibold">SoundCloud</h2>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -87,7 +117,7 @@ export default async function AnalyticsPage() {
         {/* Beatport */}
         <section>
           <div className="mb-3 flex items-center gap-2">
-            <Disc3 className="h-5 w-5 text-[var(--accent)]" />
+            <SiBeatport className="h-5 w-5" style={{ color: "#a3ff12" }} />
             <h2 className="text-lg font-semibold">Beatport</h2>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
