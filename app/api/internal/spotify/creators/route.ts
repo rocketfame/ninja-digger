@@ -19,42 +19,55 @@ export function OPTIONS() { return new NextResponse(null, { headers: CORS }); }
 const STRONG = /(promo|playlist|curator|submit (your|music)|music marketing|grow your|grow on|spotify growth|a&r|record label|feature your|get your music|music promotion|distribut|independent artists?|music network|exposure|get heard|upload your music|go viral|help (musicians|artists|music)|more streams|get more|pitch your|get signed|music career|scouting|monetiz|sync licensing)/i;
 const MED = /(marketing|producer|mixing|mastering|beats|music biz|artist development|management|records|studio|\bdj\b|songwriter|blog|network|viral|billboard|platinum|coach|mentor)/i;
 
-// The Spotify / music-promo angle — the account's mechanic must be FOR music
-// promotion, not generic content/producer-education. Checked in bio AND captions.
-const SPOTIFY_PROMO = /spotify|playlist|stream(s|ing)?|get heard|get (on )?playlist|editorial|promotion|\bpromo\b|grow your (streams|spotify|music|audience)|get your music (heard|out)|music marketing|submit your music|pitch your|get playlisted|apple music|deezer|go viral|exposure|more (streams|fans|listeners)|music promo/i;
+// Niche signals. Our ONLY target is Spotify/streaming music promotion. "Viral"
+// alone is a trap — rapvilleuk farms comments but sells viral VIDEO/content shoots
+// (its commenters are content creators, not artists chasing streams).
+const STREAMING = /spotify|playlist|stream(s|ing)?|apple music|deezer|tidal|get (your )?music (heard|out|on)|get playlisted|editorial|distribut|music promotion|submit your music|pitch your (song|music|track|record)|more (streams|listeners)|get discovered|record (deal|label)|\ba&r\b|music marketing|blow (up|your)|charts?/i;
+const CONTENT = /viral (video|content|reel|clip)|content (shoot|creator|creation|studio|strateg)|\breels?\b|video (production|shoot|edit|content|team)|videograph|filmmaker|\bfilm\b|cinematograph|photograph|shoot with us|book (your|a) (shoot|content|next)|social media (growth|content|manager)|grow on (instagram|ig|tiktok|social)|instagram growth|content ideas|go viral/i;
+const PRODUCER = /fl studio|ableton|logic pro|mixing|mastering|\bplugin|sample pack|preset|beat (tutorial|tips)|how to produce|music production tutorial|sound design|one knob|drum (sample|kit)/i;
+
+/** Classify a creator's niche from bio+category and caption signal counts. */
+function classifyNiche(text: string, promoHits: number, contentHits: number): string {
+  const stream = STREAMING.test(text);
+  const content = CONTENT.test(text);
+  const producer = PRODUCER.test(text);
+  // Viral-video/content wins when content signals dominate and there's no real
+  // streaming angle — this is the rapvilleuk trap.
+  if ((content || contentHits >= 2) && !stream && promoHits <= contentHits) return "viral_video";
+  if (stream || promoHits >= 1) return "spotify_promo";
+  if (producer) return "producer_edu";
+  if (content || contentHits > 0) return "viral_video";
+  return "other";
+}
 
 /**
- * Score a creator as a Spotify/music-promo lead SOURCE. Two dimensions must BOTH
- * be present: (1) the comment-collection mechanic (posts drowning in comments +
- * "comment X" captions) and (2) the music-promo angle (Spotify/playlists/streams).
- * A high-comment account with no promo angle (FL-Studio tutorials, music therapy)
- * is capped low — its commenters aren't promo-hungry artists.
+ * Score a creator as a Spotify/streaming-promo lead SOURCE. Requires BOTH the
+ * comment-collection mechanic AND the correct NICHE (spotify_promo). Off-niche
+ * (viral video, producer education, IG growth) is capped low no matter how many
+ * comments — its commenters aren't artists chasing streams.
  */
-function scoreCreator(o: { bio: string; category: string | null; followers: number | null; avgComments?: number | null; mechanicHits?: number | null; promoHits?: number | null }): number {
+function scoreCreator(o: { bio: string; category: string | null; followers: number | null; avgComments?: number | null; mechanicHits?: number | null; promoHits?: number | null; contentHits?: number | null }): { score: number; niche: string } {
   const text = `${o.bio} ${o.category ?? ""}`;
-  const promoBio = SPOTIFY_PROMO.test(text);
-  const promoCaptions = (o.promoHits ?? 0) >= 1;
-  const isPromoTarget = promoBio || promoCaptions;
+  const promoHits = o.promoHits ?? 0;
+  const contentHits = o.contentHits ?? 0;
+  const niche = classifyNiche(text, promoHits, contentHits);
 
-  // 1) Comment-mechanic (up to ~70)
   let s = 0;
   const avg = o.avgComments ?? 0;
   if (avg >= 300) s += 45; else if (avg >= 100) s += 35; else if (avg >= 40) s += 22; else if (avg >= 15) s += 10;
   const hits = o.mechanicHits ?? 0;
   if (hits >= 3) s += 25; else if (hits >= 1) s += 12;
-  // 2) Spotify/music-promo relevance (up to ~35)
-  if (promoBio) s += 15;
-  if ((o.promoHits ?? 0) >= 3) s += 20; else if ((o.promoHits ?? 0) >= 1) s += 10;
-  // 3) Follower sweet spot
+  if (STREAMING.test(text)) s += 15;
+  if (promoHits >= 3) s += 20; else if (promoHits >= 1) s += 10;
   const f = o.followers ?? 0;
   if (f >= 2000 && f <= 500000) s += 8;
 
-  // GATE: not a music-promo target → cap low, no matter how many comments.
-  if (!isPromoTarget) s = Math.min(s, 20);
-  return s;
+  // GATE: only the Spotify/streaming-promo niche scores high.
+  if (niche !== "spotify_promo") s = Math.min(s, 20);
+  return { score: s, niche };
 }
 
-type Item = { username?: string; id?: string; full_name?: string; followers?: number; bio?: string; category?: string; discovered_from?: string; avgComments?: number; mechanicHits?: number; promoHits?: number; sampledPosts?: number; isReelHeavy?: boolean };
+type Item = { username?: string; id?: string; full_name?: string; followers?: number; bio?: string; category?: string; discovered_from?: string; avgComments?: number; mechanicHits?: number; promoHits?: number; contentHits?: number; sampledPosts?: number; isReelHeavy?: boolean };
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
@@ -65,10 +78,10 @@ export async function POST(request: Request) {
   for (const it of items) {
     const username = String(it.username ?? "").trim().replace(/^@/, "").toLowerCase();
     if (!username) continue;
-    const score = scoreCreator({ bio: it.bio ?? "", category: it.category ?? null, followers: it.followers ?? null, avgComments: it.avgComments, mechanicHits: it.mechanicHits, promoHits: it.promoHits });
+    const { score, niche } = scoreCreator({ bio: it.bio ?? "", category: it.category ?? null, followers: it.followers ?? null, avgComments: it.avgComments, mechanicHits: it.mechanicHits, promoHits: it.promoHits, contentHits: it.contentHits });
     const res = await pool.query(
-      `INSERT INTO spotify_creators (ig_username, ig_id, full_name, followers, bio, category, score, discovered_from, avg_comments, mechanic_hits, promo_hits, sampled_posts, is_reel_heavy, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'candidate')
+      `INSERT INTO spotify_creators (ig_username, ig_id, full_name, followers, bio, category, score, niche, discovered_from, avg_comments, mechanic_hits, promo_hits, content_hits, sampled_posts, is_reel_heavy, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'candidate')
        ON CONFLICT (ig_username) DO UPDATE SET
          ig_id = COALESCE(spotify_creators.ig_id, EXCLUDED.ig_id),
          full_name = COALESCE(EXCLUDED.full_name, spotify_creators.full_name),
@@ -78,12 +91,14 @@ export async function POST(request: Request) {
          avg_comments = COALESCE(EXCLUDED.avg_comments, spotify_creators.avg_comments),
          mechanic_hits = COALESCE(EXCLUDED.mechanic_hits, spotify_creators.mechanic_hits),
          promo_hits = COALESCE(EXCLUDED.promo_hits, spotify_creators.promo_hits),
+         content_hits = COALESCE(EXCLUDED.content_hits, spotify_creators.content_hits),
          sampled_posts = COALESCE(EXCLUDED.sampled_posts, spotify_creators.sampled_posts),
          is_reel_heavy = COALESCE(EXCLUDED.is_reel_heavy, spotify_creators.is_reel_heavy),
+         niche = EXCLUDED.niche,
          score = EXCLUDED.score,
          updated_at = now()
        WHERE spotify_creators.status = 'candidate'`,
-      [username, it.id ?? null, it.full_name ?? null, it.followers ?? null, (it.bio ?? "").slice(0, 600) || null, it.category ?? null, score, it.discovered_from ?? null, it.avgComments ?? null, it.mechanicHits ?? null, it.promoHits ?? null, it.sampledPosts ?? null, it.isReelHeavy ?? null]
+      [username, it.id ?? null, it.full_name ?? null, it.followers ?? null, (it.bio ?? "").slice(0, 600) || null, it.category ?? null, score, niche, it.discovered_from ?? null, it.avgComments ?? null, it.mechanicHits ?? null, it.promoHits ?? null, it.contentHits ?? null, it.sampledPosts ?? null, it.isReelHeavy ?? null]
     ).catch(() => ({ rowCount: 0 }));
     upserted += res.rowCount ?? 0;
   }

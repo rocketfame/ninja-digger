@@ -11,13 +11,22 @@ type Creator = {
   ig_username: string; full_name: string | null; followers: number | null;
   bio: string | null; category: string | null; score: number; status: string;
   discovered_from: string | null; leads_found: number;
-  avg_comments: number | null; mechanic_hits: number | null;
+  avg_comments: number | null; mechanic_hits: number | null; niche: string | null;
+};
+
+const NICHE: Record<string, { label: string; on: boolean }> = {
+  spotify_promo: { label: "🎵 Spotify-промо", on: true },
+  viral_video: { label: "🎬 Вірусне відео", on: false },
+  producer_edu: { label: "🎛 Продюсер-освіта", on: false },
+  ig_growth: { label: "📈 IG-ріст", on: false },
+  artist: { label: "🎤 Артист", on: false },
+  other: { label: "· інше", on: false },
 };
 
 async function getData() {
   const rows = <T extends Record<string, unknown>>(sql: string) => pool.query<T>(sql).then((r) => r.rows).catch(() => [] as T[]);
   const [creators, stats] = await Promise.all([
-    rows<Creator>(`SELECT ig_username, full_name, followers, bio, category, score, status, discovered_from, leads_found, avg_comments, mechanic_hits
+    rows<Creator>(`SELECT ig_username, full_name, followers, bio, category, score, status, discovered_from, leads_found, avg_comments, mechanic_hits, niche
                    FROM spotify_creators ORDER BY (status='candidate') DESC, score DESC, followers DESC NULLS LAST LIMIT 300`),
     pool.query<{ total: number; candidate: number; approved: number; parsed: number }>(
       `SELECT COUNT(*)::int total,
@@ -81,11 +90,14 @@ export default async function SpotifyCreatorsPage() {
                   <SiInstagram className="h-4 w-4 text-[#e1306c]" />
                 </a>
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-x-2">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <a href={`https://instagram.com/${c.ig_username}`} target="_blank" rel="noreferrer" className="font-semibold hover:text-[var(--accent)]">
                       {c.full_name || c.ig_username}
                     </a>
                     <span className="text-xs text-[var(--text-muted)]">@{c.ig_username}</span>
+                    {(() => { const nm = NICHE[c.niche ?? "other"] ?? NICHE.other; return (
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${nm.on ? "bg-[#1db954]/15 text-[#1db954]" : "bg-[var(--bg-hover)] text-[var(--text-muted)]"}`}>{nm.label}</span>
+                    ); })()}
                   </div>
                   <div className="mt-0.5 whitespace-pre-line text-xs leading-snug text-[var(--text-muted)]">
                     {c.bio || <span className="italic">без біо</span>}
