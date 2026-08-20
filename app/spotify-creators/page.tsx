@@ -1,7 +1,7 @@
 import { pool } from "@/lib/db";
 import { NavBar } from "@/app/components/NavBar";
 import { SiInstagram, SiSpotify } from "react-icons/si";
-import { Users, ExternalLink, Target, Film, SlidersHorizontal, TrendingUp, Minus } from "lucide-react";
+import { Users, ExternalLink, Film, SlidersHorizontal, Minus, Music } from "lucide-react";
 import type { ComponentType } from "react";
 import { CreatorActions } from "./CreatorActions";
 import { SpotifyTabs } from "@/app/components/SpotifyTabs";
@@ -15,12 +15,12 @@ type Creator = {
   avg_comments: number | null; mechanic_hits: number | null; niche: string | null;
 };
 
-const NICHE: Record<string, { label: string; icon: ComponentType<{ className?: string }>; on: boolean }> = {
-  spotify_promo: { label: "Таргет · Spotify-промо", icon: Target, on: true },
+const NICHE: Record<string, { label: string; icon: ComponentType<{ className?: string; style?: React.CSSProperties }>; on: boolean }> = {
+  spotify_promo: { label: "Таргет · Spotify-промо", icon: SiSpotify, on: true },
   viral_video: { label: "Вірусне відео", icon: Film, on: false },
   producer_edu: { label: "Продюсер-освіта", icon: SlidersHorizontal, on: false },
-  ig_growth: { label: "IG-ріст", icon: TrendingUp, on: false },
-  artist: { label: "Артист", icon: Minus, on: false },
+  ig_growth: { label: "IG-ріст", icon: SiInstagram, on: false },
+  artist: { label: "Артист", icon: Music, on: false },
   other: { label: "інше", icon: Minus, on: false },
 };
 
