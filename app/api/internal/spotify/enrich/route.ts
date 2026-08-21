@@ -66,6 +66,7 @@ export async function POST(request: Request) {
          followers = COALESCE($4, followers),
          email = COALESCE($5, email),
          email_source = CASE WHEN email IS NULL AND $5 IS NOT NULL THEN 'ig_bio' ELSE email_source END,
+         email_found_at = CASE WHEN email IS NULL AND $5 IS NOT NULL THEN now() ELSE email_found_at END,
          spotify_url = COALESCE(spotify_url, $6),
          soundcloud_url = COALESCE(soundcloud_url, $7),
          linktree = COALESCE(linktree, $8),

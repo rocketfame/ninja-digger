@@ -25,8 +25,8 @@ export async function GET(request: Request) {
         (SELECT COUNT(*) FROM outreach_events WHERE template_id LIKE 'sc_touch_%'    AND sent_at > now() - interval '1 hour') sc_sent,
         (SELECT COUNT(*) FROM outreach_events WHERE template_id LIKE 'sp_touch_%'    AND sent_at > now() - interval '1 hour') sp_sent,
         (SELECT COUNT(*) FROM artist_contacts WHERE type='email' AND created_at > now() - interval '1 hour') bp_mail,
-        (SELECT COUNT(*) FROM sc_artists WHERE email IS NOT NULL AND enrich_attempted_at > now() - interval '1 hour') sc_mail,
-        (SELECT COUNT(*) FROM spotify_leads WHERE email IS NOT NULL AND enriched_at > now() - interval '1 hour') sp_mail`
+        (SELECT COUNT(*) FROM sc_artists WHERE email_found_at > now() - interval '1 hour') sc_mail,
+        (SELECT COUNT(*) FROM spotify_leads WHERE email_found_at > now() - interval '1 hour') sp_mail`
     )
     .then((r) => r.rows[0] ?? {})
     .catch(() => ({} as Record<string, unknown>));

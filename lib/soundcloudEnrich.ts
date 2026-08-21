@@ -71,7 +71,7 @@ export async function enrichScArtist(a: { soundcloud_id: string; username: strin
   if (description) {
     const bioEmail = extractEmail(description);
     if (bioEmail) {
-      await pool.query(`UPDATE sc_artists SET email=$1, email_source='bio', updated_at=now() WHERE soundcloud_id=$2 AND email IS NULL`, [bioEmail, a.soundcloud_id]);
+      await pool.query(`UPDATE sc_artists SET email=$1, email_source='bio', email_found_at=now(), updated_at=now() WHERE soundcloud_id=$2 AND email IS NULL`, [bioEmail, a.soundcloud_id]);
       return bioEmail;
     }
   }
@@ -114,7 +114,7 @@ export async function enrichScArtist(a: { soundcloud_id: string; username: strin
     }
     if (email) {
       const source = /linktr|beacons/i.test(url) ? "linktree" : url.includes("bandcamp") ? "bandcamp" : "enrich";
-      await pool.query(`UPDATE sc_artists SET email=$1, email_source=$2, updated_at=now() WHERE soundcloud_id=$3 AND email IS NULL`,
+      await pool.query(`UPDATE sc_artists SET email=$1, email_source=$2, email_found_at=now(), updated_at=now() WHERE soundcloud_id=$3 AND email IS NULL`,
         [email, source, a.soundcloud_id]);
       return email;
     }

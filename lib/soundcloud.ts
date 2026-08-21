@@ -88,13 +88,15 @@ async function upsertArtist(u: ScUser, seed: string): Promise<boolean> {
   const res = await pool.query(
     `INSERT INTO sc_artists (soundcloud_id, permalink, permalink_url, username, full_name, city, country_code,
         description, avatar_url, track_count, followers_count, followings_count, likes_count, reposts_count,
-        verified, sc_created_at, last_modified, email, email_source, tier, is_active, source_seed, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,now())
+        verified, sc_created_at, last_modified, email, email_source, tier, is_active, source_seed, email_found_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,
+        CASE WHEN $18::text IS NOT NULL THEN now() ELSE NULL END, now())
      ON CONFLICT (soundcloud_id) DO UPDATE SET
         track_count=$10, followers_count=$11, followings_count=$12, likes_count=$13, reposts_count=$14,
         description=COALESCE(EXCLUDED.description, sc_artists.description),
         email=COALESCE(sc_artists.email, EXCLUDED.email),
         email_source=COALESCE(sc_artists.email_source, EXCLUDED.email_source),
+        email_found_at=CASE WHEN sc_artists.email IS NULL AND EXCLUDED.email IS NOT NULL THEN now() ELSE sc_artists.email_found_at END,
         tier=$20, is_active=$21, last_modified=$17, updated_at=now()`,
     [u.id, u.permalink, u.permalink_url, u.username, u.full_name || null, u.city, u.country_code,
      u.description, u.avatar_url, u.track_count, u.followers_count, u.followings_count, u.likes_count ?? 0,
