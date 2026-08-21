@@ -22,9 +22,14 @@ function getPool(): Pool {
     // Serverless: each concurrent Vercel instance opens its own pool, so a big
     // `max` multiplied across instances can exhaust Neon's connection limit and
     // make pages hang on connection acquisition. Keep it small and fail fast.
+    // NOTE: do NOT lower below 8. Empirically max=4 caused pages/crons to return
+    // nulls — a single page needs ~5 concurrent connections, and with several
+    // crons in flight max=4 exhausts the pool and requests hang on acquisition.
+    // Neon's pooled endpoint tolerates this fine. (Reverted an audit suggestion
+    // that ignored this history.)
     _pool = new Pool({
       connectionString,
-      max: 4,
+      max: 8,
       idleTimeoutMillis: 10000,
       connectionTimeoutMillis: 12000,
       keepAlive: true,
