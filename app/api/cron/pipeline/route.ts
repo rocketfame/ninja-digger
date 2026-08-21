@@ -144,10 +144,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, hour, actions: ["locked"], ts: new Date().toISOString() });
   }
 
-  // Beatport outreach: 60% chance, skip night. Warm-up ramp: floor 20/day,
-  // grow +3/day (mirrors SoundCloud), capped at 130 so BP + SC stay under
-  // Brevo's ~300/day free ceiling. Ramp start is stamped on first run.
-  if (hour >= 6 && hour <= 21 && rand < 0.65) {
+  // Beatport outreach: every daytime hour (skip night). Previously gated behind
+  // a random 35% skip which made BP dribble ~5/day and show spotty 0s in the
+  // hourly report while SC/SP (no such dice) sent steadily. The daily ramp cap
+  // still bounds volume; the per-run batch + domain ceiling keep it safe.
+  if (hour >= 6 && hour <= 21) {
     let bpStart = await pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key='bp_outreach_start'`)
       .then((r) => r.rows[0]?.value).catch(() => undefined);
     if (!bpStart) {
