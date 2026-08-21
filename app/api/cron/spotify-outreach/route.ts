@@ -9,6 +9,7 @@ import { pool } from "@/lib/db";
 import { getOutreachMailer } from "@/lib/mailer";
 import { buildSpotifyEmail } from "@/lib/spotifyOutreachCopy";
 import { isHardBounceError } from "@/lib/emailHygiene";
+import { acquireLease } from "@/lib/cronLock";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -37,6 +38,10 @@ export async function GET(request: Request) {
 
   if ((await getSetting("sp_outreach_paused", "1")) === "1") {
     return NextResponse.json({ ok: true, paused: true });
+  }
+  // Single-flight guard against Vercel's at-least-once double-fire.
+  if (!(await acquireLease("spotify-outreach"))) {
+    return NextResponse.json({ ok: true, skipped: "locked" });
   }
   const hour = new Date().getUTCHours();
   if (hour < 6 || hour > 20) return NextResponse.json({ ok: true, skipped: "night" });

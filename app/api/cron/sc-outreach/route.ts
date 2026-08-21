@@ -9,6 +9,7 @@ import { pool } from "@/lib/db";
 import { getOutreachMailer } from "@/lib/mailer";
 import { buildScEmail } from "@/lib/scOutreachCopy";
 import { isHardBounceError } from "@/lib/emailHygiene";
+import { acquireLease } from "@/lib/cronLock";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -41,6 +42,11 @@ export async function GET(request: Request) {
 
   if ((await getSetting("sc_outreach_paused", "1")) === "1") {
     return NextResponse.json({ ok: true, paused: true });
+  }
+  // Single-flight: Vercel cron is at-least-once, so a double-fired tick must not
+  // double-send. If another instance holds the lease, bow out.
+  if (!(await acquireLease("sc-outreach"))) {
+    return NextResponse.json({ ok: true, skipped: "locked" });
   }
   const hour = new Date().getUTCHours();
   if (hour < 6 || hour > 20) return NextResponse.json({ ok: true, skipped: "night" });

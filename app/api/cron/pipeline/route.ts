@@ -15,6 +15,7 @@ const PLAIN_SIGNATURE = `\n\n--\nMax\nPromoSound`;
 import { JUNK_NAME_SQL, TIER_SQL } from "@/lib/leadQuality";
 import { getOutreachMailer } from "@/lib/mailer";
 import { buildTouchEmail } from "@/lib/touchCopy";
+import { acquireLease } from "@/lib/cronLock";
 
 export const maxDuration = 300; // 5 min for natural-paced sends
 
@@ -136,6 +137,11 @@ export async function GET(request: Request) {
   ).then((r) => r.rows[0]?.value === "1").catch(() => false);
   if (paused) {
     return NextResponse.json({ ok: true, hour, actions: ["paused"], ts: new Date().toISOString() });
+  }
+  // Single-flight: Vercel cron is at-least-once — block a double-fired tick from
+  // double-sending Beatport touches.
+  if (!(await acquireLease("pipeline-send"))) {
+    return NextResponse.json({ ok: true, hour, actions: ["locked"], ts: new Date().toISOString() });
   }
 
   // Beatport outreach: 60% chance, skip night. Warm-up ramp: floor 20/day,
