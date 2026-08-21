@@ -15,6 +15,7 @@
     { "path": "/api/cron/spotify-outreach", "schedule": "40 * * * *" },
     { "path": "/api/cron/spotify-crawl", "schedule": "15,45 * * * *" },
     { "path": "/api/cron/sc-enrich", "schedule": "5,35 * * * *" },
-    { "path": "/api/cron/brevo-poll", "schedule": "25,55 * * * *" }
+    { "path": "/api/cron/brevo-poll", "schedule": "25,55 * * * *" },
+    { "path": "/api/cron/watchdog", "schedule": "30 9,15,21 * * *" }
   ]
 }
