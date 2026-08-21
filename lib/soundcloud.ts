@@ -148,8 +148,10 @@ export async function verifyActiveArtists(limit = 60): Promise<{ checked: number
 
 // We keep only the newest slice of each promo channel's followers: they are the
 // freshest, most-active leads, and it stops a single 20k-follower channel from
-// flooding the DB. Deep followers are older and mostly stale.
-const PER_SEED_CAP = 1000;
+// flooding the DB. Deep followers are older and mostly stale. Empirically the
+// first ~2000 followers of a Re-Ex advertiser are the active ones; below that
+// gets raw/inactive, so 2000 is the cutoff (per the Re-Ex lead-gen rule).
+const PER_SEED_CAP = 2000;
 
 /** Fetch real profile data for Re-Ex promoters we ingested without it, so
  * repost/promo channels (0 own tracks — analytics only) can be told apart from
