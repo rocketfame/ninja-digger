@@ -32,9 +32,14 @@ export async function GET(request: Request) {
     .catch(() => ({} as Record<string, unknown>));
 
   const r = row as Record<string, unknown>;
+  const hour = new Date().getUTCHours();
+  const night = hour < 6 || hour > 20; // outreach is night-blocked by design
   const line = (name: string, sent: unknown, mail: unknown) => `${name} — 📤 ${n(sent)} · 📧 ${n(mail)}`;
+  const header = night
+    ? `📊 <b>Щогодинний</b> · 🌙 ніч — відправка на паузі до 06:00 UTC (email-збір триває)`
+    : `📊 <b>Щогодинний</b>`;
   const msg =
-    `📊 <b>Щогодинний</b>\n` +
+    header + "\n" +
     line("Beatport", r.bp_sent, r.bp_mail) + "\n" +
     line("SoundCloud", r.sc_sent, r.sc_mail) + "\n" +
     line("Spotify", r.sp_sent, r.sp_mail);
