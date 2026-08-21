@@ -15,11 +15,6 @@ const PLAIN_SIGNATURE = `\n\n--\nMax\nPromoSound`;
 import { JUNK_NAME_SQL, TIER_SQL } from "@/lib/leadQuality";
 import { getOutreachMailer } from "@/lib/mailer";
 import { buildTouchEmail } from "@/lib/touchCopy";
-import { runBptoptrackerDailyUpdate } from "@/lib/bptoptrackerDaily";
-import { syncBptoptrackerToChartEntries } from "@/lib/bptoptrackerSync";
-import { refreshArtistMetrics } from "@/segment/normalize";
-import { refreshLeadScoresV2 } from "@/segment/score";
-import { sendTelegramMessage } from "@/lib/telegram";
 
 export const maxDuration = 300; // 5 min for natural-paced sends
 
@@ -131,40 +126,9 @@ export async function GET(request: Request) {
   const rand = Math.random();
   const actions: string[] = [];
 
-  // Self-healing ingest: if the morning daily cron missed today's charts,
-  // collect them now (once — guarded by a soft lock) and skip sends this hour.
-  if (hour >= 7) {
-    const todayRows = await pool.query<{ c: number }>(
-      `SELECT COUNT(*)::int c FROM bptoptracker_daily WHERE snapshot_date = CURRENT_DATE`
-    ).then((r) => r.rows[0]?.c ?? 0).catch(() => -1);
-    if (todayRows === 0) {
-      const lock = await pool.query(
-        `INSERT INTO app_settings (key, value, updated_at) VALUES ('ingest_heal_lock', to_char(now(), 'YYYY-MM-DD'), now())
-         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
-         WHERE app_settings.value != to_char(now(), 'YYYY-MM-DD') OR app_settings.updated_at < now() - interval '30 minutes'`
-      ).then((r) => (r.rowCount ?? 0) > 0).catch(() => false);
-      if (lock) {
-        console.log("[cron/pipeline] today's charts missing — self-healing ingest");
-        const bpt = await runBptoptrackerDailyUpdate();
-        if (bpt.inserted === 0) {
-          // BPTT refused everything (login throttle / downtime) — retry next hour quietly
-          await sendTelegramMessage(
-            `🛠 Ранковий збір чартів ще не вдався (BPTT недоступний, ${bpt.errors.length} відмов) — повторю за годину.`
-          );
-          return NextResponse.json({ ok: true, hour, actions: ["self-heal failed, will retry"], ts: new Date().toISOString() });
-        }
-        await syncBptoptrackerToChartEntries();
-        const metrics = await refreshArtistMetrics();
-        const scores = await refreshLeadScoresV2();
-        await sendTelegramMessage(
-          `🛠 <b>Самолікування:</b> ранковий збір чартів не відпрацював — зібрав зараз.\n` +
-          `+${bpt.inserted} рядків · метрики: ${metrics} · скоринг: ${scores}` +
-          (bpt.errors.length ? `\n⚠️ Помилок: ${bpt.errors.length}` : "")
-        );
-        return NextResponse.json({ ok: true, hour, actions: [`self-heal: +${bpt.inserted}`], ts: new Date().toISOString() });
-      }
-    }
-  }
+  // NOTE: self-healing chart ingest moved to its own cron (/api/cron/ingest-heal)
+  // so heavy collection can never eat the send budget again. This handler now
+  // does ONE thing: outreach sends.
 
   // Pause flag managed from the Telegram bot (/pause, /resume)
   const paused = await pool.query<{ value: string }>(

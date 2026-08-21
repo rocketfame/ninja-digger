@@ -6,6 +6,7 @@
  */
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { sendTelegramMessage } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -54,12 +55,13 @@ export async function GET() {
 
   let processed = 0;
   let offset = 0;
+  let failed = false; // any page that errors out means we did NOT fully cover the window
   const debug: Record<string, unknown> = {};
   for (let page = 0; page < 20; page++) {
     const url = `https://api.brevo.com/v3/smtp/statistics/events?limit=500&offset=${offset}&startDate=${startDate}&endDate=${endDate}&sort=desc`;
     const res = await fetch(url, { headers: { "api-key": key, accept: "application/json" } }).catch((e) => { debug.fetchErr = String(e); return null; });
-    if (!res) break;
-    if (!res.ok) { debug.status = res.status; debug.body = (await res.text().catch(() => "")).slice(0, 300); break; }
+    if (!res) { failed = true; break; }
+    if (!res.ok) { debug.status = res.status; debug.body = (await res.text().catch(() => "")).slice(0, 300); failed = true; break; }
     const data = (await res.json().catch(() => ({}))) as { events?: BrevoEvent[] };
     const events = data.events ?? [];
     if (page === 0) { debug.startDate = startDate; debug.count = events.length; debug.sample = events[0]; }
@@ -69,6 +71,15 @@ export async function GET() {
     }
     if (events.length < 500) break;
     offset += 500;
+  }
+  // Only advance the cursor when the whole window was pulled without error —
+  // otherwise a transient Brevo failure would silently skip 6h of open/bounce
+  // events forever. On failure we keep the cursor and shout on Telegram.
+  if (failed) {
+    await sendTelegramMessage(
+      `⚠️ <b>brevo-poll збій</b> — метрики (опени/баунси) не підтягнулись, курсор НЕ зсунуто (повтор наступного циклу).\n<code>${JSON.stringify(debug).slice(0, 300)}</code>`
+    ).catch(() => {});
+    return NextResponse.json({ ok: false, failed: true, processed, debug, ts: new Date().toISOString() }, { status: 500 });
   }
   await setSetting("brevo_poll_since", new Date(Date.now() - 6 * 3600000).toISOString().slice(0, 10));
   return NextResponse.json({ ok: true, processed, ts: new Date().toISOString() });

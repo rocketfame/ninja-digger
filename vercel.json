@@ -3,6 +3,7 @@
   "framework": "nextjs",
   "crons": [
     { "path": "/api/cron/daily", "schedule": "14 5 * * *" },
+    { "path": "/api/cron/ingest-heal", "schedule": "8 7,9,11 * * *" },
     { "path": "/api/cron/pipeline", "schedule": "0 * * * *" },
     { "path": "/api/cron/inbox", "schedule": "19 * * * *" },
     { "path": "/api/cron/hygiene", "schedule": "40 6 * * 0" },
@@ -13,6 +14,7 @@
     { "path": "/api/cron/sc-outreach", "schedule": "10 * * * *" },
     { "path": "/api/cron/spotify-outreach", "schedule": "40 * * * *" },
     { "path": "/api/cron/spotify-crawl", "schedule": "15,45 * * * *" },
+    { "path": "/api/cron/sc-enrich", "schedule": "5,35 * * * *" },
     { "path": "/api/cron/brevo-poll", "schedule": "25,55 * * * *" }
   ]
 }

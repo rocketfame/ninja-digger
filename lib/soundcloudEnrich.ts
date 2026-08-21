@@ -122,20 +122,38 @@ export async function enrichScArtist(a: { soundcloud_id: string; username: strin
   return null;
 }
 
-/** Enrich a batch of email-less artists (tier A/B first). */
-export async function enrichScBatch(limit = 8): Promise<{ processed: number; found: number }> {
+/**
+ * Enrich a batch of email-less artists (tier A/B / promoters first).
+ * `concurrency` runs enrichScArtist in parallel — each artist is HTTP-fetch
+ * bound (many external probes), so raising it is the throughput lever. Keep
+ * concurrency=1 inside the tight harvest cron; the dedicated /api/cron/sc-enrich
+ * cron uses a big batch + concurrency to actually drain the ~25k backlog.
+ */
+export async function enrichScBatch(limit = 8, concurrency = 1): Promise<{ processed: number; found: number }> {
   const rows = (await pool.query<{ soundcloud_id: string; username: string; description: string | null; instagram: string | null }>(
     `SELECT soundcloud_id, username, description, instagram FROM sc_artists
      WHERE email IS NULL AND (is_promoter = true OR tier IN ('A','B'))
      ORDER BY enrich_attempted_at ASC NULLS FIRST, is_promoter DESC, tier, followers_count DESC LIMIT $1`, [limit]
   )).rows;
+
   let found = 0;
-  for (const r of rows) {
+  const enrichOne = async (r: typeof rows[number]) => {
     const email = await enrichScArtist(r).catch(() => null);
     if (email) found++;
     // Stamp the attempt so the next batch moves on to different profiles instead
-    // of re-probing the same dry ones every hour.
+    // of re-probing the same dry ones every run.
     await pool.query(`UPDATE sc_artists SET enrich_attempted_at=now(), updated_at=now() WHERE soundcloud_id=$1`, [r.soundcloud_id]).catch(() => {});
-  }
+  };
+
+  // Simple concurrency pool: `concurrency` workers pull from a shared cursor.
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < rows.length) {
+      const r = rows[cursor++];
+      await enrichOne(r);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, rows.length)) }, worker));
+
   return { processed: rows.length, found };
 }

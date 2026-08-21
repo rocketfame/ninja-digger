@@ -24,7 +24,7 @@ function getPool(): Pool {
     // make pages hang on connection acquisition. Keep it small and fail fast.
     _pool = new Pool({
       connectionString,
-      max: 8,
+      max: 4,
       idleTimeoutMillis: 10000,
       connectionTimeoutMillis: 12000,
       keepAlive: true,
