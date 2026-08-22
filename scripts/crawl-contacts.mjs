@@ -21,7 +21,7 @@ const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 // Junk / placeholder / generic hygiene — same spirit as the SoundCloud pipeline.
-const JUNK = /(^(support|help|admin|webmaster|postmaster|abuse|hostmaster|billing|noc|sysadmin|security|privacy|feedback|info|contact|hello|hi|team|mail|no-?reply|example|sample|test|demo|your|name|user|press|media|jobs|careers|legal|dmca|copyright|help-?desk|sales|guidelines|orders|shop|store|newsletter|subscribe)@)|(@(bandcamp|example|ejemplo|prueba|domain|yourdomain|yoursite|mysite|email|sentry|wixpress|godaddy|sentry\.io|test|placeholder|spacehey|linktr|linktree|beacons|hoo|tiktok|youtube|facebook|instagram|spotify|apple|distrokid|patreon|wix|squarespace|shopify|cloudflare)\.)|(\.(png|jpe?g|gif|svg|webp|css|js)$)|(ejemplo|youremail|yourname|tuemail|tucorreo)/i;
+const JUNK = /(^(support|help|admin|webmaster|postmaster|abuse|hostmaster|billing|noc|sysadmin|security|privacy|feedback|info|contact|hello|hi|team|mail|no-?reply|example|sample|test|demo|your|name|user|press|media|jobs|careers|legal|dmca|copyright|help-?desk|sales|guidelines|orders|shop|store|newsletter|subscribe)@)|(@(bandcamp|example|ejemplo|prueba|domain|yourdomain|yoursite|mysite|email|sentry|wixpress|godaddy|sentry\.io|test|placeholder|spacehey|linktr|linktree|beacons|hoo|tiktok|youtube|facebook|instagram|spotify|apple|distrokid|patreon|wix|squarespace|shopify|cloudflare)\.)|(\.(png|jpe?g|gif|svg|webp|css|js)$)|(ejemplo|youremail|yourname|tuemail|tucorreo)|(\.(ru|su|by)$)|(yandex\.)/i;
 
 function pickEmail(html) {
   const seen = new Set();

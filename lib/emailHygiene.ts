@@ -16,6 +16,17 @@ const JUNK_DOMAINS = /(^|\.)(example\.(com|org|net)|test\.com|sentry\.(io|com)|c
 /** Regex-extraction artifacts: image/file names picked up as "emails". */
 const FILE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|css|js|pdf|mp3|wav)$/i;
 
+/**
+ * Hostile-country email domains — russia (.ru/.su, Mail.ru group, Yandex,
+ * Rambler) and Belarus (.by). We never contact these, ever. Political filter.
+ * `domain` is the lowercased part after '@'.
+ */
+const HOSTILE_DOMAIN_RE = /(\.(ru|su|by)$)|((^|\.)yandex\.)/i;
+export function isHostileDomain(email: string | null | undefined): boolean {
+  const domain = String(email ?? "").trim().toLowerCase().split("@")[1] ?? "";
+  return !!domain && HOSTILE_DOMAIN_RE.test(domain);
+}
+
 const mxCache = new Map<string, boolean>();
 
 async function domainAcceptsMail(domain: string): Promise<boolean> {
@@ -50,6 +61,7 @@ export async function validateEmailForOutreach(email: string): Promise<EmailVali
   const [local, domain] = value.split("@");
   if (JUNK_LOCAL.test(local)) return { ok: false, reason: `role address (${local}@)` };
   if (JUNK_DOMAINS.test(domain)) return { ok: false, reason: `junk domain (${domain})` };
+  if (HOSTILE_DOMAIN_RE.test(domain)) return { ok: false, reason: `hostile domain (${domain})` };
   if (!(await domainAcceptsMail(domain))) return { ok: false, reason: `no MX/A record (${domain})` };
   return { ok: true };
 }

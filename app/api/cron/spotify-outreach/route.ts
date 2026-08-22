@@ -68,7 +68,8 @@ export async function GET(request: Request) {
   type Lead = { ig_username: string; full_name: string | null; email: string; sp_touch: number };
   const nextTouch = (sql: string): Promise<Lead[]> =>
     pool.query<Lead>(sql, [budget]).then((r) => r.rows).catch(() => [] as Lead[]);
-  const notBlacklisted = `LOWER(email) NOT IN (SELECT LOWER(email) FROM email_blacklist)`;
+  // Exclude blacklist AND hostile-country domains (russia .ru/.su, Yandex; Belarus .by).
+  const notBlacklisted = `LOWER(email) NOT IN (SELECT LOWER(email) FROM email_blacklist) AND email !~* '\\.(ru|su|by)$|yandex\\.'`;
 
   // Follow-ups first (warmer), then fresh openers. Touch 2 waits 3 days after
   // touch 1, touch 3 waits 4 more. A reply/bounce/opt-out flips lead_status and

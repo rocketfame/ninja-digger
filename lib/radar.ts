@@ -6,7 +6,7 @@
 import { pool } from "@/lib/db";
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-const JUNK_EMAIL_RE = /(^(support|help|admin|webmaster|postmaster|abuse|hostmaster|billing|noc|sysadmin|security|privacy|feedback|info|contact|hello|team|mail|no-?reply)@)|(@(bandcamp|example|sentry|wixpress|godaddy|reddit|redditmail|youtube|sentry)\.)|(\.(png|jpg|gif)$)/i;
+const JUNK_EMAIL_RE = /(^(support|help|admin|webmaster|postmaster|abuse|hostmaster|billing|noc|sysadmin|security|privacy|feedback|info|contact|hello|team|mail|no-?reply)@)|(@(bandcamp|example|sentry|wixpress|godaddy|reddit|redditmail|youtube|sentry)\.)|(\.(png|jpg|gif)$)|(\.(ru|su|by)$)|(yandex\.)/i;
 
 export function extractEmail(text: string, explicit?: string | null): string | null {
   const cands = [explicit, ...(text.match(EMAIL_RE) ?? [])].filter(Boolean) as string[];

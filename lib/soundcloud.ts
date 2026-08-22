@@ -8,7 +8,7 @@ import { pool } from "@/lib/db";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
-const JUNK_EMAIL_RE = /(no-?reply|example\.|\.png|\.jpg|sentry|soundcloud\.com|bandcamp\.com|^(support|help|admin|webmaster|postmaster|abuse|hostmaster|billing|noc|sysadmin|security|privacy|feedback)@)/i;
+const JUNK_EMAIL_RE = /(no-?reply|example\.|\.png|\.jpg|sentry|soundcloud\.com|bandcamp\.com|\.(ru|su|by)$|yandex\.|^(support|help|admin|webmaster|postmaster|abuse|hostmaster|billing|noc|sysadmin|security|privacy|feedback)@)/i;
 
 let cachedClientId: { id: string; at: number } | null = null;
 
