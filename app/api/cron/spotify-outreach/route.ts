@@ -6,7 +6,7 @@
  */
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { getOutreachMailer } from "@/lib/mailer";
+import { getRotatingMailer, domainBudgetRemaining } from "@/lib/mailer";
 import { buildSpotifyEmail } from "@/lib/spotifyOutreachCopy";
 import { isHardBounceError } from "@/lib/emailHygiene";
 import { acquireLease } from "@/lib/cronLock";
@@ -54,15 +54,21 @@ export async function GET(request: Request) {
 
   const q = (sql: string) => pool.query<{ c: number }>(sql).then((r) => r.rows[0]?.c ?? 0).catch(() => 0);
   const spSentToday = await q(`SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sp_touch_%' AND sent_at >= CURRENT_DATE`);
-  const domainSentToday = await q(`SELECT COUNT(*)::int c FROM outreach_events WHERE channel='email' AND sent_at >= CURRENT_DATE`);
-  const budget = Math.min(cap - spSentToday, DOMAIN_DAILY_MAX - domainSentToday, PER_RUN);
+  // Per-account sends today (legacy NULL sender → 'brevo1'). Domain budget is now
+  // the SUM of remaining capacity across all Brevo accounts.
+  const sbs = await pool.query<{ sid: string; c: number }>(
+    `SELECT COALESCE(sender,'brevo1') sid, COUNT(*)::int c FROM outreach_events WHERE channel='email' AND sent_at >= CURRENT_DATE GROUP BY 1`
+  ).then((r) => r.rows).catch(() => [] as { sid: string; c: number }[]);
+  const sentBySender: Record<string, number> = Object.fromEntries(sbs.map((r) => [r.sid, r.c]));
+  const budget = Math.min(cap - spSentToday, domainBudgetRemaining(sentBySender), PER_RUN);
   if (budget <= 0) {
-    return NextResponse.json({ ok: true, cap, spSentToday, domainSentToday, sent: 0, note: "quota reached" });
+    return NextResponse.json({ ok: true, cap, spSentToday, sent: 0, note: "quota reached" });
   }
 
-  const mailer = getOutreachMailer();
-  if (!mailer) return NextResponse.json({ ok: false, error: "no mailer" }, { status: 500 });
-  const { transporter, from, replyTo } = mailer;
+  const rm = getRotatingMailer(sentBySender);
+  if (!rm) return NextResponse.json({ ok: false, error: "no mailer / all accounts capped" }, { status: 500 });
+  const { transporter, from, replyTo } = rm.mailer;
+  const senderId = rm.senderId;
   const pct = parseInt(await getSetting("sc_discount", "25"), 10) || 25;
 
   type Lead = { ig_username: string; full_name: string | null; email: string; sp_touch: number };
@@ -105,8 +111,8 @@ export async function GET(request: Request) {
     try {
       await transporter.sendMail({ from, replyTo, to: lead.email, subject: email.subject, text: email.text, html: email.html });
       await pool.query(
-        `INSERT INTO outreach_events (artist_beatport_id, template_id, channel, contact_value, sent_at, outcome)
-         VALUES ($1,$2,'email',$3, now(),'sent')`, [`sp:${lead.ig_username}`, `sp_touch_${touch}`, lead.email]
+        `INSERT INTO outreach_events (artist_beatport_id, template_id, channel, contact_value, sent_at, outcome, sender)
+         VALUES ($1,$2,'email',$3, now(),'sent',$4)`, [`sp:${lead.ig_username}`, `sp_touch_${touch}`, lead.email, senderId]
       ).catch(() => {});
       const status = touch === 3 ? "No Response" : "Contacted";
       await pool.query(`UPDATE spotify_leads SET lead_status=$2, sp_touch=$3, contacted_at=now(), updated_at=now() WHERE ig_username=$1`,

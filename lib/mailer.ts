@@ -5,12 +5,40 @@
  */
 
 import * as nodemailer from "nodemailer";
+import { getSenders, pickSender, senderTransport, totalRemaining, type Sender } from "@/lib/outreachSenders";
 
 export type OutreachMailer = {
   transporter: nodemailer.Transporter;
   from: string;
   replyTo?: string;
 };
+
+/**
+ * Multi-account rotating mailer. Given how many were already sent per account
+ * today, picks the least-used account under its cap and returns a ready mailer
+ * tagged with senderId (store it in outreach_events.sender). Returns null when
+ * every account is capped. With a single configured account this behaves exactly
+ * like getOutreachMailer().
+ */
+export function getRotatingMailer(sentToday: Record<string, number>): { mailer: OutreachMailer; senderId: string } | null {
+  const senders = getSenders();
+  const s = pickSender(senders, sentToday);
+  if (!s) return null;
+  return { mailer: mailerFor(s), senderId: s.id };
+}
+
+function mailerFor(s: Sender): OutreachMailer {
+  return {
+    transporter: senderTransport(s),
+    from: `"${s.name}" <${s.from}>`,
+    replyTo: s.replyTo,
+  };
+}
+
+/** Sum of remaining daily capacity across all accounts — the true domain budget. */
+export function domainBudgetRemaining(sentToday: Record<string, number>): number {
+  return totalRemaining(getSenders(), sentToday);
+}
 
 export function getOutreachMailer(): OutreachMailer | null {
   const brevoKey = process.env.BREVO_SMTP_KEY;
