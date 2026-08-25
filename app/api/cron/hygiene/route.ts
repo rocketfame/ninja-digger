@@ -32,6 +32,16 @@ export async function GET(request: Request) {
     }
   }
 
+  // 1b. Weekly space reclaim: the daily DELETEs free rows for reuse but don't
+  // return space to Neon (pg_database_size stays at the high-water mark). A
+  // weekly VACUUM FULL on the big history tables physically shrinks them so the
+  // 512MB tier never creeps toward the cap. Low-traffic Sunday window.
+  const vacuumed: Record<string, string> = {};
+  for (const t of ["bptoptracker_daily", "chart_entries", "url_cache", "email_events"]) {
+    await pool.query(`VACUUM FULL ${t}`).then(() => { vacuumed[t] = "ok"; }).catch((e) => { vacuumed[t] = String(e?.message ?? e).slice(0, 60); });
+  }
+  const dbMb = await pool.query(`SELECT round(pg_database_size(current_database())/1024/1024) mb`).then((r) => r.rows[0]?.mb).catch(() => null);
+
   // 2. Weekly digest
   const q = (sql: string) => pool.query(sql).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
   const [sent7d, replies7d, optOut7d, bounced7d, golden, validLeads, newLeads7d] = await Promise.all([
@@ -90,6 +100,8 @@ export async function GET(request: Request) {
     ok: true,
     checked: contacts.rows.length,
     invalidated,
+    vacuumed,
+    dbMb,
     ts: new Date().toISOString(),
   });
 }

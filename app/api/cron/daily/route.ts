@@ -91,12 +91,14 @@ export async function GET(request: Request) {
       const c2 = await pool.query("DELETE FROM enrichment_runs WHERE started_at < NOW() - INTERVAL '7 days'");
       cleanup.enrichment_runs = c2.rowCount ?? 0;
 
-      // chart_entries: тримаємо 8 тижнів (для розрахунку momentum_30d)
-      const c3 = await pool.query("DELETE FROM chart_entries WHERE snapshot_date < CURRENT_DATE - 56");
+      // chart_entries: тримаємо 45 днів (momentum_30d потребує ≥30 + буфер).
+      // Було 56 → БД повзла до 365MB; 45 тримає плато нижчим.
+      const c3 = await pool.query("DELETE FROM chart_entries WHERE snapshot_date < CURRENT_DATE - 45");
       cleanup.old_chart_entries = c3.rowCount ?? 0;
 
-      // bptoptracker_daily: сирі дані, тримаємо 8 тижнів
-      const c4 = await pool.query("DELETE FROM bptoptracker_daily WHERE snapshot_date < CURRENT_DATE - 56");
+      // bptoptracker_daily: сирі денні знімки (вже синхронізовані в chart_entries),
+      // 30 днів більш ніж достатньо.
+      const c4 = await pool.query("DELETE FROM bptoptracker_daily WHERE snapshot_date < CURRENT_DATE - 30");
       cleanup.bptoptracker_daily = c4.rowCount ?? 0;
 
       // outreach_events: аудит-лог розсилки, 120 днів достатньо (інакше росте безмежно)
