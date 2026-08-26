@@ -26,7 +26,7 @@ type TgUpdate = {
   callback_query?: {
     id: string;
     data?: string;
-    message?: { chat?: { id: number } };
+    message?: { chat?: { id: number }; message_id?: number };
   };
 };
 
@@ -113,6 +113,35 @@ async function handleCommand(cmd: string): Promise<void> {
   }
 }
 
+/** Approve button: send the stored Claude draft to the artist as-is. */
+async function handleApprove(msgId: number): Promise<void> {
+  type Row = { artist_beatport_id: string | null; email: string; subject: string | null; draft: string | null };
+  const row = await pool.query<Row>(
+    `SELECT artist_beatport_id, email, subject, draft FROM tg_notifications WHERE tg_message_id = $1`, [msgId]
+  ).then((r) => r.rows[0]).catch(() => undefined);
+  if (!row?.draft) { await sendTelegramMessage("⚠️ Нема збереженої чернетки для цього листа (свайп-reply, щоб написати вручну)."); return; }
+  const user = process.env.GMAIL_USER, pass = process.env.GMAIL_APP_PASSWORD;
+  if (!user || !pass) { await sendTelegramMessage("⚠️ GMAIL не сконфігуровано — лист не надіслано."); return; }
+  const subject = row.subject && row.subject.trim()
+    ? (row.subject.trim().toLowerCase().startsWith("re:") ? row.subject.trim() : `Re: ${row.subject.trim()}`)
+    : "Re: your message | PromoSound";
+  try {
+    const transporter = nodemailer.createTransport({ service: "gmail", auth: { user, pass } });
+    await transporter.sendMail({
+      from: `"Max from PromoSound" <${user}>`, to: row.email, subject,
+      text: row.draft + TEXT_SIGNATURE, html: wrapEmailHtml(row.draft + "\n\nBest,\nMax"),
+    });
+    if (row.artist_beatport_id) {
+      await pool.query(`INSERT INTO lead_profiles (artist_beatport_id, status, updated_at) VALUES ($1,'In Progress',now())
+         ON CONFLICT (artist_beatport_id) DO UPDATE SET status='In Progress', updated_at=now()`, [row.artist_beatport_id]).catch(() => {});
+    }
+    await pool.query(`UPDATE radar_leads SET status='responded', updated_at=now() WHERE LOWER(email)=LOWER($1)`, [row.email]).catch(() => {});
+    await sendTelegramMessage(`✅ Надіслано (approve) → ${row.email}`);
+  } catch (e) {
+    await sendTelegramMessage(`❌ Не вдалось надіслати: ${e instanceof Error ? e.message : e}`);
+  }
+}
+
 export async function POST(request: Request) {
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
   if (secret && request.headers.get("x-telegram-bot-api-secret-token") !== secret) {
@@ -127,7 +156,11 @@ export async function POST(request: Request) {
   if (cb?.data) {
     if (allowedChat && String(cb.message?.chat?.id) === allowedChat) {
       await answerCallbackQuery(cb.id);
-      await handleCommand(`/${cb.data}`);
+      if (cb.data === "approve" && cb.message?.message_id != null) {
+        await handleApprove(cb.message.message_id);
+      } else {
+        await handleCommand(`/${cb.data}`);
+      }
     }
     return NextResponse.json({ ok: true });
   }

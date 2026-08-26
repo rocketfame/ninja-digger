@@ -231,6 +231,32 @@ export async function GET(request: Request) {
         const subjectByAddr = new Map(replyFrom.map((r) => [r.addr, r.subject]));
         const uidByAddr = new Map(replyFrom.map((r) => [r.addr, r.uid]));
         const unique = [...subjectByAddr.keys()];
+
+        // Shared reply notifier for SC/Spotify/Radar: download the reply, draft a
+        // contextual response with Claude, send it to Telegram WITH an "Approve &
+        // Send" button, and store the draft in tg_notifications so the button (or
+        // a swipe-reply edit) can send it back to the artist.
+        const notifyReply = async (o: { email: string; name: string | null; source: string; beatportId?: string | null }) => {
+          const addr = o.email.toLowerCase().trim();
+          const uid = uidByAddr.get(addr);
+          const excerpt = uid ? await downloadText(client, uid) : null;
+          const subject = subjectByAddr.get(addr) || null;
+          const draft = excerpt ? await draftReplyAssist(excerpt, { name: o.name, channel: o.source }) : null;
+          const activate = o.source.startsWith("Beatport") ? " (лід — активуй)" : "";
+          const msgId = await sendTelegramMessage(
+            `💬 <b>${o.source}</b>-відповідь${activate} від <b>${o.name || o.email}</b>\n${o.email}` +
+            (excerpt ? `\n\n${excerpt.slice(0, 400)}` : "") +
+            (draft ? `\n\n💡 <b>Чернетка (${draft.intent}):</b>\n${draft.reply}\n\n↩️ <i>Approve — надіслати як є, або свайп-reply — відредагувати й надіслати.</i>` : ""),
+            draft ? [[{ text: "✅ Approve & Send", callback_data: "approve" }]] : undefined
+          );
+          if (msgId != null) {
+            await pool.query(
+              `INSERT INTO tg_notifications (tg_message_id, artist_beatport_id, artist_name, email, subject, draft, source)
+               VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (tg_message_id) DO NOTHING`,
+              [msgId, o.beatportId ?? null, o.name, o.email, subject, draft?.reply ?? null, o.source]
+            ).catch(() => {});
+          }
+        };
         const matched = await pool.query<{ artist_beatport_id: string; value: string; artist_name: string | null }>(
           `SELECT DISTINCT ac.artist_beatport_id, ac.value, am.artist_name
            FROM artist_contacts ac
@@ -251,14 +277,7 @@ export async function GET(request: Request) {
         ).catch(() => ({ rows: [] as { username: string; full_name: string | null; email: string }[] }));
         for (const row of scReplied.rows) {
           replies++;
-          const uid = uidByAddr.get(row.email.toLowerCase().trim());
-          const excerpt = uid ? await downloadText(client, uid) : null;
-          const draft = excerpt ? await draftReplyAssist(excerpt, { name: row.full_name || row.username, channel: "SoundCloud" }) : null;
-          await sendTelegramMessage(
-            `💬 SC-відповідь від <b>${row.full_name || row.username}</b>\n${row.email}` +
-            (excerpt ? `\n\n${excerpt.slice(0, 400)}` : "") +
-            (draft ? `\n\n💡 <b>Чернетка (${draft.intent}):</b>\n${draft.reply}` : "")
-          ).catch(() => {});
+          await notifyReply({ email: row.email, name: row.full_name || row.username, source: "SoundCloud" });
         }
 
         // Spotify leads: same reply-stops-sequence behaviour as the SC barrel.
@@ -269,14 +288,7 @@ export async function GET(request: Request) {
         ).catch(() => ({ rows: [] as { ig_username: string; full_name: string | null; email: string }[] }));
         for (const row of spReplied.rows) {
           replies++;
-          const uid = uidByAddr.get(row.email.toLowerCase().trim());
-          const excerpt = uid ? await downloadText(client, uid) : null;
-          const draft = excerpt ? await draftReplyAssist(excerpt, { name: row.full_name || row.ig_username, channel: "Spotify" }) : null;
-          await sendTelegramMessage(
-            `💬 Spotify-відповідь від <b>${row.full_name || row.ig_username}</b>\n${row.email}` +
-            (excerpt ? `\n\n${excerpt.slice(0, 400)}` : "") +
-            (draft ? `\n\n💡 <b>Чернетка (${draft.intent}):</b>\n${draft.reply}` : "")
-          ).catch(() => {});
+          await notifyReply({ email: row.email, name: row.full_name || row.ig_username, source: "Spotify" });
         }
 
         // Radar leads (YouTube/Reddit/…): reply stops the sequence + notify with
@@ -288,14 +300,7 @@ export async function GET(request: Request) {
         ).catch(() => ({ rows: [] as { name: string | null; email: string; source: string }[] }));
         for (const row of radarReplied.rows) {
           replies++;
-          const uid = uidByAddr.get(row.email.toLowerCase().trim());
-          const excerpt = uid ? await downloadText(client, uid) : null;
-          const draft = excerpt ? await draftReplyAssist(excerpt, { name: row.name, channel: `Radar/${row.source}` }) : null;
-          await sendTelegramMessage(
-            `💬 Radar-відповідь (${row.source}) від <b>${row.name || row.email}</b>\n${row.email}` +
-            (excerpt ? `\n\n${excerpt.slice(0, 400)}` : "") +
-            (draft ? `\n\n💡 <b>Чернетка (${draft.intent}):</b>\n${draft.reply}` : "")
-          ).catch(() => {});
+          await notifyReply({ email: row.email, name: row.name, source: `Radar/${row.source}` });
         }
 
         for (const row of matched.rows) {
@@ -376,21 +381,24 @@ export async function GET(request: Request) {
             continue;
           }
 
+          const bpDraft = excerpt ? await draftReplyAssist(excerpt, { name, channel: "Beatport" }) : null;
           const tgMessageId = await sendTelegramMessage(
-            `🎉 <b>Відповідь від ліда!</b>\n\n` +
+            `🎉 <b>Відповідь від ліда! (Beatport — активуй)</b>\n\n` +
             `🎧 <b>${tgEscape(name)}</b>\n` +
             `📧 ${tgEscape(row.value)}\n` +
             (subject ? `✉️ ${tgEscape(subject)}\n` : "") +
             (excerpt ? `\n<blockquote>${tgEscape(excerpt)}</blockquote>\n` : "") +
-            `\n↩️ <i>Зроби reply на це повідомлення — я надішлю твій текст артисту на email.</i>\n` +
-            `<a href="https://ninja-digger.vercel.app/artist/${encodeURIComponent(row.artist_beatport_id)}">Відкрити картку ліда</a>`
+            (bpDraft ? `\n💡 <b>Чернетка (${bpDraft.intent}):</b>\n${tgEscape(bpDraft.reply)}\n` : "") +
+            `\n↩️ <i>Approve — надіслати як є, або свайп-reply — відредагувати.</i>\n` +
+            `<a href="https://ninja-digger.vercel.app/artist/${encodeURIComponent(row.artist_beatport_id)}">Відкрити картку ліда</a>`,
+            bpDraft ? [[{ text: "✅ Approve & Send", callback_data: "approve" }]] : undefined
           );
           if (tgMessageId != null) {
             await pool.query(
-              `INSERT INTO tg_notifications (tg_message_id, artist_beatport_id, artist_name, email, subject)
-               VALUES ($1, $2, $3, $4, $5)
+              `INSERT INTO tg_notifications (tg_message_id, artist_beatport_id, artist_name, email, subject, draft, source)
+               VALUES ($1, $2, $3, $4, $5, $6, 'Beatport')
                ON CONFLICT (tg_message_id) DO NOTHING`,
-              [tgMessageId, row.artist_beatport_id, row.artist_name, row.value, subject || null]
+              [tgMessageId, row.artist_beatport_id, row.artist_name, row.value, subject || null, bpDraft?.reply ?? null]
             ).catch((e) => console.error("[cron/inbox] tg_notifications insert failed:", e instanceof Error ? e.message : e));
           }
         }
