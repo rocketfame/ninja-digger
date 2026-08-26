@@ -17,16 +17,16 @@ function youtube(touch: 1 | 2 | 3, name: string, pct: number): RadarEmail {
   if (touch === 1)
     return {
       subject: `your latest upload`,
-      text: `Hey ${name},\n\nCame across your latest video — the sound genuinely stood out. How's it doing so far, are you happy with the reach?${SIG}`,
+      text: `Hey ${name},\n\nCame across your latest video — the sound genuinely stood out. How's the reach been so far? We've actually got an idea that could get it in front of a lot more people — happy to share if you're up for it.${SIG}`,
     };
   if (touch === 2)
     return {
       subject: `growing on YouTube`,
-      text: `Hey ${name},\n\nQuick one — we help independent artists push their music videos on YouTube (real views + algorithm traction) alongside Spotify. Figured it might fit where you're at with your latest release. Worth a chat?${SIG}`,
+      text: `Hey ${name},\n\nWe run full YouTube promo packages for independent artists — real views, algorithm traction, the whole thing handled for you (and we can tie in Spotify too). Feels like a fit for your latest release. Open to a quick chat?${SIG}`,
     };
   return {
     subject: `idea for your next drop`,
-    text: `Hey ${name},\n\nWe're opening a few spots this month for a YouTube + Spotify promo push for independent artists — ${pct}% off for the first release. If you've got something dropping, happy to send details.${SIG}`,
+    text: `Hey ${name},\n\nWe're opening a few spots this month for our all-in-one YouTube promo package — everything covered, ${pct}% off the first campaign. If you've got a release out or dropping soon, happy to send the full breakdown.${SIG}`,
   };
 }
 
