@@ -279,6 +279,25 @@ export async function GET(request: Request) {
           ).catch(() => {});
         }
 
+        // Radar leads (YouTube/Reddit/…): reply stops the sequence + notify with
+        // the source tagged so you know which offer they got.
+        const radarReplied = await pool.query<{ name: string | null; email: string; source: string }>(
+          `UPDATE radar_leads SET status='responded', updated_at=now()
+           WHERE LOWER(email) = ANY($1::text[]) AND status='contacted'
+           RETURNING name, email, source`, [unique]
+        ).catch(() => ({ rows: [] as { name: string | null; email: string; source: string }[] }));
+        for (const row of radarReplied.rows) {
+          replies++;
+          const uid = uidByAddr.get(row.email.toLowerCase().trim());
+          const excerpt = uid ? await downloadText(client, uid) : null;
+          const draft = excerpt ? await draftReplyAssist(excerpt, { name: row.name, channel: `Radar/${row.source}` }) : null;
+          await sendTelegramMessage(
+            `💬 Radar-відповідь (${row.source}) від <b>${row.name || row.email}</b>\n${row.email}` +
+            (excerpt ? `\n\n${excerpt.slice(0, 400)}` : "") +
+            (draft ? `\n\n💡 <b>Чернетка (${draft.intent}):</b>\n${draft.reply}` : "")
+          ).catch(() => {});
+        }
+
         for (const row of matched.rows) {
           // The status transition is the dedup: once Responded, no re-notification
           const updated = await pool.query(
