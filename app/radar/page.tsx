@@ -14,11 +14,11 @@ type Lead = {
   heat_score: number; followers: number | null;
 };
 
-const SOURCES: { key: string; label: string; icon: ComponentType<{ className?: string; style?: React.CSSProperties }>; color: string; href?: string; note?: string }[] = [
-  { key: "instagram", label: "Instagram", icon: SiInstagram, color: "#e1306c", href: "/spotify-leads", note: "IG-коментатори (на сторінці Spotify)" },
-  { key: "reddit", label: "Reddit", icon: SiReddit, color: "#ff4500", note: "самопромо-саби, свіжі релізи" },
-  { key: "youtube", label: "YouTube", icon: SiYoutube, color: "#ff0000", note: "booking-емейли з описів каналів" },
-  { key: "playlisting", label: "Playlisting", icon: SiSpotify, color: "#1db954", note: "SubmitHub/Groover — платять за промо" },
+const SOURCES: { key: string; label: string; icon: ComponentType<{ className?: string; style?: React.CSSProperties }>; color: string; href?: string; note?: string; offer?: string }[] = [
+  { key: "instagram", label: "Instagram", icon: SiInstagram, color: "#e1306c", href: "/spotify-leads", note: "IG-коментатори (на сторінці Spotify)", offer: "Spotify промо" },
+  { key: "reddit", label: "Reddit", icon: SiReddit, color: "#ff4500", note: "самопромо-саби, свіжі релізи", offer: "→ Spotify промо" },
+  { key: "youtube", label: "YouTube", icon: SiYoutube, color: "#ff0000", note: "booking-емейли з описів каналів", offer: "→ YouTube + Spotify" },
+  { key: "playlisting", label: "Playlisting", icon: SiSpotify, color: "#1db954", note: "SubmitHub/Groover — платять за промо", offer: "→ плейлист-апселл" },
 ];
 
 const num = (n: number | null | undefined) => (n ?? 0).toLocaleString("uk-UA");
@@ -76,6 +76,11 @@ export default async function RadarPage({ searchParams }: { searchParams: Promis
                   📧 {num(st.emails)}{s.key !== "instagram" ? ` · 🔥 ${num(st.hot)}` : ""}
                 </div>
                 <div className="mt-2 text-[11px] leading-tight text-[var(--text-muted)]/80">{s.note}</div>
+                {s.offer && (
+                  <div className="mt-1 inline-block rounded bg-[var(--bg-page)] px-1.5 py-0.5 text-[10px] font-semibold" style={{ color: s.color }}>
+                    {s.offer}
+                  </div>
+                )}
                 {!s.href && st.emails > 0 && (
                   <a
                     href={`/api/segments/radar/export?source=${s.key}&format=csv`}
