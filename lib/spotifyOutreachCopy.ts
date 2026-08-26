@@ -1,13 +1,9 @@
 /**
- * Cold-email copy for Spotify-channel leads (Ukrainian). Same framework/tone as
- * the SoundCloud copy — modern, easy, a bit slang, plain text, 1:1. These leads
- * are independent artists (found active around Spotify-promo content), so the
- * angle leads with Spotify/streaming rather than SoundCloud.
- * Three touches: 1) genuine discovery + soft question, no offer. 2) value
- * (campaigns for artists at their level: Spotify + all streaming + Beatport
- * charts + socials) + soft invite. 3) the exclusive discount, only if no reply.
- * No unsubscribe link — opt-out is reply-based, honored by the inbox automation.
- * Copy rotates weekly so it is not fingerprintable.
+ * Cold-email copy for Spotify-channel leads — ENGLISH, plain text, 1:1, casual.
+ * Deliverability-first: touch 1 is a genuine 1:1 note with ZERO offer / discount /
+ * links (so Gmail keeps it out of Promotions). Touch 2 = soft value. Touch 3 =
+ * the exclusive discount, only if no reply. No unsubscribe link — reply-based
+ * opt-out, honored by the inbox automation. Copy rotates weekly.
  */
 
 function isoWeek(d: Date): number {
@@ -20,45 +16,40 @@ function isoWeek(d: Date): number {
 function pick<T>(pool: T[], seed: number): T { return pool[Math.abs(seed) % pool.length]; }
 function hash(s: string): number { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
 
-const GREETINGS = ["Привіт, {name}!", "Хей, {name}!", "Йо, {name}!"];
+const GREETINGS = ["Hey {name},", "Hi {name},", "Yo {name},"];
 
-// ДОТИК 1 — щире відкриття + м'яке питання, без оферу.
-const T1_SUBJECTS = ["твоя музика", "коротке питання", "твої треки", "залетіло", "твій звук"];
+// TOUCH 1 — genuine, personal, NO offer / no links. Just a real note + a question.
+const T1_SUBJECTS = ["your music", "quick question", "your tracks", "your sound", "just heard this"];
 const T1_OPENERS = [
-  "Натрапив на твою музику і чесно, вражений. Крутий звук, реально заходить.",
-  "Послухав твої треки і мушу сказати, вражений. Дуже кльово, кайфую.",
-  "Залетів на твій профіль, послухав і відверто, вражений. Звук топовий.",
+  "Came across your music and honestly, it really landed with me — the sound's got something.",
+  "Been listening to your tracks and had to reach out — genuinely good stuff.",
+  "Found your profile, gave it a proper listen, and the sound really stood out.",
 ];
 const T1_QUESTIONS = [
-  "Питання: ти вже якось просуваєш треки на Spotify та інших стрімінгах, чи поки органіка?",
-  "Скажи, ти пушиш релізи на Spotify, Apple Music і десь ще, чи все поки саме росте?",
-  "Ти вже качаєш це десь на стрімінгах, типу Spotify, Apple, Deezer, чи поки ні?",
+  "Quick one — are you already pushing your releases anywhere, or mostly letting them grow on their own so far?",
+  "Are you running any promo on your releases right now, or is it all organic at the moment?",
+  "Do you do anything to push your tracks after a release, or not really yet?",
 ];
 
-// ДОТИК 2 — кампанії під артистів твого рівня + окремі топові послуги.
-const T2_SUBJECTS = ["нагадую про себе", "щодо твого релізу", "є ідея"];
+// TOUCH 2 — soft value, no discount yet.
+const T2_SUBJECTS = ["circling back", "about your release", "an idea for you"];
 const T2_BODIES = [
-  "Для артистів твого рівня в нас є кампанії під ключ: зростання на Spotify, Apple Music, Deezer, Tidal, топ-чарти Beatport і Amazon, плюс соцмережі (TikTok, Instagram). Зберемо пакет під твій наступний реліз? З гарною знижкою.",
-  "Робимо повний розкрут релізу: Spotify, Apple Music, Deezer, Tidal, топ-чарти Beatport та Amazon, плюс TikTok і Instagram. Хочеш пакет під наступний дроп? Дамо чудову знижку.",
-  "В нас є все під твій наступний реліз: стрімінги (Spotify, Apple Music, Deezer, Tidal), топ-чарти Beatport і Amazon, соцмережі (TikTok, Instagram). Цікаво? Зберемо пакет зі знижкою.",
+  "We help independent artists grow their releases — real streams and playlist placements across Spotify, Apple Music and the other platforms, plus a push on socials. Might be a fit for your next drop — open to a quick chat?",
+  "For artists at your level we put together release campaigns — streams + playlists on Spotify/Apple/Deezer and a social push, all handled for you. Worth exploring for your next release?",
+  "We run full release pushes for independent artists — playlists, real streams and socials, tailored to where you're at. Feels like a fit for your latest — up for a quick chat?",
 ];
 
-// ДОТИК 3 — ексклюзивна знижка, тільки якщо не відповіли.
-const T3_SUBJECTS = ["останнє від мене", "ексклюзив для тебе", "щодо твоїх релізів"];
+// TOUCH 3 — the exclusive discount, only if no reply.
+const T3_SUBJECTS = ["last note from me", "one last thing", "about your next release"];
 const T3_BODIES = [
-  "Останнє від мене. Якщо хочеш протестити наші потужності на своїх релізах, можу дати чудову ексклюзивну знижку {pct}% на наші послуги. Якщо цікаво, напиши.",
-  "Фінальне повідомлення. Хочеш крутнути наші можливості на своїх треках? Тримай ексклюзивну знижку {pct}% на наші послуги. Якщо відгукується, пиши.",
-  "Останній меседж. Готовий спробувати наші потужності на релізах? Дам ексклюзивну знижку {pct}%. Цікаво, напиши.",
+  "Last note from me — if you want to try what we do on one of your releases, I can offer an exclusive {pct}% off the first campaign. If it's interesting, just reply.",
+  "Final message. If you'd like to test us on your next track, here's an exclusive {pct}% off to start. If it resonates, drop me a line.",
+  "One last one — happy to run your next release with an exclusive {pct}% off the first campaign. If you're up for it, just reply.",
 ];
 
 const CLOSERS = ["Max\nPromoSound", "Max, PromoSound"];
 
-function toHtml(text: string): string {
-  const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.5;color:#111">${esc.replace(/\n/g, "<br>")}</div>`;
-}
-
-export function buildSpotifyEmail(touch: 1 | 2 | 3, opts: { name: string; pct: number; now?: Date }): { subject: string; text: string; html: string } {
+export function buildSpotifyEmail(touch: 1 | 2 | 3, opts: { name: string; pct: number; now?: Date }): { subject: string; text: string } {
   const now = opts.now ?? new Date();
   const week = isoWeek(now);
   const name = (opts.name || "there").split(/\s+/)[0].slice(0, 40) || "there";
@@ -78,5 +69,5 @@ export function buildSpotifyEmail(touch: 1 | 2 | 3, opts: { name: string; pct: n
     const body = pick(T3_BODIES, seed + 1).replace("{pct}", String(opts.pct));
     text = `${greet}\n\n${body}\n\n${close}`;
   }
-  return { subject, text, html: toHtml(text) };
+  return { subject, text };
 }

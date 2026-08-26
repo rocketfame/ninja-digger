@@ -109,7 +109,7 @@ export async function GET(request: Request) {
     const name = lead.full_name || lead.ig_username || "there";
     const email = buildSpotifyEmail(touch, { name, pct });
     try {
-      await transporter.sendMail({ from, replyTo, to: lead.email, subject: email.subject, text: email.text, html: email.html });
+      await transporter.sendMail({ from, replyTo, to: lead.email, subject: email.subject, text: email.text });
       await pool.query(
         `INSERT INTO outreach_events (artist_beatport_id, template_id, channel, contact_value, sent_at, outcome, sender)
          VALUES ($1,$2,'email',$3, now(),'sent',$4)`, [`sp:${lead.ig_username}`, `sp_touch_${touch}`, lead.email, senderId]

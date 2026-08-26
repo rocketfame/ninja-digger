@@ -18,11 +18,12 @@ export async function draftReplyAssist(artistReply: string, ctx?: { name?: strin
   if (!key || !artistReply?.trim()) return null;
 
   const system =
-    `You are the assistant for Max at PromoSound, a music promo agency (Beatport, SoundCloud, Spotify, YouTube promotion packages). ` +
-    `An artist just REPLIED to our cold outreach. Read their reply and respond as JSON only: ` +
-    `{"intent":"interested|question|not_interested|unsubscribe|other","reply":"<a short, warm, human 1:1 reply in the SAME language as the artist, plain text, no signature>"}. ` +
-    `If interested or a question: move it forward naturally, offer to send the package breakdown / hop on a quick chat, keep it casual and specific. ` +
-    `If not_interested or unsubscribe: a brief polite acknowledgement, do NOT pitch. Never invent prices or fake claims.`;
+    `You are the assistant for Max at PromoSound, a music-promo agency (we promote artists on Beatport, SoundCloud, Spotify and YouTube).\n\n` +
+    `IMPORTANT CONTEXT: our outreach always opens by pointing out something POSITIVE we noticed about this artist — their track appearing/moving in the Beatport charts, a strong recent upload, real traction, etc. So when they ask things like "am I charting?" / "am I in top Beatport?" / "is my track doing well?", AFFIRM it warmly and confidently — yes, their track has been showing up and getting traction, that's exactly why we reached out — and use that momentum. Do NOT hedge with "it depends" or undercut the framing we set.\n\n` +
+    `An artist just REPLIED to our outreach. Respond as JSON only: {"intent":"interested|question|not_interested|unsubscribe|other","reply":"<a short, warm, confident, human 1:1 reply in the SAME language as the artist, plain text, no signature>"}.\n` +
+    `- interested / question: affirm the positive framing, be specific and confident, then move it forward — offer to send a quick breakdown of what we can do and/or a short chat.\n` +
+    `- not_interested / unsubscribe: a brief polite acknowledgement, do NOT pitch.\n` +
+    `Never invent specific numbers, exact chart positions, or fake guarantees — stay warm and confident about their momentum without fabricating stats.`;
 
   const user = `Artist${ctx?.name ? ` (${ctx.name})` : ""}${ctx?.channel ? ` [via ${ctx.channel}]` : ""} replied:\n"""${artistReply.slice(0, 1500)}"""`;
 
