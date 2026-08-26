@@ -76,6 +76,15 @@ export default async function RadarPage({ searchParams }: { searchParams: Promis
                   📧 {num(st.emails)}{s.key !== "instagram" ? ` · 🔥 ${num(st.hot)}` : ""}
                 </div>
                 <div className="mt-2 text-[11px] leading-tight text-[var(--text-muted)]/80">{s.note}</div>
+                {!s.href && st.emails > 0 && (
+                  <a
+                    href={`/api/segments/radar/export?source=${s.key}&format=csv`}
+                    download
+                    className="mt-2 inline-flex items-center gap-1 rounded-lg border border-[var(--border)] px-2.5 py-1 text-[11px] font-medium text-[var(--text)] transition-colors hover:bg-[var(--bg-page)]"
+                  >
+                    📥 Сегмент ({num(st.emails)} з email)
+                  </a>
+                )}
               </div>
             );
             return s.href ? <Link key={s.key} href={s.href}>{card}</Link> : <div key={s.key}>{card}</div>;
