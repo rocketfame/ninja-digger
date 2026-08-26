@@ -72,7 +72,7 @@ export async function GET(request: Request) {
     const cres = await fetch(`${API}/channels?part=snippet,statistics&id=${ids}&key=${key}`).catch(() => null);
     if (!cres || !cres.ok) continue;
     const cdata = (await cres.json().catch(() => ({}))) as {
-      items?: { id?: string; snippet?: { title?: string; description?: string; customUrl?: string }; statistics?: { subscriberCount?: string } }[];
+      items?: { id?: string; snippet?: { title?: string; description?: string; customUrl?: string }; statistics?: { subscriberCount?: string; videoCount?: string } }[];
     };
     for (const ch of cdata.items ?? []) {
       scanned++;
@@ -81,6 +81,7 @@ export async function GET(request: Request) {
       const link = extractUrl(desc, LINK_RE);
       if (!email && !link) continue; // need something actionable (email now, or a link to enrich later)
       const subs = parseInt(ch.statistics?.subscriberCount ?? "0", 10) || 0;
+      const videos = parseInt(ch.statistics?.videoCount ?? "0", 10) || 0;
       const pub = chanPub.get(ch.id ?? "") ?? "";
       const releaseDays = pub ? Math.floor((now - Date.parse(pub)) / 86400000) : null;
       const heat = computeHeat({ releaseDays, hasIntent: false, followers: subs, hasEmail: !!email });
@@ -93,8 +94,9 @@ export async function GET(request: Request) {
         email,
         email_source: email ? "yt_channel" : null,
         followers: subs,
+        video_count: videos,
         release_date: pub ? pub.slice(0, 10) : null,
-        intent_signal: `fresh upload · ${subs.toLocaleString()} subs`,
+        intent_signal: `${subs.toLocaleString()} subs · ${videos.toLocaleString()} videos`,
         source_url: ch.snippet?.customUrl ? `https://youtube.com/${ch.snippet.customUrl}` : (ch.id ? `https://youtube.com/channel/${ch.id}` : null),
         heat_score: heat,
       }).catch(() => 0);

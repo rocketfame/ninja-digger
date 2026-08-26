@@ -7,11 +7,11 @@ import type { ComponentType } from "react";
 
 export const dynamic = "force-dynamic";
 
-type Row = { source: string; total: number; emails: number; hot: number };
+type Row = { source: string; total: number; emails: number; hot: number; contacted: number };
 type Lead = {
   source: string; handle: string; name: string | null; email: string | null;
-  spotify_url: string | null; intent_signal: string | null; source_url: string | null;
-  heat_score: number; followers: number | null;
+  spotify_url: string | null; soundcloud_url: string | null; intent_signal: string | null; source_url: string | null;
+  heat_score: number; followers: number | null; video_count: number | null; status: string | null;
 };
 
 const SOURCES: { key: string; label: string; icon: ComponentType<{ className?: string; style?: React.CSSProperties }>; color: string; href?: string; note?: string; offer?: string }[] = [
@@ -25,7 +25,10 @@ const num = (n: number | null | undefined) => (n ?? 0).toLocaleString("uk-UA");
 
 async function getData(source?: string) {
   const rows = await pool
-    .query<Row>(`SELECT source, COUNT(*)::int total, COUNT(email)::int emails, COUNT(*) FILTER (WHERE heat_score >= 70)::int hot FROM radar_leads GROUP BY source`)
+    .query<Row>(`SELECT source, COUNT(*)::int total, COUNT(email)::int emails,
+        COUNT(*) FILTER (WHERE heat_score >= 70)::int hot,
+        COUNT(*) FILTER (WHERE contacted_at IS NOT NULL)::int contacted
+      FROM radar_leads GROUP BY source`)
     .then((r) => r.rows).catch(() => [] as Row[]);
   const ig = await pool
     .query<{ total: number; emails: number }>(`SELECT COUNT(*)::int total, COUNT(email)::int emails FROM spotify_leads`)
@@ -34,7 +37,7 @@ async function getData(source?: string) {
   const params = source && source !== "all" ? [source] : [];
   const hot = await pool
     .query<Lead>(
-      `SELECT source, handle, name, email, spotify_url, intent_signal, source_url, heat_score, followers
+      `SELECT source, handle, name, email, spotify_url, soundcloud_url, intent_signal, source_url, heat_score, followers, video_count, status
        FROM radar_leads ${where} ORDER BY heat_score DESC, COALESCE(email_found_at, created_at) DESC LIMIT 60`,
       params
     )
@@ -47,6 +50,13 @@ export default async function RadarPage({ searchParams }: { searchParams: Promis
   const active = source ?? "all";
   const { rows, ig, hot } = await getData(active);
   const byKey = (k: string) => rows.find((r) => r.source === k);
+  const sum = (f: (r: Row) => number) => rows.reduce((a, r) => a + f(r), 0);
+  const totals = {
+    leads: sum((r) => r.total),
+    emails: sum((r) => r.emails),
+    hot: sum((r) => r.hot),
+    contacted: sum((r) => r.contacted),
+  };
 
   return (
     <div className="min-h-screen bg-[var(--bg-page)]">
@@ -57,6 +67,29 @@ export default async function RadarPage({ searchParams }: { searchParams: Promis
           <div>
             <h1 className="text-2xl font-bold text-[var(--text)]">Radar — гарячі ліди</h1>
             <p className="text-sm text-[var(--text-muted)]">Артисти з активною промо-інтенцією, зібрані з різних джерел і відсортовані за «теплом».</p>
+          </div>
+        </div>
+
+        {/* Big summary card */}
+        <div className="mb-6 rounded-2xl border border-[var(--border)] bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-page)] p-5">
+          <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Radar разом (всі джерела)</div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div>
+              <div className="text-3xl font-bold text-[var(--text)]">{num(totals.leads)}</div>
+              <div className="mt-0.5 text-xs text-[var(--text-muted)]">лідів усього</div>
+            </div>
+            <div>
+              <div className="text-3xl font-bold" style={{ color: "#1db954" }}>{num(totals.emails)}</div>
+              <div className="mt-0.5 text-xs text-[var(--text-muted)]">📧 з емейлом</div>
+            </div>
+            <div>
+              <div className="text-3xl font-bold" style={{ color: "#ff4d00" }}>{num(totals.hot)}</div>
+              <div className="mt-0.5 text-xs text-[var(--text-muted)]">🔥 гарячих (≥70)</div>
+            </div>
+            <div>
+              <div className="text-3xl font-bold text-[var(--text)]">{num(totals.contacted)}</div>
+              <div className="mt-0.5 text-xs text-[var(--text-muted)]">✉️ вже написали</div>
+            </div>
           </div>
         </div>
 
@@ -123,6 +156,10 @@ export default async function RadarPage({ searchParams }: { searchParams: Promis
               {hot.map((l, i) => {
                 const src = SOURCES.find((s) => s.key === l.source);
                 const Icon = src?.icon ?? Flame;
+                const meta: string[] = [];
+                if (l.followers != null && l.followers > 0) meta.push(`${num(l.followers)} subs`);
+                if (l.video_count != null && l.video_count > 0) meta.push(`${num(l.video_count)} відео`);
+                if (l.status && l.status !== "new") meta.push(l.status);
                 return (
                   <li key={`${l.source}-${l.handle}-${i}`} className="flex items-center gap-3 px-4 py-3">
                     <div className="flex w-12 flex-shrink-0 items-center gap-1">
@@ -131,21 +168,27 @@ export default async function RadarPage({ searchParams }: { searchParams: Promis
                     </div>
                     <Icon className="h-4 w-4 flex-shrink-0" style={{ color: src?.color ?? "var(--text-muted)" }} />
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-[var(--text)]">{l.name || l.handle}</div>
-                      <div className="truncate text-xs text-[var(--text-muted)]">{l.intent_signal}</div>
+                      {l.source_url ? (
+                        <a href={l.source_url} target="_blank" rel="noreferrer" className="truncate block text-sm font-medium text-[var(--text)] hover:text-[var(--accent)] hover:underline">
+                          {l.name || l.handle} ↗
+                        </a>
+                      ) : (
+                        <div className="truncate text-sm font-medium text-[var(--text)]">{l.name || l.handle}</div>
+                      )}
+                      <div className="truncate text-xs text-[var(--text-muted)]">{meta.join(" · ") || l.intent_signal}</div>
                     </div>
                     {l.email && (
-                      <span className="hidden items-center gap-1 text-xs text-[var(--text-muted)] sm:flex">
+                      <a href={`mailto:${l.email}`} className="hidden items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text)] sm:flex">
                         <Mail className="h-3.5 w-3.5" /> {l.email}
-                      </span>
+                      </a>
                     )}
                     {l.spotify_url && (
                       <a href={l.spotify_url} target="_blank" rel="noreferrer" title="Spotify">
                         <SiSpotify className="h-4 w-4 flex-shrink-0" style={{ color: "#1db954" }} />
                       </a>
                     )}
-                    {l.source_url && (
-                      <a href={l.source_url} target="_blank" rel="noreferrer" className="text-xs text-[var(--accent)]">↗</a>
+                    {l.soundcloud_url && (
+                      <a href={l.soundcloud_url} target="_blank" rel="noreferrer" title="SoundCloud" className="text-xs font-bold" style={{ color: "#ff5500" }}>SC</a>
                     )}
                   </li>
                 );

@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 type Row = {
   name: string | null; email: string | null; spotify_url: string | null;
   soundcloud_url: string | null; source_url: string | null; website: string | null;
-  followers: number | null; heat_score: number; intent_signal: string | null; source: string;
+  followers: number | null; video_count: number | null; heat_score: number; intent_signal: string | null; source: string;
 };
 
 const csvCell = (v: unknown) => {
@@ -39,7 +39,7 @@ export async function GET(request: Request) {
 
   const rows = await pool
     .query<Row>(
-      `SELECT name, email, spotify_url, soundcloud_url, source_url, website, followers, heat_score, intent_signal, source
+      `SELECT name, email, spotify_url, soundcloud_url, source_url, website, followers, video_count, heat_score, intent_signal, source
        FROM radar_leads ${where} ORDER BY heat_score DESC, email_found_at DESC NULLS LAST LIMIT $${params.length}`,
       params
     )
@@ -49,13 +49,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ source, count: rows.length, rows });
   }
 
-  const header = ["name", "email", "source", "spotify", "youtube_url", "soundcloud", "website", "followers", "heat"];
+  const header = ["name", "email", "source", "channel_url", "spotify", "soundcloud", "website", "subscribers", "video_count", "heat"];
   const lines = [header.join(",")];
   for (const r of rows) {
     lines.push([
-      csvCell(r.name), csvCell(r.email), csvCell(r.source), csvCell(r.spotify_url),
-      csvCell(r.source_url), csvCell(r.soundcloud_url), csvCell(r.website),
-      csvCell(r.followers), csvCell(r.heat_score),
+      csvCell(r.name), csvCell(r.email), csvCell(r.source), csvCell(r.source_url),
+      csvCell(r.spotify_url), csvCell(r.soundcloud_url), csvCell(r.website),
+      csvCell(r.followers), csvCell(r.video_count), csvCell(r.heat_score),
     ].join(","));
   }
   return new NextResponse(lines.join("\n"), {
