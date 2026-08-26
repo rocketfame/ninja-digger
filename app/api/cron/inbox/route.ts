@@ -15,6 +15,7 @@ import { invalidateContactEmail } from "@/lib/emailHygiene";
 import { sendTelegramMessage, tgEscape } from "@/lib/telegram";
 import { draftReplyAssist } from "@/lib/llm";
 import { classifyEmail } from "@/lib/enrichClassify";
+import { acquireLease } from "@/lib/cronLock";
 
 /** Role from the text right before the email ("Bookings: x@y") or from the address itself. */
 function detectRole(body: string, email: string, artistName: string | null): string {
@@ -78,6 +79,13 @@ export async function GET(request: Request) {
   const user = process.env.GMAIL_USER;
   const pass = process.env.GMAIL_APP_PASSWORD;
   if (!user || !pass) return NextResponse.json({ ok: false, error: "GMAIL not configured" });
+
+  // Runs every 5 min — a lease keeps overlapping ticks from doing IMAP+LLM twice.
+  // (Dedup on the reply-insert already prevents double notifications; this just
+  // saves the wasted work of two concurrent scans.)
+  if (!(await acquireLease("inbox", 4))) {
+    return NextResponse.json({ ok: true, skipped: "locked" });
+  }
 
   const client = new ImapFlow({
     host: "imap.gmail.com",
