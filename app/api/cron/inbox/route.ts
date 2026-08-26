@@ -13,6 +13,7 @@ import { ImapFlow } from "imapflow";
 import { pool } from "@/lib/db";
 import { invalidateContactEmail } from "@/lib/emailHygiene";
 import { sendTelegramMessage, tgEscape } from "@/lib/telegram";
+import { draftReplyAssist } from "@/lib/llm";
 import { classifyEmail } from "@/lib/enrichClassify";
 
 /** Role from the text right before the email ("Bookings: x@y") or from the address itself. */
@@ -252,9 +253,11 @@ export async function GET(request: Request) {
           replies++;
           const uid = uidByAddr.get(row.email.toLowerCase().trim());
           const excerpt = uid ? await downloadText(client, uid) : null;
+          const draft = excerpt ? await draftReplyAssist(excerpt, { name: row.full_name || row.username, channel: "SoundCloud" }) : null;
           await sendTelegramMessage(
             `💬 SC-відповідь від <b>${row.full_name || row.username}</b>\n${row.email}` +
-            (excerpt ? `\n\n${excerpt.slice(0, 400)}` : "")
+            (excerpt ? `\n\n${excerpt.slice(0, 400)}` : "") +
+            (draft ? `\n\n💡 <b>Чернетка (${draft.intent}):</b>\n${draft.reply}` : "")
           ).catch(() => {});
         }
 
@@ -268,9 +271,11 @@ export async function GET(request: Request) {
           replies++;
           const uid = uidByAddr.get(row.email.toLowerCase().trim());
           const excerpt = uid ? await downloadText(client, uid) : null;
+          const draft = excerpt ? await draftReplyAssist(excerpt, { name: row.full_name || row.ig_username, channel: "Spotify" }) : null;
           await sendTelegramMessage(
             `💬 Spotify-відповідь від <b>${row.full_name || row.ig_username}</b>\n${row.email}` +
-            (excerpt ? `\n\n${excerpt.slice(0, 400)}` : "")
+            (excerpt ? `\n\n${excerpt.slice(0, 400)}` : "") +
+            (draft ? `\n\n💡 <b>Чернетка (${draft.intent}):</b>\n${draft.reply}` : "")
           ).catch(() => {});
         }
 
