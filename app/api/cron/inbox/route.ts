@@ -255,9 +255,9 @@ export async function GET(request: Request) {
             `💬 <b>${o.source}</b>-відповідь${activate} від <b>${o.name || o.email}</b>\n${o.email}` +
             (excerpt ? `\n\n<blockquote>${tgEscape(excerpt.slice(0, 400))}</blockquote>` : "") +
             (draft
-              ? `\n💡 <b>Чернетка (${draft.intent})</b> — тапни щоб скопіювати:\n<code>${tgEscape(draft.reply)}</code>\n\n✅ <b>Approve &amp; Send</b> — надіслати як є.\n✏️ <b>Редагувати:</b> тапни чернетку ⬆️ (скопіюється) → свайп-reply на це повідомлення → встав, поправ, надішли.`
+              ? `\n💡 <b>Чернетка (${draft.intent})</b>:\n<code>${tgEscape(draft.reply)}</code>\n\n✅ <b>Approve &amp; Send</b> — надіслати як є.\n✏️ <b>Редагувати</b> — напишеш свій варіант, я відправлю.`
               : `\n↩️ <i>Свайп-reply — напиши відповідь артисту.</i>`),
-            draft ? [[{ text: "✅ Approve & Send", callback_data: "approve" }]] : undefined
+            draft ? [[{ text: "✅ Approve & Send", callback_data: "approve" }, { text: "✏️ Редагувати", callback_data: "edit" }]] : undefined
           );
           if (msgId != null) {
             await pool.query(
@@ -398,10 +398,10 @@ export async function GET(request: Request) {
             `📧 ${tgEscape(row.value)}\n` +
             (subject ? `✉️ ${tgEscape(subject)}\n` : "") +
             (excerpt ? `\n<blockquote>${tgEscape(excerpt)}</blockquote>\n` : "") +
-            (bpDraft ? `\n💡 <b>Чернетка (${bpDraft.intent})</b> — тапни щоб скопіювати:\n<code>${tgEscape(bpDraft.reply)}</code>\n` : "") +
-            `\n✅ <b>Approve &amp; Send</b> — як є · ✏️ тапни чернетку → свайп-reply → поправ і надішли.\n` +
+            (bpDraft ? `\n💡 <b>Чернетка (${bpDraft.intent})</b>:\n<code>${tgEscape(bpDraft.reply)}</code>\n` : "") +
+            `\n✅ <b>Approve &amp; Send</b> — як є · ✏️ <b>Редагувати</b> — свій варіант.\n` +
             `<a href="https://ninja-digger.vercel.app/artist/${encodeURIComponent(row.artist_beatport_id)}">Відкрити картку ліда</a>`,
-            bpDraft ? [[{ text: "✅ Approve & Send", callback_data: "approve" }]] : undefined
+            bpDraft ? [[{ text: "✅ Approve & Send", callback_data: "approve" }, { text: "✏️ Редагувати", callback_data: "edit" }]] : undefined
           );
           if (tgMessageId != null) {
             await pool.query(
