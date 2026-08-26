@@ -62,11 +62,11 @@ const T2_SUBJECTS = [
   "One more thought on your chart run",
 ];
 const T2_OPENINGS = [
-  "Congrats again on charting on Beatport — genuinely a strong result. Just circling back on my note.",
-  "Still think that Beatport chart run of yours deserves a shout — quick follow-up in case my last email got buried.",
+  "Congrats again on charting on Beatport, genuinely a strong result. Just circling back on my note.",
+  "Still think that Beatport chart run of yours deserves a shout, quick follow-up in case my last email got buried.",
   "Making the Beatport charts is no small thing, so congrats again. Wanted to nudge you on what I mentioned.",
-  "Seeing your track in the Beatport charts is what made me want to follow up — momentum like that is worth acting on.",
-  "Congrats on the chart placement again — a short follow-up in case my previous message slipped through.",
+  "Seeing your track in the Beatport charts is what made me want to follow up, momentum like that is worth acting on.",
+  "Congrats on the chart placement again, a short follow-up in case my previous message slipped through.",
 ];
 const T2_PITCHES = [
   "When a track starts moving in the charts, there is usually a short window where additional exposure can significantly amplify results.",
