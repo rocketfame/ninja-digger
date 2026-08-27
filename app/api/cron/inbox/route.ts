@@ -283,16 +283,36 @@ export async function GET(request: Request) {
           return offerCache.get(ch) ?? undefined;
         };
 
+        // Opt-out: blacklist the email + set a terminal status so NO barrel ever
+        // contacts them again (blacklist is excluded in every outreach query).
+        // Works for all channels, keyed by email.
+        const closeOptOut = async (email: string, source: string) => {
+          const e = email.toLowerCase().trim();
+          await pool.query(`INSERT INTO email_blacklist (email, reason) VALUES ($1,'opt-out (reply)') ON CONFLICT (email) DO NOTHING`, [e]).catch(() => {});
+          const s = source.toLowerCase();
+          if (s.startsWith("soundcloud")) await pool.query(`UPDATE sc_artists SET lead_status='Not Interested', updated_at=now() WHERE LOWER(email)=$1`, [e]).catch(() => {});
+          else if (s.startsWith("spotify")) await pool.query(`UPDATE spotify_leads SET lead_status='Not Interested', email_status='unsub', updated_at=now() WHERE LOWER(email)=$1`, [e]).catch(() => {});
+          else if (s.startsWith("radar")) await pool.query(`UPDATE radar_leads SET status='not_interested', updated_at=now() WHERE LOWER(email)=$1`, [e]).catch(() => {});
+          else await pool.query(`UPDATE lead_profiles lp SET status='Not Interested', updated_at=now() FROM artist_contacts ac WHERE ac.artist_beatport_id=lp.artist_beatport_id AND ac.type='email' AND LOWER(TRIM(ac.value))=$1`, [e]).catch(() => {});
+          // Also invalidate the contact so enrichment doesn't resurrect it.
+          await pool.query(`UPDATE artist_contacts SET status='unsub' WHERE type='email' AND LOWER(TRIM(value))=$1`, [e]).catch(() => {});
+        };
+
         const notifyReply = async (o: { email: string; name: string | null; source: string; beatportId?: string | null }) => {
           const addr = o.email.toLowerCase().trim();
           const uid = uidByAddr.get(addr);
           const excerpt = uid ? await downloadText(client, uid) : null;
           const subject = subjectByAddr.get(addr) || null;
           const draft = excerpt ? await draftReplyAssist(excerpt, { name: o.name, channel: o.source, offer: await getOffer(o.source) }) : null;
+          // Not interested / unsubscribe → close + blacklist immediately (still
+          // notify so a polite one-line ack can be sent via Approve).
+          const optedOut = draft?.intent === "not_interested" || draft?.intent === "unsubscribe" || (!!excerpt && OPT_OUT_RE.test(excerpt));
+          if (optedOut) await closeOptOut(o.email, o.source);
           const activate = o.source.startsWith("Beatport") ? " (лід — активуй)" : "";
           const msgId = await sendTelegramMessage(
             `💬 <b>${o.source}</b>-відповідь${activate} від <b>${o.name || o.email}</b>\n${o.email}` +
             (excerpt ? `\n\n<blockquote>${tgEscape(excerpt.slice(0, 400))}</blockquote>` : "") +
+            (optedOut ? `\n🚫 <b>Не цікаво → закрито + blacklist</b> (більше не турбуємо).` : "") +
             (draft
               ? `\n💡 <b>Чернетка (${draft.intent})</b>:\n<code>${tgEscape(draft.reply)}</code>\n\n✅ <b>Approve &amp; Send</b> — надіслати як є.\n✏️ <b>Редагувати</b> — напишеш свій варіант, я відправлю.`
               : `\n↩️ <i>Свайп-reply — напиши відповідь артисту.</i>`),
