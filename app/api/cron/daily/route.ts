@@ -105,6 +105,19 @@ export async function GET(request: Request) {
       const c5 = await pool.query("DELETE FROM outreach_events WHERE sent_at < now() - interval '120 days'");
       (cleanup as Record<string, number>).outreach_events = c5.rowCount ?? 0;
 
+      // notified_replies: дедуп вхідних відповідей. IMAP-скан дивиться назад 3 дні,
+      // тож 90 днів історії з великим запасом; далі росло б безмежно.
+      const c6 = await pool.query("DELETE FROM notified_replies WHERE notified_at < now() - interval '90 days'").catch(() => ({ rowCount: 0 }));
+      (cleanup as Record<string, number>).notified_replies = c6.rowCount ?? 0;
+
+      // tg_notifications: мапінг TG-повідомлення→лід для Approve/Reply, 180 днів.
+      const c7 = await pool.query("DELETE FROM tg_notifications WHERE created_at < now() - interval '180 days'").catch(() => ({ rowCount: 0 }));
+      (cleanup as Record<string, number>).tg_notifications = c7.rowCount ?? 0;
+
+      // Reclaim dead tuples from the DELETE-pruned tables so the file stops
+      // creeping toward the Neon 512 MB cap (plain VACUUM = safe, no lock).
+      await pool.query("VACUUM chart_entries, bptoptracker_daily, outreach_events").catch((e) => console.error("[cron/daily] vacuum:", e instanceof Error ? e.message : e));
+
       // Keep the seed list current: every Re-Ex promoter (within a follower cap
       // so no mega-channel floods the DB) becomes a harvest seed. Idempotent —
       // ON CONFLICT keeps existing cursors/progress intact.

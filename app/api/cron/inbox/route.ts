@@ -29,7 +29,7 @@ function detectRole(body: string, email: string, artistName: string | null): str
 }
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const LOOKBACK_DAYS = 3;
 const BOUNCE_FROM_RE = /^(mailer-daemon|postmaster|mail delivery (subsystem|system))/i;
@@ -253,7 +253,7 @@ export async function GET(request: Request) {
           const mid = (msgIdByAddr.get(addr) || `${addr}:${subjectByAddr.get(addr) ?? ""}:${uidByAddr.get(addr) ?? ""}`).slice(0, 500);
           const ins = await pool
             .query(`INSERT INTO notified_replies (message_id) VALUES ($1) ON CONFLICT (message_id) DO NOTHING`, [mid])
-            .catch(() => ({ rowCount: 1 }));
+            .catch((e) => { console.error("[cron/inbox] notified_replies dedup failed (fail-open):", e instanceof Error ? e.message : e); return { rowCount: 1 }; });
           return (ins.rowCount ?? 0) > 0;
         };
 

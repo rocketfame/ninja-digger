@@ -15,6 +15,14 @@ import { pool } from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  // Optional shared-secret gate: forged Brevo events could mark leads bounced/
+  // unsub and poison the blacklist. INERT until BREVO_WEBHOOK_SECRET is set —
+  // then configure the Brevo webhook URL with `?token=<secret>`.
+  const secret = process.env.BREVO_WEBHOOK_SECRET;
+  if (secret && new URL(request.url).searchParams.get("token") !== secret) {
+    return NextResponse.json({ ok: false }, { status: 401 });
+  }
+
   const body = await request.json().catch(() => null);
   if (!body) return NextResponse.json({ ok: false }, { status: 400 });
   // Brevo may batch; normalize to an array.
