@@ -20,18 +20,29 @@ const API = "https://www.googleapis.com/youtube/v3";
 const SEARCHES_PER_RUN = 3;   // 3 × 100 units × 24 runs = 7,200/day (quota 10k)
 const RESULTS_PER_SEARCH = 50; // API max; same quota cost as 25
 
-// Query pool, ordered so the highest email-yield niches come first. Beat
-// producers ("type beat", "prod by") almost always list a lease/booking email;
-// genre premieres and "out now" indie artists frequently link Spotify + contact.
-const QUERIES = [
+// Two pools, mixed EVERY run so no hour is "weak": HIGH = niches where a
+// lease/booking email is almost always in the description (beat producers,
+// demo/booking pages) → 2 per run; ROTATE = genre premieres / indie releases
+// (lower email rate but fresh Spotify-linked artists) → 1 per run. Each pool
+// rotates independently so we cover it all over the day.
+const HIGH = [
   "type beat 2026", "free type beat", "type beat", "prod by", "beat store",
+  "guitar type beat", "demo submission", "booking management music", "sample pack",
+];
+const ROTATE = [
   "melodic techno premiere", "afro house 2026", "drum and bass premiere",
   "techno premiere", "deep house new", "phonk 2026", "amapiano new",
   "future bass new", "trap new artist", "hip hop new artist", "lofi new",
   "new single out now", "out now spotify", "official music video 2026",
-  "new EP", "unsigned artist", "independent artist new", "demo submission",
-  "booking management music",
+  "new EP", "unsigned artist", "independent artist new",
 ];
+function pickQueries(hour: number): string[] {
+  return [
+    HIGH[(hour * 2) % HIGH.length],
+    HIGH[(hour * 2 + 1) % HIGH.length],
+    ROTATE[hour % ROTATE.length],
+  ];
+}
 const LINK_RE = "open\\.spotify\\.com|spotify\\.link|soundcloud\\.com|linktr\\.ee|beacons\\.ai|bandcamp\\.com|band\\.link|hypeddit\\.com";
 
 export async function GET(request: Request) {
@@ -42,9 +53,9 @@ export async function GET(request: Request) {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) return NextResponse.json({ ok: true, skipped: "no YOUTUBE_API_KEY" });
 
-  // Rotate a fresh slice of the query pool each hour so we cover it all daily.
+  // Mix email-rich + genre niches every run (see HIGH/ROTATE above).
   const hour = new Date().getUTCHours();
-  const queries = Array.from({ length: SEARCHES_PER_RUN }, (_, i) => QUERIES[(hour * SEARCHES_PER_RUN + i) % QUERIES.length]);
+  const queries = pickQueries(hour).slice(0, SEARCHES_PER_RUN);
   const publishedAfter = new Date(Date.now() - 21 * 86400000).toISOString();
 
   // 1) Search each query → collect unique channelIds with their upload date.
