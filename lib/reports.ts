@@ -169,88 +169,70 @@ export async function buildScReport(): Promise<string> {
 export async function buildFullReport(period?: string): Promise<string> {
   const n = (sql: string) => pool.query<{ c: number }>(sql).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
   const notBl = `LOWER(email) NOT IN (SELECT LOWER(email) FROM email_blacklist)`;
+  const T = "sent_at >= CURRENT_DATE";
   const [
-    // Beatport
-    bpLeads, bpNew, bpEmail, bpGold, bpDiamond, bpSentToday, bpSentTotal, bpReplied, bpWon, bpQueue, bpPaused,
-    // SoundCloud
-    scArtists, scNew, scEmail, scEmailNew, scGold, scDiamond, scSentToday, scSentTotal, scReplied, scBounce, scUnsub, scQueue, scSeedsDone, scSeeds, scPaused,
-    // Spotify
-    spLeads, spNew, spEmail, spEnriched, spGold, spDiamond, spSentToday, spSentTotal, spReplied, spOpened, spCreators, spTargets, spPaused,
-    // shared
-    domSent, dbMb, bpEmailNew, spEmailNew,
+    // found today (emails)
+    bpFound, scFound, spFound, rdFound,
+    // email base
+    bpBase, scBase, spBase, rdBase,
+    // sent today
+    bpSent, scSent, spSent, rdSent,
+    // runway (uncontacted, has email)
+    bpLeft, scLeft, spLeft, rdLeft,
+    // replied
+    bpRepl, scRepl, spRepl, rdRepl,
+    // pauses + shared
+    bpPaused, scPaused, spPaused, rdPaused, domSent, dbMb, rdTotal,
   ] = await Promise.all([
-    n("SELECT COUNT(*)::int c FROM lead_scores"),
-    n("SELECT COUNT(*)::int c FROM artist_metrics WHERE first_seen >= CURRENT_DATE"),
-    n("SELECT COUNT(DISTINCT artist_beatport_id)::int c FROM artist_contacts WHERE type='email' AND (status IS NULL OR status='ok')"),
-    n("SELECT COUNT(DISTINCT artist_beatport_id)::int c FROM artist_contacts WHERE type='email' AND (status IS NULL OR status='ok') AND (delivered_at IS NOT NULL OR opens>0)"),
-    n("SELECT COUNT(DISTINCT artist_beatport_id)::int c FROM artist_contacts WHERE type='email' AND (status IS NULL OR status='ok') AND opens>0"),
-    n("SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'email_touch_%' AND sent_at >= CURRENT_DATE"),
-    n("SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'email_touch_%'"),
-    n("SELECT COUNT(*)::int c FROM lead_profiles WHERE status IN ('Responded','In Progress','Won')"),
-    n("SELECT COUNT(*)::int c FROM lead_profiles WHERE status='Won'"),
-    n(`SELECT COUNT(DISTINCT ac.artist_beatport_id)::int c FROM artist_contacts ac LEFT JOIN lead_profiles lp ON lp.artist_beatport_id=ac.artist_beatport_id WHERE ac.type='email' AND (ac.status IS NULL OR ac.status='ok') AND (lp.status IS NULL OR lp.status='New') AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)`),
+    n(`SELECT COUNT(DISTINCT artist_beatport_id)::int c FROM artist_contacts WHERE type='email' AND created_at >= CURRENT_DATE`),
+    n(`SELECT COUNT(*)::int c FROM sc_artists WHERE email_found_at >= CURRENT_DATE`),
+    n(`SELECT COUNT(*)::int c FROM spotify_leads WHERE email_found_at >= CURRENT_DATE`),
+    n(`SELECT COUNT(*)::int c FROM radar_leads WHERE email_found_at >= CURRENT_DATE`),
+    n(`SELECT COUNT(DISTINCT LOWER(value))::int c FROM artist_contacts WHERE type='email'`),
+    n(`SELECT COUNT(email)::int c FROM sc_artists`),
+    n(`SELECT COUNT(email)::int c FROM spotify_leads`),
+    n(`SELECT COUNT(email)::int c FROM radar_leads`),
+    n(`SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'email_touch_%' AND ${T}`),
+    n(`SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sc_touch_%' AND ${T}`),
+    n(`SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sp_touch_%' AND ${T}`),
+    n(`SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'radar_touch_%' AND ${T}`),
+    n(`SELECT COUNT(DISTINCT ac.artist_beatport_id)::int c FROM artist_contacts ac LEFT JOIN lead_profiles lp ON lp.artist_beatport_id=ac.artist_beatport_id WHERE ac.type='email' AND (lp.status IS NULL OR lp.status='New') AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)`),
+    n(`SELECT COUNT(*)::int c FROM sc_artists WHERE email IS NOT NULL AND (lead_status IS NULL OR lead_status='New') AND ${notBl}`),
+    n(`SELECT COUNT(*)::int c FROM spotify_leads WHERE email IS NOT NULL AND (lead_status IS NULL OR lead_status='New') AND ${notBl}`),
+    n(`SELECT COUNT(*)::int c FROM radar_leads WHERE email IS NOT NULL AND (status IS NULL OR status='new') AND ${notBl}`),
+    n(`SELECT COUNT(*)::int c FROM lead_profiles WHERE status IN ('Responded','In Progress','Won')`),
+    n(`SELECT COUNT(*)::int c FROM sc_artists WHERE lead_status='Responded'`),
+    n(`SELECT COUNT(*)::int c FROM spotify_leads WHERE lead_status='Responded'`),
+    n(`SELECT COUNT(*)::int c FROM radar_leads WHERE status='responded'`),
     getSetting("outreach_paused"),
-    n("SELECT COUNT(*)::int c FROM sc_artists WHERE track_count>=1"),
-    n("SELECT COUNT(*)::int c FROM sc_artists WHERE harvested_at >= CURRENT_DATE"),
-    n("SELECT COUNT(email)::int c FROM sc_artists WHERE track_count>=1"),
-    n("SELECT COUNT(*)::int c FROM sc_artists WHERE harvested_at >= CURRENT_DATE AND email IS NOT NULL"),
-    n("SELECT COUNT(*)::int c FROM sc_artists WHERE track_count>=1 AND email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub') AND (opens>0 OR lead_status='Responded' OR delivered_at IS NOT NULL)"),
-    n("SELECT COUNT(*)::int c FROM sc_artists WHERE track_count>=1 AND email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub') AND (opens>0 OR clicks>0 OR lead_status='Responded')"),
-    n("SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sc_touch_%' AND sent_at >= CURRENT_DATE"),
-    n("SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sc_touch_%'"),
-    n("SELECT COUNT(*)::int c FROM sc_artists WHERE lead_status='Responded'"),
-    n("SELECT COUNT(*)::int c FROM sc_artists WHERE lead_status='Bounced'"),
-    n("SELECT COUNT(*)::int c FROM sc_artists WHERE lead_status='Unsubscribed'"),
-    n(`SELECT COUNT(*)::int c FROM sc_artists WHERE email IS NOT NULL AND sc_touch=0 AND (lead_status IS NULL OR lead_status='New') AND track_count>=1 AND ${notBl}`),
-    n("SELECT COUNT(*)::int c FROM sc_seed_accounts WHERE active AND completed_at IS NOT NULL"),
-    n("SELECT COUNT(*)::int c FROM sc_seed_accounts WHERE active"),
     getSetting("sc_outreach_paused"),
-    n("SELECT COUNT(*)::int c FROM spotify_leads"),
-    n("SELECT COUNT(*)::int c FROM spotify_leads WHERE created_at >= CURRENT_DATE"),
-    n("SELECT COUNT(email)::int c FROM spotify_leads"),
-    n("SELECT COUNT(enriched_at)::int c FROM spotify_leads"),
-    n("SELECT COUNT(*)::int c FROM spotify_leads WHERE email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub') AND (opens>0 OR lead_status='Responded' OR delivered_at IS NOT NULL)"),
-    n("SELECT COUNT(*)::int c FROM spotify_leads WHERE email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub') AND (opens>0 OR clicks>0 OR lead_status='Responded')"),
-    n("SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sp_touch_%' AND sent_at >= CURRENT_DATE"),
-    n("SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sp_touch_%'"),
-    n("SELECT COUNT(*)::int c FROM spotify_leads WHERE lead_status='Responded'"),
-    n("SELECT COUNT(*)::int c FROM spotify_leads WHERE opens>0"),
-    n("SELECT COUNT(*)::int c FROM spotify_creators").catch(() => 0),
-    n("SELECT COUNT(*) FILTER (WHERE status='candidate' AND niche='spotify_promo')::int c FROM spotify_creators").catch(() => 0),
     getSetting("sp_outreach_paused"),
-    n("SELECT COUNT(*)::int c FROM outreach_events WHERE channel='email' AND sent_at >= CURRENT_DATE"),
+    getSetting("radar_outreach_paused"),
+    n(`SELECT COUNT(*)::int c FROM outreach_events WHERE channel='email' AND ${T}`),
     pool.query<{ c: number }>("SELECT (pg_database_size(current_database())/1048576.0)::numeric(10,1) c").then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0),
-    n("SELECT COUNT(DISTINCT artist_beatport_id)::int c FROM artist_contacts WHERE type='email' AND created_at >= CURRENT_DATE"),
-    n("SELECT COUNT(*)::int c FROM spotify_leads WHERE enriched_at >= CURRENT_DATE AND email IS NOT NULL"),
+    n(`SELECT COUNT(*)::int c FROM radar_leads`),
   ]);
 
   const f = (x: number) => x.toLocaleString("uk-UA");
-  const plus = (x: number) => ` (+${f(x)})`;
-  const status = (p: string | null) => (p === "1" ? "пауза" : "активна");
+  const dot = (p: string | null) => (p === "1" ? "⏸" : "🟢");
   const date = new Date().toISOString().slice(0, 10);
-  const head = `NINJA DIGGER — ЗВІТ${period ? ` · ${period}` : ""} · ${date}`;
+  const head = `🥷 NINJA DIGGER${period ? ` · ${period}` : ""} · ${date}`;
+  // Aligned rows: "Platform  +found   →sent   base/left"
+  const row = (label: string, found: number, sent: number, base: number, left: number, repl: number) =>
+    `${label}\n   🔎 +${f(found)} за добу · база ${f(base)}\n   ✉️ ${f(sent)} за добу · залишилось ${f(left)}\n   💬 відповіли ${f(repl)}`;
 
-  return (
-    `<b>${head}</b>\n` +
-    `\n<b>━ BEATPORT</b> · ${status(bpPaused)}\n` +
-    `Лідів знайдено: <b>${f(bpLeads)}</b>${plus(bpNew)}\n` +
-    `📧 ${f(bpEmail)}${plus(bpEmailNew)}   🥇 ${f(bpGold)}   💎 ${f(bpDiamond)}\n` +
-    `Надіслано: ${f(bpSentToday)} сьогодні · ${f(bpSentTotal)} всього\n` +
-    `💬 відповіли: <b>${f(bpReplied)}</b>  ·  угод: ${f(bpWon)}  ·  черга: ${f(bpQueue)}\n` +
-    `\n<b>━ SOUNDCLOUD</b> · ${status(scPaused)}\n` +
-    `Артистів знайдено: <b>${f(scArtists)}</b>${plus(scNew)}\n` +
-    `📧 ${f(scEmail)}${plus(scEmailNew)}   🥇 ${f(scGold)}   💎 ${f(scDiamond)}\n` +
-    `Надіслано: ${f(scSentToday)} сьогодні · ${f(scSentTotal)} всього\n` +
-    `💬 відповіли: <b>${f(scReplied)}</b>  ·  bounce: ${f(scBounce)}  ·  відписки: ${f(scUnsub)}\n` +
-    `Черга: ${f(scQueue)}  ·  канали: ${f(scSeedsDone)}/${f(scSeeds)}\n` +
-    `\n<b>━ SPOTIFY</b> · ${status(spPaused)}\n` +
-    `Лідів знайдено: <b>${f(spLeads)}</b>${plus(spNew)}\n` +
-    `📧 ${f(spEmail)}${plus(spEmailNew)}   🥇 ${f(spGold)}   💎 ${f(spDiamond)}\n` +
-    `Надіслано: ${f(spSentToday)} сьогодні · ${f(spSentTotal)} всього\n` +
-    `💬 відповіли: <b>${f(spReplied)}</b>  ·  відкрили: ${f(spOpened)}\n` +
-    `Джерела-креатори: ${f(spCreators)}  ·  🎯 таргетів: ${f(spTargets)}\n` +
-    `\n<b>━ РАЗОМ</b>\n` +
-    `Надіслано сьогодні: ${f(bpSentToday + scSentToday + spSentToday)} (домен ${f(domSent)}/280)\n` +
-    `База: ${dbMb} / 512 MB`
-  );
+  const parts = [
+    `<b>${head}</b>`,
+    ``,
+    `<b>📊 ЗА ДОБУ</b>`,
+    `Знайдено емейлів: <b>${f(bpFound + scFound + spFound + rdFound)}</b>`,
+    `Надіслано листів: <b>${f(bpSent + scSent + spSent + rdSent)}</b> (домен ${f(domSent)}/280)`,
+    ``,
+    row(`${dot(bpPaused)} <b>BEATPORT</b>`, bpFound, bpSent, bpBase, bpLeft, bpRepl),
+    row(`${dot(scPaused)} <b>SOUNDCLOUD</b>`, scFound, scSent, scBase, scLeft, scRepl),
+    row(`${dot(spPaused)} <b>SPOTIFY</b>`, spFound, spSent, spBase, spLeft, spRepl),
+  ];
+  if (rdTotal > 0) parts.push(row(`${dot(rdPaused)} <b>RADAR</b> (YouTube+)`, rdFound, rdSent, rdBase, rdLeft, rdRepl));
+  parts.push(``, `💾 База БД: ${dbMb} / 512 MB`);
+  return parts.join("\n");
 }
