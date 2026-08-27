@@ -34,17 +34,40 @@ function logTables(sql) {
 }
 
 async function run() {
+  // Track applied migrations so we don't re-run all of them on every build
+  // (a non-idempotent migration re-run could error or duplicate data).
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`
+  );
+  const applied = new Set(
+    (await pool.query(`SELECT name FROM schema_migrations`)).rows.map((r) => r.name)
+  );
+
   const files = (await readdir(migrationsDir))
     .filter((f) => f.endsWith(".sql"))
     .sort();
 
-  console.log(`Running ${files.length} migration(s)...`);
-  for (const file of files) {
+  // First run against an existing DB: schema is already live (migrations were
+  // applied ad hoc), so record everything as applied and run nothing — avoids
+  // re-executing dozens of migrations. New files added later run normally.
+  if (applied.size === 0 && files.length > 0) {
+    for (const f of files) {
+      await pool.query(`INSERT INTO schema_migrations (name) VALUES ($1) ON CONFLICT DO NOTHING`, [f]);
+    }
+    await pool.end();
+    console.log(`Initialized migration tracking with ${files.length} existing migration(s); nothing to run.`);
+    return;
+  }
+
+  const pending = files.filter((f) => !applied.has(f));
+  console.log(`${files.length} migration(s), ${pending.length} pending.`);
+  for (const file of pending) {
     const path = join(migrationsDir, file);
     const sql = await readFile(path, "utf-8");
-    console.log(`Migration: ${file}`);
+    console.log(`Applying: ${file}`);
     logTables(sql);
     await pool.query(sql);
+    await pool.query(`INSERT INTO schema_migrations (name) VALUES ($1) ON CONFLICT DO NOTHING`, [file]);
   }
 
   await pool.end();

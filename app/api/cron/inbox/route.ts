@@ -256,6 +256,13 @@ export async function GET(request: Request) {
             .catch((e) => { console.error("[cron/inbox] notified_replies dedup failed (fail-open):", e instanceof Error ? e.message : e); return { rowCount: 1 }; });
           return (ins.rowCount ?? 0) > 0;
         };
+        // Release a claim when the Telegram notification failed to send, so the
+        // reply is retried next run instead of being lost forever (claim was
+        // taken BEFORE the send to dedup concurrent work).
+        const unclaimInbound = async (addr: string): Promise<void> => {
+          const mid = (msgIdByAddr.get(addr) || `${addr}:${subjectByAddr.get(addr) ?? ""}:${uidByAddr.get(addr) ?? ""}`).slice(0, 500);
+          await pool.query(`DELETE FROM notified_replies WHERE message_id = $1`, [mid]).catch(() => {});
+        };
 
         // Shared reply notifier for SC/Spotify/Radar: download the reply, draft a
         // contextual response with Claude, send it to Telegram WITH an "Approve &
@@ -325,6 +332,7 @@ export async function GET(request: Request) {
               [msgId, o.beatportId ?? null, o.name, o.email, subject, draft?.reply ?? null, o.source]
             ).catch(() => {});
           }
+          return msgId != null; // false → Telegram send failed, caller un-claims to retry
         };
         const matched = await pool.query<{ artist_beatport_id: string; value: string; artist_name: string | null }>(
           `SELECT DISTINCT ac.artist_beatport_id, ac.value, am.artist_name
@@ -344,10 +352,11 @@ export async function GET(request: Request) {
            WHERE LOWER(email) = ANY($1::text[]) AND COALESCE(lead_status,'') NOT IN ('Not Interested','Unsubscribed','Bounced')`, [unique]
         ).then((r) => r.rows).catch(() => [] as { username: string; full_name: string | null; email: string }[]);
         for (const row of scRows) {
-          if (!(await claimInbound(row.email.toLowerCase().trim()))) continue;
+          const a = row.email.toLowerCase().trim();
+          if (!(await claimInbound(a))) continue;
           replies++;
           await pool.query(`UPDATE sc_artists SET lead_status='Responded', updated_at=now() WHERE LOWER(email)=LOWER($1)`, [row.email]).catch(() => {});
-          await notifyReply({ email: row.email, name: row.full_name || row.username, source: "SoundCloud" });
+          if (!(await notifyReply({ email: row.email, name: row.full_name || row.username, source: "SoundCloud" }))) { await unclaimInbound(a); replies--; }
         }
 
         // Spotify leads: same every-reply behaviour.
@@ -356,10 +365,11 @@ export async function GET(request: Request) {
            WHERE LOWER(email) = ANY($1::text[]) AND COALESCE(lead_status,'') NOT IN ('Not Interested','Unsubscribed','Bounced')`, [unique]
         ).then((r) => r.rows).catch(() => [] as { ig_username: string; full_name: string | null; email: string }[]);
         for (const row of spRows) {
-          if (!(await claimInbound(row.email.toLowerCase().trim()))) continue;
+          const a = row.email.toLowerCase().trim();
+          if (!(await claimInbound(a))) continue;
           replies++;
           await pool.query(`UPDATE spotify_leads SET lead_status='Responded', updated_at=now() WHERE LOWER(email)=LOWER($1)`, [row.email]).catch(() => {});
-          await notifyReply({ email: row.email, name: row.full_name || row.ig_username, source: "Spotify" });
+          if (!(await notifyReply({ email: row.email, name: row.full_name || row.ig_username, source: "Spotify" }))) { await unclaimInbound(a); replies--; }
         }
 
         // Radar leads (YouTube/Reddit/…): same every-reply behaviour, source tagged.
@@ -368,10 +378,11 @@ export async function GET(request: Request) {
            WHERE LOWER(email) = ANY($1::text[]) AND COALESCE(status,'') NOT IN ('not_interested','unsubscribed','bounced')`, [unique]
         ).then((r) => r.rows).catch(() => [] as { name: string | null; email: string; source: string }[]);
         for (const row of radarRows) {
-          if (!(await claimInbound(row.email.toLowerCase().trim()))) continue;
+          const a = row.email.toLowerCase().trim();
+          if (!(await claimInbound(a))) continue;
           replies++;
           await pool.query(`UPDATE radar_leads SET status='responded', updated_at=now() WHERE LOWER(email)=LOWER($1)`, [row.email]).catch(() => {});
-          await notifyReply({ email: row.email, name: row.name, source: `Radar/${row.source}` });
+          if (!(await notifyReply({ email: row.email, name: row.name, source: `Radar/${row.source}` }))) { await unclaimInbound(a); replies--; }
         }
 
         for (const row of matched.rows) {
@@ -472,6 +483,8 @@ export async function GET(request: Request) {
                ON CONFLICT (tg_message_id) DO NOTHING`,
               [tgMessageId, row.artist_beatport_id, row.artist_name, row.value, subject || null, bpDraft?.reply ?? null]
             ).catch((e) => console.error("[cron/inbox] tg_notifications insert failed:", e instanceof Error ? e.message : e));
+          } else {
+            await unclaimInbound(addrKey); replies--; // TG send failed — retry next run
           }
         }
 
@@ -484,7 +497,7 @@ export async function GET(request: Request) {
           if (!(await claimInbound(rf.addr))) continue; // already surfaced
           replies++;
           console.log(`[cron/inbox] unmatched reply forwarded from ${rf.addr}`);
-          await notifyReply({ email: rf.addr, name: null, source: "Пошта" });
+          if (!(await notifyReply({ email: rf.addr, name: null, source: "Пошта" }))) { await unclaimInbound(rf.addr); replies--; }
         }
       }
     } finally {
