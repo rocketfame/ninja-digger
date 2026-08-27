@@ -99,7 +99,7 @@ export async function GET(request: Request) {
   let replies = 0;
   let snoozed = 0;
   let harvested = 0;
-  const replyFrom: { addr: string; subject: string; uid: number; messageId: string }[] = [];
+  const replyFrom: { addr: string; subject: string; uid: number; messageId: string; threaded: boolean }[] = [];
   const autoReplies: { addr: string; uid: number }[] = [];
   const bounceUids: number[] = [];
   const junkUids: number[] = []; // bounce notices + own [TEST] mail → moved to Trash after processing
@@ -126,13 +126,14 @@ export async function GET(request: Request) {
           if (/^\[test\b/i.test(subject.trim())) junkUids.push(msg.uid);
         } else if (AUTO_REPLY_SUBJECT_RE.test(subject.trim())) {
           autoReplies.push({ addr: fromAddr, uid: msg.uid }); // OOO etc. — snooze, harvest contacts
-        } else if (
-          // Only genuine replies to OUR emails count: threaded reply (In-Reply-To)
-          // or a Re: on one of our outreach subjects. Cold inbound/spam is ignored.
-          Boolean(msg.envelope?.inReplyTo) ||
-          (/^re:/i.test(subject) && /(chart|beatport|promosound|follow|close the loop|quick thought|reach out|momentum)/i.test(subject))
-        ) {
-          replyFrom.push({ addr: fromAddr, subject, uid: msg.uid, messageId: msg.envelope?.messageId ?? "" });
+        } else if (Boolean(msg.envelope?.inReplyTo) || /^re:/i.test(subject.trim())) {
+          // A genuine reply to us: threaded (In-Reply-To) OR any "Re:" subject.
+          // We deliberately do NOT filter by keyword anymore — that dropped
+          // replies to SoundCloud/Spotify outreach whose subjects don't mention
+          // Beatport. Bounces / auto-replies / technical senders are already
+          // filtered above. `threaded` lets us surface even replies from an
+          // address we never contacted (see the unmatched-reply fallback below).
+          replyFrom.push({ addr: fromAddr, subject, uid: msg.uid, messageId: msg.envelope?.messageId ?? "", threaded: Boolean(msg.envelope?.inReplyTo) });
         }
       }
 
@@ -452,6 +453,18 @@ export async function GET(request: Request) {
               [tgMessageId, row.artist_beatport_id, row.artist_name, row.value, subject || null, bpDraft?.reply ?? null]
             ).catch((e) => console.error("[cron/inbox] tg_notifications insert failed:", e instanceof Error ? e.message : e));
           }
+        }
+
+        // "ALWAYS to Telegram" guarantee: any threaded reply we did NOT already
+        // surface above (sender doesn't match a known lead, or they replied from
+        // a different address) is still forwarded, so no reply is ever missed —
+        // whether it's their 1st or 10th. claimInbound keeps it to once.
+        for (const rf of replyFrom) {
+          if (!rf.threaded) continue;
+          if (!(await claimInbound(rf.addr))) continue; // already surfaced
+          replies++;
+          console.log(`[cron/inbox] unmatched reply forwarded from ${rf.addr}`);
+          await notifyReply({ email: rf.addr, name: null, source: "Пошта" });
         }
       }
     } finally {
