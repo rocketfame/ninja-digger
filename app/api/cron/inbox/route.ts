@@ -260,12 +260,34 @@ export async function GET(request: Request) {
         // contextual response with Claude, send it to Telegram WITH an "Approve &
         // Send" button, and store the draft in tg_notifications so the button (or
         // a swipe-reply edit) can send it back to the artist.
+        // Concrete offer per channel, read from app_settings (offer_<ch>_name /
+        // _url / _code) so the exact product + link + discount code are editable
+        // without a deploy. Cached per run.
+        const offerCache = new Map<string, { name: string; url: string | null; code: string | null } | null>();
+        const getOffer = async (source: string) => {
+          const s = source.toLowerCase();
+          const ch = s.startsWith("beatport") ? "beatport" : s.startsWith("soundcloud") ? "soundcloud"
+            : s.startsWith("spotify") ? "spotify" : s.startsWith("radar") ? "radar" : null;
+          if (!ch) return undefined;
+          if (!offerCache.has(ch)) {
+            const rows = await pool.query<{ key: string; value: string }>(
+              `SELECT key, value FROM app_settings WHERE key IN ($1,$2,$3)`,
+              [`offer_${ch}_name`, `offer_${ch}_url`, `offer_${ch}_code`]
+            ).then((r) => r.rows).catch(() => [] as { key: string; value: string }[]);
+            const m = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+            offerCache.set(ch, m[`offer_${ch}_name`]
+              ? { name: m[`offer_${ch}_name`], url: m[`offer_${ch}_url`] || null, code: m[`offer_${ch}_code`] || null }
+              : null);
+          }
+          return offerCache.get(ch) ?? undefined;
+        };
+
         const notifyReply = async (o: { email: string; name: string | null; source: string; beatportId?: string | null }) => {
           const addr = o.email.toLowerCase().trim();
           const uid = uidByAddr.get(addr);
           const excerpt = uid ? await downloadText(client, uid) : null;
           const subject = subjectByAddr.get(addr) || null;
-          const draft = excerpt ? await draftReplyAssist(excerpt, { name: o.name, channel: o.source }) : null;
+          const draft = excerpt ? await draftReplyAssist(excerpt, { name: o.name, channel: o.source, offer: await getOffer(o.source) }) : null;
           const activate = o.source.startsWith("Beatport") ? " (лід — активуй)" : "";
           const msgId = await sendTelegramMessage(
             `💬 <b>${o.source}</b>-відповідь${activate} від <b>${o.name || o.email}</b>\n${o.email}` +
@@ -410,7 +432,7 @@ export async function GET(request: Request) {
             continue;
           }
 
-          const bpDraft = excerpt ? await draftReplyAssist(excerpt, { name, channel: "Beatport" }) : null;
+          const bpDraft = excerpt ? await draftReplyAssist(excerpt, { name, channel: "Beatport", offer: await getOffer("Beatport") }) : null;
           const tgMessageId = await sendTelegramMessage(
             `🎉 <b>Відповідь від ліда! (Beatport — активуй)</b>\n\n` +
             `🎧 <b>${tgEscape(name)}</b>\n` +
