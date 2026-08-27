@@ -58,21 +58,42 @@ export async function GET(request: Request) {
   const queries = pickQueries(hour).slice(0, SEARCHES_PER_RUN);
   const publishedAfter = new Date(Date.now() - 21 * 86400000).toISOString();
 
-  // 1) Search each query → collect unique channelIds with their upload date.
+  // 1) Search each query → collect unique channelIds (+ upload date) and the
+  //    video ids so we can read the full per-video descriptions next.
   const chanPub = new Map<string, string>();
+  const videoToChan = new Map<string, string>();
   let searched = 0;
   for (const q of queries) {
     const url = `${API}/search?part=snippet&type=video&videoCategoryId=10&order=date&maxResults=${RESULTS_PER_SEARCH}&q=${encodeURIComponent(q)}&publishedAfter=${publishedAfter}&key=${key}`;
     const res = await fetch(url).catch(() => null);
     if (!res || !res.ok) continue; // one query failing (e.g. transient) must not kill the run
     searched++;
-    const data = (await res.json().catch(() => ({}))) as { items?: { snippet?: { channelId?: string; publishedAt?: string } }[] };
+    const data = (await res.json().catch(() => ({}))) as { items?: { id?: { videoId?: string }; snippet?: { channelId?: string; publishedAt?: string } }[] };
     for (const it of data.items ?? []) {
       const cid = it.snippet?.channelId;
       if (cid && !chanPub.has(cid)) chanPub.set(cid, it.snippet?.publishedAt ?? "");
+      const vid = it.id?.videoId;
+      if (vid && cid) videoToChan.set(vid, cid);
     }
   }
   if (chanPub.size === 0) return NextResponse.json({ ok: true, searched, scanned: 0, hot: 0 });
+
+  // 1b) Full video descriptions (videos.list ≈ 3 units/batch) — indie artists &
+  //     producers put a booking/lease email in the VIDEO description far more
+  //     often than in the channel "about". Accumulate per channel as a fallback.
+  const chanVideoText = new Map<string, string>();
+  const vids = [...videoToChan.keys()];
+  for (let i = 0; i < vids.length; i += 50) {
+    const ids = vids.slice(i, i + 50).join(",");
+    const vres = await fetch(`${API}/videos?part=snippet&id=${ids}&key=${key}`).catch(() => null);
+    if (!vres || !vres.ok) continue;
+    const vdata = (await vres.json().catch(() => ({}))) as { items?: { id?: string; snippet?: { description?: string } }[] };
+    for (const v of vdata.items ?? []) {
+      const cid = videoToChan.get(v.id ?? "");
+      const desc = v.snippet?.description ?? "";
+      if (cid && desc) chanVideoText.set(cid, (chanVideoText.get(cid) ?? "") + "\n" + desc);
+    }
+  }
 
   // 2) Hydrate channels in batches of 50 (channels.list id cap), read descriptions.
   const allIds = [...chanPub.keys()];
@@ -87,9 +108,14 @@ export async function GET(request: Request) {
     };
     for (const ch of cdata.items ?? []) {
       scanned++;
-      const desc = ch.snippet?.description ?? "";
-      const email = extractEmail(desc);
-      const link = extractUrl(desc, LINK_RE);
+      // Search email/links across BOTH the channel "about" and the video
+      // descriptions we pulled — video descriptions carry booking emails far
+      // more often.
+      const chanDesc = ch.snippet?.description ?? "";
+      const vidDesc = chanVideoText.get(ch.id ?? "") ?? "";
+      const text = chanDesc + "\n" + vidDesc;
+      const email = extractEmail(text);
+      const link = extractUrl(text, LINK_RE);
       if (!email && !link) continue; // need something actionable (email now, or a link to enrich later)
       const subs = parseInt(ch.statistics?.subscriberCount ?? "0", 10) || 0;
       const videos = parseInt(ch.statistics?.videoCount ?? "0", 10) || 0;
@@ -100,10 +126,11 @@ export async function GET(request: Request) {
         source: "youtube",
         handle: ch.id ?? ch.snippet?.customUrl ?? ch.snippet?.title ?? "",
         name: ch.snippet?.title ?? null,
-        spotify_url: extractUrl(desc, "open\\.spotify\\.com|spotify\\.link"),
-        soundcloud_url: extractUrl(desc, "soundcloud\\.com"),
+        spotify_url: extractUrl(text, "open\\.spotify\\.com|spotify\\.link"),
+        soundcloud_url: extractUrl(text, "soundcloud\\.com"),
+        website: extractUrl(text, "linktr\\.ee|beacons\\.ai|band\\.link|hypeddit\\.com|bandcamp\\.com"),
         email,
-        email_source: email ? "yt_channel" : null,
+        email_source: email ? (extractEmail(chanDesc) ? "yt_channel" : "yt_video") : null,
         followers: subs,
         video_count: videos,
         release_date: pub ? pub.slice(0, 10) : null,
