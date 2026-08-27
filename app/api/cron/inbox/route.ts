@@ -99,7 +99,7 @@ export async function GET(request: Request) {
   let replies = 0;
   let snoozed = 0;
   let harvested = 0;
-  const replyFrom: { addr: string; subject: string; uid: number }[] = [];
+  const replyFrom: { addr: string; subject: string; uid: number; messageId: string }[] = [];
   const autoReplies: { addr: string; uid: number }[] = [];
   const bounceUids: number[] = [];
   const junkUids: number[] = []; // bounce notices + own [TEST] mail → moved to Trash after processing
@@ -132,7 +132,7 @@ export async function GET(request: Request) {
           Boolean(msg.envelope?.inReplyTo) ||
           (/^re:/i.test(subject) && /(chart|beatport|promosound|follow|close the loop|quick thought|reach out|momentum)/i.test(subject))
         ) {
-          replyFrom.push({ addr: fromAddr, subject, uid: msg.uid });
+          replyFrom.push({ addr: fromAddr, subject, uid: msg.uid, messageId: msg.envelope?.messageId ?? "" });
         }
       }
 
@@ -238,7 +238,23 @@ export async function GET(request: Request) {
       if (replyFrom.length > 0) {
         const subjectByAddr = new Map(replyFrom.map((r) => [r.addr, r.subject]));
         const uidByAddr = new Map(replyFrom.map((r) => [r.addr, r.uid]));
+        // Newest inbound Message-ID per address (fetch order is oldest→newest, so
+        // Map.set keeps the latest).
+        const msgIdByAddr = new Map(replyFrom.map((r) => [r.addr, r.messageId]));
         const unique = [...subjectByAddr.keys()];
+
+        // Per-message dedup: notify once per distinct inbound Message-ID so a
+        // lead's 2nd/3rd reply surfaces too (we re-scan the last 3 days every
+        // run). Returns true only the first time we see this message. Falls back
+        // to addr+subject+uid when the header is missing. Fail-open on DB error
+        // so a real new reply is never silently dropped.
+        const claimInbound = async (addr: string): Promise<boolean> => {
+          const mid = (msgIdByAddr.get(addr) || `${addr}:${subjectByAddr.get(addr) ?? ""}:${uidByAddr.get(addr) ?? ""}`).slice(0, 500);
+          const ins = await pool
+            .query(`INSERT INTO notified_replies (message_id) VALUES ($1) ON CONFLICT (message_id) DO NOTHING`, [mid])
+            .catch(() => ({ rowCount: 1 }));
+          return (ins.rowCount ?? 0) > 0;
+        };
 
         // Shared reply notifier for SC/Spotify/Radar: download the reply, draft a
         // contextual response with Claude, send it to Telegram WITH an "Approve &
@@ -273,54 +289,58 @@ export async function GET(request: Request) {
            JOIN lead_profiles lp ON lp.artist_beatport_id = ac.artist_beatport_id
            LEFT JOIN artist_metrics am ON am.artist_beatport_id = ac.artist_beatport_id
            WHERE ac.type = 'email' AND LOWER(TRIM(ac.value)) = ANY($1::text[])
-             AND lp.status = ANY($2::text[])`,
-          [unique, REPLYABLE]
+             AND COALESCE(lp.status,'New') NOT IN ('Not Interested','Bounced','Unsubscribed')`,
+          [unique]
         );
 
-        // SC leads: a reply stops their sequence (status leaves 'Contacted'),
-        // counts as a reply, and pings Telegram. RETURNING is the dedup — only
-        // rows that were still 'Contacted' flip, so no double-notify.
-        const scReplied = await pool.query<{ username: string; full_name: string | null; email: string }>(
-          `UPDATE sc_artists SET lead_status='Responded', updated_at=now()
-           WHERE LOWER(email) = ANY($1::text[]) AND lead_status='Contacted'
-           RETURNING username, full_name, email`, [unique]
-        ).catch(() => ({ rows: [] as { username: string; full_name: string | null; email: string }[] }));
-        for (const row of scReplied.rows) {
+        // SC leads: notify on EVERY new inbound (claimInbound dedups per message),
+        // not just the first reply, so the whole conversation lives in Telegram.
+        // Skip only leads that opted out / bounced.
+        const scRows = await pool.query<{ username: string; full_name: string | null; email: string }>(
+          `SELECT username, full_name, email FROM sc_artists
+           WHERE LOWER(email) = ANY($1::text[]) AND COALESCE(lead_status,'') NOT IN ('Not Interested','Unsubscribed','Bounced')`, [unique]
+        ).then((r) => r.rows).catch(() => [] as { username: string; full_name: string | null; email: string }[]);
+        for (const row of scRows) {
+          if (!(await claimInbound(row.email.toLowerCase().trim()))) continue;
           replies++;
+          await pool.query(`UPDATE sc_artists SET lead_status='Responded', updated_at=now() WHERE LOWER(email)=LOWER($1)`, [row.email]).catch(() => {});
           await notifyReply({ email: row.email, name: row.full_name || row.username, source: "SoundCloud" });
         }
 
-        // Spotify leads: same reply-stops-sequence behaviour as the SC barrel.
-        const spReplied = await pool.query<{ ig_username: string; full_name: string | null; email: string }>(
-          `UPDATE spotify_leads SET lead_status='Responded', updated_at=now()
-           WHERE LOWER(email) = ANY($1::text[]) AND lead_status='Contacted'
-           RETURNING ig_username, full_name, email`, [unique]
-        ).catch(() => ({ rows: [] as { ig_username: string; full_name: string | null; email: string }[] }));
-        for (const row of spReplied.rows) {
+        // Spotify leads: same every-reply behaviour.
+        const spRows = await pool.query<{ ig_username: string; full_name: string | null; email: string }>(
+          `SELECT ig_username, full_name, email FROM spotify_leads
+           WHERE LOWER(email) = ANY($1::text[]) AND COALESCE(lead_status,'') NOT IN ('Not Interested','Unsubscribed','Bounced')`, [unique]
+        ).then((r) => r.rows).catch(() => [] as { ig_username: string; full_name: string | null; email: string }[]);
+        for (const row of spRows) {
+          if (!(await claimInbound(row.email.toLowerCase().trim()))) continue;
           replies++;
+          await pool.query(`UPDATE spotify_leads SET lead_status='Responded', updated_at=now() WHERE LOWER(email)=LOWER($1)`, [row.email]).catch(() => {});
           await notifyReply({ email: row.email, name: row.full_name || row.ig_username, source: "Spotify" });
         }
 
-        // Radar leads (YouTube/Reddit/…): reply stops the sequence + notify with
-        // the source tagged so you know which offer they got.
-        const radarReplied = await pool.query<{ name: string | null; email: string; source: string }>(
-          `UPDATE radar_leads SET status='responded', updated_at=now()
-           WHERE LOWER(email) = ANY($1::text[]) AND status='contacted'
-           RETURNING name, email, source`, [unique]
-        ).catch(() => ({ rows: [] as { name: string | null; email: string; source: string }[] }));
-        for (const row of radarReplied.rows) {
+        // Radar leads (YouTube/Reddit/…): same every-reply behaviour, source tagged.
+        const radarRows = await pool.query<{ name: string | null; email: string; source: string }>(
+          `SELECT name, email, source FROM radar_leads
+           WHERE LOWER(email) = ANY($1::text[]) AND COALESCE(status,'') NOT IN ('not_interested','unsubscribed','bounced')`, [unique]
+        ).then((r) => r.rows).catch(() => [] as { name: string | null; email: string; source: string }[]);
+        for (const row of radarRows) {
+          if (!(await claimInbound(row.email.toLowerCase().trim()))) continue;
           replies++;
+          await pool.query(`UPDATE radar_leads SET status='responded', updated_at=now() WHERE LOWER(email)=LOWER($1)`, [row.email]).catch(() => {});
           await notifyReply({ email: row.email, name: row.name, source: `Radar/${row.source}` });
         }
 
         for (const row of matched.rows) {
-          // The status transition is the dedup: once Responded, no re-notification
-          const updated = await pool.query(
+          const addrKey = row.value.toLowerCase().trim();
+          // Per-message dedup (not status): every reply from the lead surfaces,
+          // so the whole back-and-forth lives in Telegram.
+          if (!(await claimInbound(addrKey))) continue;
+          await pool.query(
             `UPDATE lead_profiles SET status = 'Responded', updated_at = now()
              WHERE artist_beatport_id = $1 AND status = ANY($2::text[])`,
             [row.artist_beatport_id, REPLYABLE]
-          );
-          if ((updated.rowCount ?? 0) === 0) continue;
+          ).catch(() => {});
           await pool.query(
             `INSERT INTO outreach_events (artist_beatport_id, template_id, channel, contact_value, sent_at, outcome)
              VALUES ($1, 'reply', 'email', $2, now(), 'replied')`,
@@ -329,7 +349,6 @@ export async function GET(request: Request) {
           replies++;
           console.log(`[cron/inbox] reply detected from ${row.value} (artist ${row.artist_beatport_id})`);
 
-          const addrKey = row.value.toLowerCase().trim();
           const name = row.artist_name ?? row.artist_beatport_id;
           const subject = subjectByAddr.get(addrKey) ?? "";
           const uid = uidByAddr.get(addrKey);

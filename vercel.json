@@ -18,6 +18,7 @@
     { "path": "/api/cron/sc-enrich", "schedule": "5,35 * * * *" },
     { "path": "/api/cron/reddit-radar", "schedule": "20 * * * *" },
     { "path": "/api/cron/youtube-radar", "schedule": "50 * * * *" },
+    { "path": "/api/cron/radar-enrich", "schedule": "12,42 * * * *" },
     { "path": "/api/cron/brevo-poll", "schedule": "25,55 * * * *" },
     { "path": "/api/cron/watchdog", "schedule": "30 9,15,21 * * *" },
     { "path": "/api/cron/report-hourly", "schedule": "58 * * * *" }
