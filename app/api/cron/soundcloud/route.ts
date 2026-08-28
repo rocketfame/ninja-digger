@@ -18,6 +18,7 @@ export async function GET(request: Request) {
   if (secret && request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  try {
   // Self-defense first: auto-reclaim space + Telegram alert if near the limit.
   const guard = await defendDbSpace();
 
@@ -44,14 +45,20 @@ export async function GET(request: Request) {
   // Grooming (verify/enrich) is kept minimal so a run finishes well under the
   // 120s limit and reliably harvests every cycle. enrich especially is slow
   // (many HTTP fetches/artist) and low-yield, so only a tiny slice per run.
+  // Each stage is isolated: a throw in grooming must NOT kill the harvest (that
+  // silently stopped lead collection for a day).
   const results = [];
   for (const s of seeds.rows) {
-    const r = await harvestSeedFollowers(s.permalink, 2);
-    results.push({ seed: s.permalink, ...r });
+    try {
+      const r = await harvestSeedFollowers(s.permalink, 2);
+      results.push({ seed: s.permalink, ...r });
+    } catch (e) {
+      results.push({ seed: s.permalink, harvested: 0, withEmail: 0, done: false, error: e instanceof Error ? e.message : String(e) });
+    }
   }
-  const verified = await verifyActiveArtists(8);
-  const promoterProfiles = await refreshPromoterProfiles(5);
-  const enriched = await enrichScBatch(4);
+  const verified = await verifyActiveArtists(8).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+  const promoterProfiles = await refreshPromoterProfiles(5).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+  const enriched = await enrichScBatch(4).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
   // Dynamic bloat control: keep the regenerable HTML cache tightly bounded so it
   // never balloons between daily truncates (it was the #1 space hog at 172MB).
   await pool.query("DELETE FROM url_cache WHERE fetched_at < now() - interval '6 hours'").catch(() => {});
@@ -89,6 +96,12 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json({ ok: true, dbMb, harvestOk, guard, results, verified, promoterProfiles, enriched, pruned, ts: new Date().toISOString() });
+  } catch (e) {
+    // Never 500 silently — a dead harvest = no leads. Surface the error so it's
+    // visible in the response and Vercel logs.
+    console.error("[cron/soundcloud] fatal:", e);
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack?.split("\n").slice(0, 4) : undefined }, { status: 200 });
+  }
 }
 
 // Manual trigger with a bigger page budget (POST from the /sc-leads button)
