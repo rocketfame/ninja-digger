@@ -314,8 +314,18 @@ export async function GET(request: Request) {
           // Not interested / unsubscribe → close + blacklist immediately (still
           // notify so a polite one-line ack can be sent via Approve).
           const optedOut = draft?.intent === "not_interested" || draft?.intent === "unsubscribe" || (!!excerpt && OPT_OUT_RE.test(excerpt));
-          if (optedOut) await closeOptOut(o.email, o.source);
+          if (optedOut) {
+            await closeOptOut(o.email, o.source);
+            // Not interested → mark their email as read in Gmail so it doesn't
+            // sit unread in the inbox (we've already handled it).
+            if (uid) await client.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true }).catch(() => {});
+          }
           const activate = o.source.startsWith("Beatport") ? " (лід — активуй)" : "";
+          // Approve/Edit only when there's a draft; Ignore is always offered.
+          const kb = [
+            ...(draft ? [[{ text: "✅ Approve & Send", callback_data: "approve" }, { text: "✏️ Редагувати", callback_data: "edit" }]] : []),
+            [{ text: "🙈 Ігнорувати", callback_data: "ignore" }],
+          ];
           const msgId = await sendTelegramMessage(
             `💬 <b>${o.source}</b>-відповідь${activate} від <b>${o.name || o.email}</b>\n${o.email}` +
             (excerpt ? `\n\n<blockquote>${tgEscape(excerpt.slice(0, 400))}</blockquote>` : "") +
@@ -323,13 +333,13 @@ export async function GET(request: Request) {
             (draft
               ? `\n💡 <b>Чернетка (${draft.intent})</b>:\n<code>${tgEscape(draft.reply)}</code>\n\n✅ <b>Approve &amp; Send</b> — надіслати як є.\n✏️ <b>Редагувати</b> — напишеш свій варіант, я відправлю.`
               : `\n↩️ <i>Свайп-reply — напиши відповідь артисту.</i>`),
-            draft ? [[{ text: "✅ Approve & Send", callback_data: "approve" }, { text: "✏️ Редагувати", callback_data: "edit" }]] : undefined
+            kb
           );
           if (msgId != null) {
             await pool.query(
-              `INSERT INTO tg_notifications (tg_message_id, artist_beatport_id, artist_name, email, subject, draft, source)
-               VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (tg_message_id) DO NOTHING`,
-              [msgId, o.beatportId ?? null, o.name, o.email, subject, draft?.reply ?? null, o.source]
+              `INSERT INTO tg_notifications (tg_message_id, artist_beatport_id, artist_name, email, subject, draft, source, reply_msgid)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (tg_message_id) DO NOTHING`,
+              [msgId, o.beatportId ?? null, o.name, o.email, subject, draft?.reply ?? null, o.source, msgIdByAddr.get(addr) ?? null]
             ).catch(() => {});
           }
           return msgId != null; // false → Telegram send failed, caller un-claims to retry
@@ -456,6 +466,8 @@ export async function GET(request: Request) {
                ON CONFLICT (email) DO NOTHING`,
               [row.value]
             ).catch(() => {});
+            // Not interested → mark the email read in Gmail (handled already).
+            if (uid) await client.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true }).catch(() => {});
             await sendTelegramMessage(
               `🚫 <b>Лід відмовився</b>\n\n🎧 <b>${tgEscape(name)}</b>\n📧 ${tgEscape(row.value)}\n` +
               (excerpt ? `\n<blockquote>${tgEscape(excerpt.slice(0, 300))}</blockquote>\n` : "") +
@@ -465,6 +477,10 @@ export async function GET(request: Request) {
           }
 
           const bpDraft = excerpt ? await draftReplyAssist(excerpt, { name, channel: "Beatport", offer: await getOffer("Beatport") }) : null;
+          const bpKb = [
+            ...(bpDraft ? [[{ text: "✅ Approve & Send", callback_data: "approve" }, { text: "✏️ Редагувати", callback_data: "edit" }]] : []),
+            [{ text: "🙈 Ігнорувати", callback_data: "ignore" }],
+          ];
           const tgMessageId = await sendTelegramMessage(
             `🎉 <b>Відповідь від ліда! (Beatport — активуй)</b>\n\n` +
             `🎧 <b>${tgEscape(name)}</b>\n` +
@@ -474,14 +490,14 @@ export async function GET(request: Request) {
             (bpDraft ? `\n💡 <b>Чернетка (${bpDraft.intent})</b>:\n<code>${tgEscape(bpDraft.reply)}</code>\n` : "") +
             `\n✅ <b>Approve &amp; Send</b> — як є · ✏️ <b>Редагувати</b> — свій варіант.\n` +
             `<a href="https://ninja-digger.vercel.app/artist/${encodeURIComponent(row.artist_beatport_id)}">Відкрити картку ліда</a>`,
-            bpDraft ? [[{ text: "✅ Approve & Send", callback_data: "approve" }, { text: "✏️ Редагувати", callback_data: "edit" }]] : undefined
+            bpKb
           );
           if (tgMessageId != null) {
             await pool.query(
-              `INSERT INTO tg_notifications (tg_message_id, artist_beatport_id, artist_name, email, subject, draft, source)
-               VALUES ($1, $2, $3, $4, $5, $6, 'Beatport')
+              `INSERT INTO tg_notifications (tg_message_id, artist_beatport_id, artist_name, email, subject, draft, source, reply_msgid)
+               VALUES ($1, $2, $3, $4, $5, $6, 'Beatport', $7)
                ON CONFLICT (tg_message_id) DO NOTHING`,
-              [tgMessageId, row.artist_beatport_id, row.artist_name, row.value, subject || null, bpDraft?.reply ?? null]
+              [tgMessageId, row.artist_beatport_id, row.artist_name, row.value, subject || null, bpDraft?.reply ?? null, msgIdByAddr.get(addrKey) ?? null]
             ).catch((e) => console.error("[cron/inbox] tg_notifications insert failed:", e instanceof Error ? e.message : e));
           } else {
             await unclaimInbound(addrKey); replies--; // TG send failed — retry next run

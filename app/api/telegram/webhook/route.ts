@@ -8,6 +8,7 @@
 
 import { NextResponse } from "next/server";
 import * as nodemailer from "nodemailer";
+import { ImapFlow } from "imapflow";
 import { pool } from "@/lib/db";
 import { sendTelegramMessage, sendForceReply, editMessageReplyMarkup, tgEscape, answerCallbackQuery, type InlineButton } from "@/lib/telegram";
 import { buildStats, buildDailyReport, buildFullReport, buildScReport } from "@/lib/reports";
@@ -181,6 +182,36 @@ async function handleEdit(msgId: number): Promise<void> {
   }
 }
 
+/** Mark an email as read (\Seen) in Gmail by its Message-ID. Best-effort. */
+async function markGmailRead(messageId: string): Promise<void> {
+  const user = process.env.GMAIL_USER, pass = process.env.GMAIL_APP_PASSWORD;
+  if (!user || !pass || !messageId) return;
+  const client = new ImapFlow({ host: "imap.gmail.com", port: 993, secure: true, auth: { user, pass }, logger: false });
+  try {
+    await client.connect();
+    const lock = await client.getMailboxLock("INBOX");
+    try {
+      const mid = messageId.replace(/[<>]/g, ""); // HEADER search is substring
+      const uids = await client.search({ header: { "message-id": mid } }, { uid: true });
+      if (uids && uids.length) await client.messageFlagsAdd(uids, ["\\Seen"], { uid: true });
+    } finally { lock.release(); }
+  } catch { /* best-effort */ } finally {
+    try { await client.logout(); } catch { /* ignore */ }
+  }
+}
+
+/** Ignore button: drop the buttons, consume the draft, and mark the email read
+ * in Gmail so it doesn't sit unread. No email is sent to the artist. */
+async function handleIgnore(msgId: number): Promise<void> {
+  const row = await pool.query<{ email: string | null; reply_msgid: string | null }>(
+    `SELECT email, reply_msgid FROM tg_notifications WHERE tg_message_id = $1`, [msgId]
+  ).then((r) => r.rows[0]).catch(() => undefined);
+  await editMessageReplyMarkup(msgId, []);
+  await pool.query(`UPDATE tg_notifications SET draft = NULL WHERE tg_message_id = $1`, [msgId]).catch(() => {});
+  if (row?.reply_msgid) await markGmailRead(row.reply_msgid);
+  await sendTelegramMessage(`🙈 <b>Ігноровано</b>${row?.email ? ` → ${tgEscape(row.email)}` : ""} (лист позначено прочитаним у Gmail).`);
+}
+
 export async function POST(request: Request) {
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
   if (secret && request.headers.get("x-telegram-bot-api-secret-token") !== secret) {
@@ -200,6 +231,9 @@ export async function POST(request: Request) {
       } else if (cb.data === "edit" && cb.message?.message_id != null) {
         await answerCallbackQuery(cb.id, "✏️ Напиши свій варіант");
         await handleEdit(cb.message.message_id);
+      } else if (cb.data === "ignore" && cb.message?.message_id != null) {
+        await answerCallbackQuery(cb.id, "🙈 Ігнорую");
+        await handleIgnore(cb.message.message_id);
       } else {
         await answerCallbackQuery(cb.id);
         await handleCommand(`/${cb.data}`);
