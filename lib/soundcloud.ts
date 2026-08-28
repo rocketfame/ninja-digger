@@ -81,6 +81,11 @@ function tierFor(u: ScUser): string {
   return "C";
 }
 
+/** Postgres text can't hold NUL (0x00). Some SoundCloud bios/names contain it,
+ * which threw "invalid byte sequence for encoding UTF8: 0x00" and (before stage
+ * isolation) killed the whole harvest. Strip it from every text value. */
+function nz<T>(s: T): T { return typeof s === "string" ? (s.replace(/\u0000/g, "") as unknown as T) : s; }
+
 async function upsertArtist(u: ScUser, seed: string): Promise<boolean> {
   if (u.track_count < 1) return false; // not a musician (listener-only) — skip
   const emailMatch = (u.description ?? "").match(EMAIL_RE)?.[0]?.toLowerCase();
@@ -98,8 +103,8 @@ async function upsertArtist(u: ScUser, seed: string): Promise<boolean> {
         email_source=COALESCE(sc_artists.email_source, EXCLUDED.email_source),
         email_found_at=CASE WHEN sc_artists.email IS NULL AND EXCLUDED.email IS NOT NULL THEN now() ELSE sc_artists.email_found_at END,
         tier=$20, is_active=$21, last_modified=$17, updated_at=now()`,
-    [u.id, u.permalink, u.permalink_url, u.username, u.full_name || null, u.city, u.country_code,
-     u.description, u.avatar_url, u.track_count, u.followers_count, u.followings_count, u.likes_count ?? 0,
+    [u.id, nz(u.permalink), nz(u.permalink_url), nz(u.username), nz(u.full_name) || null, nz(u.city), nz(u.country_code),
+     nz(u.description), nz(u.avatar_url), u.track_count, u.followers_count, u.followings_count, u.likes_count ?? 0,
      u.reposts_count ?? 0, u.verified ?? false, u.created_at, u.last_modified, email, email ? "bio" : null,
      tierFor(u), isAlive(u), seed]
   );
