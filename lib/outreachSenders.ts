@@ -21,40 +21,42 @@ export type Sender = {
   cap: number;       // per-account daily send ceiling
 };
 
-/** Parse configured senders. Never throws — bad JSON → legacy fallback. */
+/** Build the sender pool. The PRIMARY account always comes from the legacy
+ * BREVO_SMTP_LOGIN/KEY env (so its key never has to be re-entered), and
+ * OUTREACH_SENDERS adds EXTRA accounts on top (deduped by login). This means
+ * adding a 2nd account only requires pasting the new account's credentials.
+ * Never throws — bad JSON is ignored. */
 export function getSenders(): Sender[] {
-  const raw = process.env.OUTREACH_SENDERS;
   const replyTo = process.env.GMAIL_USER || undefined;
+  const defFrom = process.env.OUTREACH_FROM_EMAIL || "hello@promosoundgroup.net";
+  const out: Sender[] = [];
+
+  // Primary (existing) account — untouched.
+  const login = process.env.BREVO_SMTP_LOGIN, key = process.env.BREVO_SMTP_KEY;
+  if (login && key) {
+    out.push({ id: "brevo1", login, key, from: defFrom, name: "Max from PromoSound", replyTo, cap: Number(process.env.DOMAIN_DAILY_MAX) || 280 });
+  }
+
+  // Additional accounts from OUTREACH_SENDERS (JSON array).
+  const raw = process.env.OUTREACH_SENDERS;
   if (raw) {
     try {
       const arr = JSON.parse(raw) as Partial<Sender>[];
-      const senders = arr
-        .filter((s) => s && s.login && s.key)
-        .map((s, i) => ({
-          id: s.id || `acc${i + 1}`,
-          login: s.login!,
-          key: s.key!,
-          from: s.from || process.env.OUTREACH_FROM_EMAIL || "hello@promosoundgroup.net",
+      for (const s of arr) {
+        if (!s || !s.login || !s.key) continue;
+        if (out.some((x) => x.login === s.login)) continue; // dedupe by login
+        out.push({
+          id: s.id || `acc${out.length + 1}`,
+          login: s.login, key: s.key,
+          from: s.from || defFrom,
           name: s.name || "Max from PromoSound",
           replyTo: s.replyTo || replyTo,
           cap: Number(s.cap) || 280,
-        }));
-      if (senders.length) return senders;
-    } catch { /* fall through to legacy */ }
+        });
+      }
+    } catch { /* ignore bad JSON */ }
   }
-  // Legacy single Brevo account
-  const login = process.env.BREVO_SMTP_LOGIN, key = process.env.BREVO_SMTP_KEY;
-  if (login && key) {
-    return [{
-      id: "brevo1",
-      login, key,
-      from: process.env.OUTREACH_FROM_EMAIL || "hello@promosoundgroup.net",
-      name: "Max from PromoSound",
-      replyTo,
-      cap: Number(process.env.DOMAIN_DAILY_MAX) || 280,
-    }];
-  }
-  return [];
+  return out;
 }
 
 /** Build a nodemailer transporter for one sender (Brevo SMTP relay). */
