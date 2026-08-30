@@ -45,7 +45,9 @@ const REPLY_EXCERPT_CHARS = 700;
 /** Opt-out / rejection / negative context → lead is closed and email is blacklisted. */
 const OPT_OUT_RE = /(not interested|no,? thanks?|not for me|stop (emailing|contacting|sending|spamming)|unsubscribe|remove (me|us)|take (me|us) off|don'?t (contact|email|write|message)|no longer interested|leave (me|us) alone|stop spam|this is spam|how did you get my|delete my (data|email|info)|gdpr request|fuck (off|you)|piss off|never (email|contact) (me|us)|report(ing)? (you|this)|не цікаво|не интересно|nicht interessiert|kein interesse|no me interesa|pas intéressé)/i;
 
-async function downloadText(client: ImapFlow, uid: number): Promise<string | null> {
+/** Returns the lead's reply (quoted history stripped) AND the quoted original
+ * we sent, so the notification can show what they were replying to. */
+async function downloadText(client: ImapFlow, uid: number): Promise<{ reply: string; original: string | null } | null> {
   // Part "1" is the first MIME part (usually text/plain); fall back to full text
   for (const part of ["1", "TEXT"]) {
     const dl = await client.download(String(uid), part, { uid: true }).catch(() => null);
@@ -63,10 +65,17 @@ async function downloadText(client: ImapFlow, uid: number): Promise<string | nul
       .replace(/[ \t]+/g, " ")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
-    // Cut quoted original message ("On ... wrote:" / "> ")
+    // Split the reply from the quoted original ("On ... wrote:" / "> ").
     const quoteIdx = text.search(/\nOn .{5,80} wrote:|\n>{1,2} /);
-    if (quoteIdx > 40) text = text.slice(0, quoteIdx).trim();
-    if (text.length > 0) return text.slice(0, REPLY_EXCERPT_CHARS);
+    let original: string | null = null;
+    if (quoteIdx > 40) {
+      original = text.slice(quoteIdx)
+        .replace(/^\n?On .{5,120} wrote:\s*/, "") // drop the "On ... wrote:" header
+        .replace(/^>+ ?/gm, "")                    // strip quote markers
+        .replace(/\n{3,}/g, "\n\n").trim() || null;
+      text = text.slice(0, quoteIdx).trim();
+    }
+    if (text.length > 0) return { reply: text.slice(0, REPLY_EXCERPT_CHARS), original: original ? original.slice(0, REPLY_EXCERPT_CHARS) : null };
   }
   return null;
 }
@@ -168,7 +177,8 @@ export async function GET(request: Request) {
         for (const ar of autoReplies) {
           const lead = knownMap.get(ar.addr);
           if (!lead) continue;
-          const body = await downloadText(client, ar.uid);
+          const dl = await downloadText(client, ar.uid);
+          const body = dl ? [dl.reply, dl.original].filter(Boolean).join("\n") : null;
           if (!body) continue;
           const found = [...new Set(
             (body.match(EMAIL_IN_BODY_RE) ?? [])
@@ -308,7 +318,9 @@ export async function GET(request: Request) {
         const notifyReply = async (o: { email: string; name: string | null; source: string; beatportId?: string | null }) => {
           const addr = o.email.toLowerCase().trim();
           const uid = uidByAddr.get(addr);
-          const excerpt = uid ? await downloadText(client, uid) : null;
+          const dl = uid ? await downloadText(client, uid) : null;
+          const excerpt = dl?.reply ?? null;
+          const original = dl?.original ?? null;
           const subject = subjectByAddr.get(addr) || null;
           const draft = excerpt ? await draftReplyAssist(excerpt, { name: o.name, channel: o.source, offer: await getOffer(o.source) }) : null;
           // Not interested / unsubscribe → close + blacklist immediately (still
@@ -329,6 +341,7 @@ export async function GET(request: Request) {
           const msgId = await sendTelegramMessage(
             `💬 <b>${o.source}</b>-відповідь${activate} від <b>${o.name || o.email}</b>\n${o.email}` +
             (excerpt ? `\n\n<blockquote>${tgEscape(excerpt.slice(0, 400))}</blockquote>` : "") +
+            (original ? `\n📩 <i>на наш лист:</i>\n<blockquote expandable>${tgEscape(original.slice(0, 500))}</blockquote>` : "") +
             (optedOut ? `\n🚫 <b>Не цікаво → закрито + blacklist</b> (більше не турбуємо).` : "") +
             (draft
               ? `\n💡 <b>Чернетка (${draft.intent})</b>:\n<code>${tgEscape(draft.reply)}</code>\n\n✅ <b>Approve &amp; Send</b> — надіслати як є.\n✏️ <b>Редагувати</b> — напишеш свій варіант, я відправлю.`
@@ -416,7 +429,9 @@ export async function GET(request: Request) {
           const name = row.artist_name ?? row.artist_beatport_id;
           const subject = subjectByAddr.get(addrKey) ?? "";
           const uid = uidByAddr.get(addrKey);
-          const excerpt = uid ? await downloadText(client, uid) : null;
+          const dlBp = uid ? await downloadText(client, uid) : null;
+          const excerpt = dlBp?.reply ?? null;
+          const original = dlBp?.original ?? null;
 
           // Body-level auto-responder ("slight delay", "this is an autoresponder"):
           // not a real reply — revert the status transition, snooze follow-ups, no TG
@@ -487,6 +502,7 @@ export async function GET(request: Request) {
             `📧 ${tgEscape(row.value)}\n` +
             (subject ? `✉️ ${tgEscape(subject)}\n` : "") +
             (excerpt ? `\n<blockquote>${tgEscape(excerpt)}</blockquote>\n` : "") +
+            (original ? `📩 <i>на наш лист:</i>\n<blockquote expandable>${tgEscape(original.slice(0, 500))}</blockquote>\n` : "") +
             (bpDraft ? `\n💡 <b>Чернетка (${bpDraft.intent})</b>:\n<code>${tgEscape(bpDraft.reply)}</code>\n` : "") +
             `\n✅ <b>Approve &amp; Send</b> — як є · ✏️ <b>Редагувати</b> — свій варіант.\n` +
             `<a href="https://ninja-digger.vercel.app/artist/${encodeURIComponent(row.artist_beatport_id)}">Відкрити картку ліда</a>`,
