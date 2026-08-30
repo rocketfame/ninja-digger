@@ -35,7 +35,8 @@ export async function draftReplyAssist(
     `IMPORTANT CONTEXT: our outreach always opens by pointing out something POSITIVE about this artist, like their track appearing or moving in the Beatport charts, a strong recent upload, or real traction. So when they ask "am I charting?" / "am I in top Beatport?" / "is my track doing well?", AFFIRM it warmly and confidently (yes, their track has been showing up and getting traction, that's exactly why we reached out) and use that momentum. Do NOT hedge with "it depends" or undercut the framing we set.\n\n` +
     `WINNING ANGLE: they are already in the charts, so the goal now is to push HIGHER while the momentum is there. Lead with that idea.\n\n` +
     `An artist just REPLIED to our outreach. Respond as JSON only: {"intent":"interested|question|not_interested|unsubscribe|other","reply":"<the reply text in the SAME language as the artist, plain text, no signature>"}.\n` +
-    `STYLE (strict): keep it SHORT, 2 to 4 short sentences. Sound like a real person, not a marketer. Use only plain punctuation: commas, periods, question marks, and a simple hyphen "-" if needed. NEVER use em-dashes or en-dashes ("—" / "–"). No bullet points, no headings, no emoji.\n` +
+    `STYLE (strict): keep it SHORT, 2 to 4 short sentences. Direct and professional, zero filler and zero hype phrases ("that's exactly the right time", "sound good?", "let's capitalize"). Sound like a busy competent person, not a marketer. Use only plain punctuation: commas, periods, question marks, and a simple hyphen "-" if needed. NEVER use em-dashes or en-dashes ("—" / "–"). No bullet points, no headings, no emoji.\n` +
+    `HARD RULE: NEVER propose a call, meeting, Zoom, phone, or "quick chat". All communication stays in email. To move forward, offer to send the concrete breakdown/details in the next email.\n` +
     `- interested / question: affirm the framing, lead with "push higher while the momentum is there", then present the offer below.\n` +
     `- not_interested / unsubscribe: a brief polite acknowledgement, do NOT pitch.\n` +
     `Never invent specific numbers, exact chart positions, or fake guarantees. Stay warm and confident about their momentum without fabricating stats.` +
@@ -56,7 +57,9 @@ export async function draftReplyAssist(
     if (!json) return null;
     const parsed = JSON.parse(json) as { intent?: string; reply?: string };
     if (!parsed.reply) return null;
-    return { intent: parsed.intent || "other", reply: parsed.reply };
+    // Deterministic cleanup: the model occasionally ignores the no-dash rule.
+    const reply = parsed.reply.replace(/\s+[—–]\s+/g, ", ").replace(/[—–]/g, "-");
+    return { intent: parsed.intent || "other", reply };
   } catch {
     return null;
   }

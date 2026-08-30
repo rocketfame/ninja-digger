@@ -165,13 +165,17 @@ async function handleApprove(msgId: number): Promise<void> {
  * without swiping. The prompt is mapped to the same lead so the reply handler
  * routes it as the outgoing email. */
 async function handleEdit(msgId: number): Promise<void> {
-  type Row = { artist_beatport_id: string | null; artist_name: string | null; email: string; subject: string | null };
+  type Row = { artist_beatport_id: string | null; artist_name: string | null; email: string; subject: string | null; draft: string | null };
   const row = await pool.query<Row>(
-    `SELECT artist_beatport_id, artist_name, email, subject FROM tg_notifications WHERE tg_message_id = $1`, [msgId]
+    `SELECT artist_beatport_id, artist_name, email, subject, draft FROM tg_notifications WHERE tg_message_id = $1`, [msgId]
   ).then((r) => r.rows[0]).catch(() => undefined);
   if (!row) { await sendTelegramMessage("⚠️ Не знайшов ліда для редагування."); return; }
+  // Telegram bots can't pre-fill the input box, so ship the current draft as a
+  // tap-to-copy block right in the force-reply prompt: tap → paste → point-edit.
   const promptId = await sendForceReply(
-    `✏️ <b>Твій варіант для ${tgEscape(row.artist_name ?? row.email)}</b>\nНапиши відповідь — я відправлю її на ${tgEscape(row.email)}.`
+    `✏️ <b>Редагування для ${tgEscape(row.artist_name ?? row.email)}</b>` +
+    (row.draft ? `\n\nЧернетка (тапни — скопіюється):\n<code>${tgEscape(row.draft)}</code>\n\nВстав у відповідь, поправ і надішли.` : `\nНапиши відповідь.`) +
+    `\n→ ${tgEscape(row.email)}`
   );
   if (promptId != null) {
     await pool.query(
