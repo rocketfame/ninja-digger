@@ -14,7 +14,7 @@ import { acquireLease } from "@/lib/cronLock";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const PER_RUN = 4;
+const PER_RUN = 8;
 
 async function getSetting(key: string, fb: string) {
   return pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key=$1`, [key]).then((r) => r.rows[0]?.value ?? fb).catch(() => fb);

@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const BASE_URL = "https://ninja-digger.vercel.app";
-const PER_RUN = 4;          // spread the daily quota across hourly runs
+const PER_RUN = 8;          // spread the daily quota across hourly runs
 const DOMAIN_DAILY_MAX = 280; // combined Beatport + SC ceiling (Brevo free ~300/day)
 
 async function getSetting(key: string, fallback: string): Promise<string> {

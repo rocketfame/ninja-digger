@@ -14,7 +14,7 @@ import { acquireLease } from "@/lib/cronLock";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const PER_RUN = 4;
+const PER_RUN = 8;
 const DOMAIN_DAILY_MAX = 280; // combined BP + SC + SP ceiling (Brevo free ~300/day)
 
 async function getSetting(key: string, fallback: string): Promise<string> {
