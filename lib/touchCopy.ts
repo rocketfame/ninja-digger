@@ -77,7 +77,7 @@ const T2_PITCHES = [
 const T2_CTAS = [
   "If you're open to it, I can outline how we typically approach this stage for electronic releases.",
   "Happy to keep it brief if you'd like to hear the approach.",
-  "Let me know if it is worth a quick chat.",
+  "Reply and I will send the details.",
   "No pressure, just wanted to make sure you saw the offer.",
   "If the timing isn't right, totally understand.",
 ];

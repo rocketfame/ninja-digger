@@ -34,9 +34,9 @@ const T1_QUESTIONS = [
 // TOUCH 2, soft value, no discount yet.
 const T2_SUBJECTS = ["circling back", "about your release", "an idea for you"];
 const T2_BODIES = [
-  "We help independent artists grow their releases, real streams and playlist placements across Spotify, Apple Music and the other platforms, plus a push on socials. Might be a fit for your next drop, open to a quick chat?",
+  "We help independent artists grow their releases, real streams and playlist placements across Spotify, Apple Music and the other platforms, plus a push on socials. Might be a fit for your next drop. Want the details?",
   "For artists at your level we put together release campaigns, streams + playlists on Spotify/Apple/Deezer and a social push, all handled for you. Worth exploring for your next release?",
-  "We run full release pushes for independent artists, playlists, real streams and socials, tailored to where you're at. Feels like a fit for your latest, up for a quick chat?",
+  "We run full release pushes for independent artists, playlists, real streams and socials, tailored to where you're at. Feels like a fit for your latest. Want the details?",
 ];
 
 // TOUCH 3, the exclusive discount, only if no reply.

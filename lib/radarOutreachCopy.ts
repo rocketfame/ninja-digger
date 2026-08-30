@@ -22,7 +22,7 @@ function youtube(touch: 1 | 2 | 3, name: string, pct: number): RadarEmail {
   if (touch === 2)
     return {
       subject: `growing on YouTube`,
-      text: `Hey ${name},\n\nWe run a full YouTube + Spotify promo package for independent artists, real views & algorithm traction on YouTube, plus playlist placements and streams on Spotify. The whole thing handled for you. Feels like a fit for your latest release, open to a quick chat?${SIG}`,
+      text: `Hey ${name},\n\nWe run a full YouTube + Spotify promo package for independent artists, real views & algorithm traction on YouTube, plus playlist placements and streams on Spotify. The whole thing handled for you. Feels like a fit for your latest release. Want the details?${SIG}`,
     };
   return {
     subject: `idea for your next drop`,
@@ -39,7 +39,7 @@ function reddit(touch: 1 | 2 | 3, name: string, pct: number): RadarEmail {
   if (touch === 2)
     return {
       subject: `getting real streams`,
-      text: `Hey ${name},\n\nWe run a full Spotify promo package for independent artists, playlist placements, editorial pitching and real streams from listeners in your genre. The whole thing handled for you. Feels like a fit for your latest, open to a quick chat?${SIG}`,
+      text: `Hey ${name},\n\nWe run a full Spotify promo package for independent artists, playlist placements, editorial pitching and real streams from listeners in your genre. The whole thing handled for you. Feels like a fit for your latest. Want the details?${SIG}`,
     };
   return {
     subject: `idea for your next drop`,
@@ -51,7 +51,7 @@ function generic(touch: 1 | 2 | 3, name: string, pct: number): RadarEmail {
   if (touch === 1)
     return { subject: `your music`, text: `Hey ${name},\n\nFound your music recently and really dug it. How's the promo side going for you right now?${SIG}` };
   if (touch === 2)
-    return { subject: `quick idea`, text: `Hey ${name},\n\nWe help independent artists get real streams + playlist placements (Spotify/Apple/Deezer). Might be useful for your latest, open to a quick chat?${SIG}` };
+    return { subject: `quick idea`, text: `Hey ${name},\n\nWe help independent artists get real streams + playlist placements (Spotify/Apple/Deezer). Might be useful for your latest. Want the details?${SIG}` };
   return { subject: `spots opening up`, text: `Hey ${name},\n\nOpening a few promo spots this month, ${pct}% off the first campaign for independent artists. Want the details?${SIG}` };
 }
 
