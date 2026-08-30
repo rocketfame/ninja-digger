@@ -2,6 +2,7 @@
  * GET /api/segments/soundcloud/export?tier=A&withEmail=1 — CSV of SC leads.
  */
 import { NextResponse } from "next/server";
+import { isAuthorized, unauthorized } from "@/lib/apiAuth";
 import { pool } from "@/lib/db";
 import { SC_ACTIVITY, SC_ACTIVITY_SQL } from "@/lib/scActivity";
 
@@ -14,6 +15,7 @@ function csvCell(v: string | number | null): string {
 }
 
 export async function GET(request: Request) {
+  if (!isAuthorized(request)) return unauthorized();
   const { searchParams } = new URL(request.url);
   const tier = searchParams.get("tier");
   const withEmail = searchParams.get("withEmail") === "1";

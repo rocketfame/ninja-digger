@@ -42,7 +42,10 @@ export function middleware(req: NextRequest) {
   });
 }
 
-// Run on everything except Next internals and static assets.
+// Run on PAGES only. /api is intentionally excluded: the Edge runtime can't
+// reliably read CRON_SECRET, so gating /api here silently 401-ed Vercel cron
+// calls to /api/internal/* (broke enrichment). Sensitive API routes (exports,
+// destructive mutations) guard themselves via lib/apiAuth in the Node runtime.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt).*)"],
+  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico|robots.txt).*)"],
 };

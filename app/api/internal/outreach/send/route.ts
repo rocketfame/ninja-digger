@@ -10,6 +10,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { isAuthorized, unauthorized } from "@/lib/apiAuth";
 import { pool } from "@/lib/db";
 import * as nodemailer from "nodemailer";
 
@@ -88,6 +89,7 @@ function getTransporter() {
 }
 
 export async function POST(request: Request) {
+  if (!isAuthorized(request)) return unauthorized();
   const secret = process.env.CRON_SECRET;
   if (secret && request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

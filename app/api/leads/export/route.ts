@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isAuthorized, unauthorized } from "@/lib/apiAuth";
 import { query } from "@/lib/db";
 
 const SEGMENTS_V2 = ["NEWCOMER", "NEW_ENTRY", "CONSISTENT", "FAST_GROWING", "DECLINING", "TOP_PERFORMER"] as const;
@@ -29,6 +30,7 @@ function escapeCsvCell(s: string | null | undefined): string {
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  if (!isAuthorized(request)) return unauthorized();
   const { searchParams } = new URL(request.url);
   const segmentParam = searchParams.get("segment");
   const segment =

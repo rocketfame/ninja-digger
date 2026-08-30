@@ -4,6 +4,7 @@
  * or the blacklist. Use with your own inbox to see how the copy lands.
  */
 import { NextResponse } from "next/server";
+import { isAuthorized, unauthorized } from "@/lib/apiAuth";
 import { getOutreachMailer } from "@/lib/mailer";
 import { buildScEmail } from "@/lib/scOutreachCopy";
 
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
+  if (!isAuthorized(request)) return unauthorized();
   const { searchParams } = new URL(request.url);
   const to = searchParams.get("to");
   const name = searchParams.get("name") ?? "Alex";

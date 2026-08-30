@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isAuthorized, unauthorized } from "@/lib/apiAuth";
 import { pool } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +11,7 @@ function csvCell(v: string | null): string {
 }
 
 export async function GET(request: Request) {
+  if (!isAuthorized(request)) return unauthorized();
   const sp = new URL(request.url).searchParams;
   const withEmail = sp.get("withEmail") === "1";
   const isJson = sp.get("format") === "json";

@@ -8,6 +8,7 @@
  * a natural audience for a YouTube-promo pitch.
  */
 import { NextResponse } from "next/server";
+import { isAuthorized, unauthorized } from "@/lib/apiAuth";
 import { pool } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,7 @@ const csvCell = (v: unknown) => {
 };
 
 export async function GET(request: Request) {
+  if (!isAuthorized(request)) return unauthorized();
   const sp = new URL(request.url).searchParams;
   const source = (sp.get("source") || "all").toLowerCase();
   const format = (sp.get("format") || "csv").toLowerCase();
