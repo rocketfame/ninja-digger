@@ -13,7 +13,7 @@ import { runEnrichmentForArtist } from "@/lib/enrichV1";
 export const maxDuration = 120;
 
 /** 3 in parallel ≈ 55s per request. Fits safely within 60s. */
-const PARALLEL_ARTISTS = 3;
+const PARALLEL_ARTISTS = 8;
 const MAX_ARTISTS_PER_RUN = PARALLEL_ARTISTS;
 const SEGMENTS_V2 = ["NEWCOMER", "NEW_ENTRY", "CONSISTENT", "FAST_GROWING", "DECLINING", "TOP_PERFORMER"] as const;
 

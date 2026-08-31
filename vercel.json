@@ -9,7 +9,7 @@
     { "path": "/api/cron/hygiene", "schedule": "40 6 * * 0" },
     { "path": "/api/internal/report/telegram?period=Ранок", "schedule": "0 8 * * *" },
     { "path": "/api/internal/report/telegram?period=Вечір", "schedule": "0 18 * * *" },
-    { "path": "/api/internal/enrich/leads", "schedule": "7 * * * *" },
+    { "path": "/api/internal/enrich/leads", "schedule": "7,37 * * * *" },
     { "path": "/api/cron/soundcloud", "schedule": "22,52 * * * *" },
     { "path": "/api/cron/sc-outreach", "schedule": "10 * * * *" },
     { "path": "/api/cron/spotify-outreach", "schedule": "40 * * * *" },
