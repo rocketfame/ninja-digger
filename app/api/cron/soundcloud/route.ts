@@ -80,7 +80,7 @@ export async function GET(request: Request) {
     `INSERT INTO sc_seed_accounts (permalink, soundcloud_id, username, followers_count, active, priority)
      SELECT permalink, soundcloud_id, COALESCE(username, full_name, permalink), followers_count, true, 2
      FROM sc_artists a
-     WHERE permalink IS NOT NULL AND is_promoter = true
+     WHERE permalink IS NOT NULL AND source_seed = 'repostexchange'
        AND NOT EXISTS (SELECT 1 FROM sc_seed_accounts s WHERE s.permalink = a.permalink)
      ON CONFLICT (permalink) DO NOTHING`
   ).then((r) => r.rowCount ?? 0).catch(() => 0);
