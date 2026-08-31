@@ -118,14 +118,21 @@ export async function GET(request: Request) {
       // creeping toward the Neon 512 MB cap (plain VACUUM = safe, no lock).
       await pool.query("VACUUM chart_entries, bptoptracker_daily, outreach_events").catch((e) => console.error("[cron/daily] vacuum:", e instanceof Error ? e.message : e));
 
-      // Keep the seed list current: every Re-Ex promoter (within a follower cap
-      // so no mega-channel floods the DB) becomes a harvest seed. Idempotent —
-      // ON CONFLICT keeps existing cursors/progress intact.
+      // Self-expanding seed pool — the key to never running dry. Every promoter
+      // AND every harvested artist in the follower sweet-spot (500-100k: big
+      // enough to have artist followers, not a mega-channel of fans) becomes a
+      // harvest seed. Each seed's followers yield more artists → more seeds, so
+      // the graph keeps growing on its own. Idempotent (ON CONFLICT keeps
+      // existing cursors/progress). Capped per run so we never flood in one go.
       const seedSync = await pool.query(
         `INSERT INTO sc_seed_accounts (permalink, soundcloud_id, username, followers_count, active)
          SELECT permalink, soundcloud_id, COALESCE(username, full_name, permalink), followers_count, true
-         FROM sc_artists
-         WHERE is_promoter = true AND permalink IS NOT NULL AND followers_count BETWEEN 30 AND 50000
+         FROM sc_artists a
+         WHERE permalink IS NOT NULL
+           AND (is_promoter = true OR followers_count BETWEEN 500 AND 100000)
+           AND NOT EXISTS (SELECT 1 FROM sc_seed_accounts s WHERE s.permalink = a.permalink)
+         ORDER BY followers_count DESC
+         LIMIT 20000
          ON CONFLICT (permalink) DO NOTHING`
       ).catch(() => ({ rowCount: 0 }));
       (cleanup as Record<string, number>).new_seeds = seedSync.rowCount ?? 0;

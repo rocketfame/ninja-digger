@@ -63,6 +63,22 @@ export async function GET(request: Request) {
   // never balloons between daily truncates (it was the #1 space hog at 172MB).
   await pool.query("DELETE FROM url_cache WHERE fetched_at < now() - interval '6 hours'").catch(() => {});
 
+  // Self-expanding seed pool — promote fresh harvested artists in the follower
+  // sweet-spot (500-100k: has artist followers, not a mega fan-channel) into
+  // seeds BEFORE the prune below deletes the email-less ones. The seed row
+  // (just a permalink) persists even after the sc_artists row is pruned, so the
+  // graph keeps growing and the harvest never runs dry again.
+  const newSeeds = await pool.query(
+    `INSERT INTO sc_seed_accounts (permalink, soundcloud_id, username, followers_count, active)
+     SELECT permalink, soundcloud_id, COALESCE(username, full_name, permalink), followers_count, true
+     FROM sc_artists a
+     WHERE permalink IS NOT NULL AND followers_count BETWEEN 500 AND 100000
+       AND harvested_at > now() - interval '25 hours'
+       AND NOT EXISTS (SELECT 1 FROM sc_seed_accounts s WHERE s.permalink = a.permalink)
+     ORDER BY followers_count DESC LIMIT 500
+     ON CONFLICT (permalink) DO NOTHING`
+  ).then((r) => r.rowCount ?? 0).catch(() => 0);
+
   // STEADY-STATE ENGINE — the key to running forever without filling the 512MB
   // tier. The valuable output is the EMAIL. A follower harvested >24h ago with
   // no email (bio email is extracted at harvest; enrichment had its chance) is
@@ -95,7 +111,7 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, dbMb, harvestOk, guard, results, verified, promoterProfiles, enriched, pruned, ts: new Date().toISOString() });
+  return NextResponse.json({ ok: true, dbMb, harvestOk, guard, results, verified, promoterProfiles, enriched, newSeeds, pruned, ts: new Date().toISOString() });
   } catch (e) {
     // Never 500 silently — a dead harvest = no leads. Surface the error so it's
     // visible in the response and Vercel logs.
