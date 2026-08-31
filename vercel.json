@@ -20,7 +20,7 @@
     { "path": "/api/cron/youtube-radar", "schedule": "50 * * * *" },
     { "path": "/api/cron/radar-enrich", "schedule": "12 * * * *" },
     { "path": "/api/cron/brevo-poll", "schedule": "25 * * * *" },
-    { "path": "/api/cron/watchdog", "schedule": "30 9,15,21 * * *" },
+    { "path": "/api/cron/watchdog", "schedule": "30 */3 * * *" },
     { "path": "/api/cron/report-hourly", "schedule": "58 * * * *" }
   ]
 }

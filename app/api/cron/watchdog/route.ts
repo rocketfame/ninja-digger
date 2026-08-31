@@ -59,6 +59,17 @@ export async function GET(request: Request) {
   const scAttempt = await one(`SELECT COUNT(*) c FROM sc_artists WHERE enrich_attempted_at > now() - interval '2 hours'`);
   if (num((scAttempt as { c?: unknown }).c) === 0) alerts.push(`🟠 SoundCloud: sc-enrich не працював 2год — крон стоїть?`);
 
+  // 3b. SC HARVEST yield — the engine that feeds everything. A healthy harvest
+  //     does ~1-2k followers/run; near-zero over 3h means seeds are exhausted
+  //     (need refuel), the cron is timing out, or SoundCloud broke. This is the
+  //     exact class of failure that kept slipping through unnoticed.
+  const scHarvest = await one(`SELECT COUNT(*) c FROM sc_artists WHERE harvested_at > now() - interval '3 hours'`);
+  const scDue = await one(`SELECT COUNT(*) c FROM sc_seed_accounts WHERE active AND (completed_at IS NULL OR (priority>=2 AND completed_at<now()-interval '5 days') OR (priority<2 AND completed_at<now()-interval '14 days'))`);
+  if (num((scHarvest as { c?: unknown }).c) < 100) {
+    const due = num((scDue as { c?: unknown }).c);
+    alerts.push(`🔴 SoundCloud: харвест майже стоїть (${num((scHarvest as { c?: unknown }).c)} фоловерів за 3год)${due < 50 ? ` — сіди вичерпані (due ${due}), треба дозаправку` : ` — крон падає/таймаутить (due ${due})`}`);
+  }
+
   // 4. Brevo poll freshness — engagement metrics feed the "gold/diamond" tiers.
   const poll = await one(`SELECT value FROM app_settings WHERE key='brevo_poll_since'`);
   const pollDate = String((poll as { value?: unknown }).value ?? "");
