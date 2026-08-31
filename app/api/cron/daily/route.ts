@@ -124,16 +124,14 @@ export async function GET(request: Request) {
       // harvest seed. Each seed's followers yield more artists → more seeds, so
       // the graph keeps growing on its own. Idempotent (ON CONFLICT keeps
       // existing cursors/progress). Capped per run so we never flood in one go.
+      // Seeds = ONLY Re-Ex advertisers (is_promoter, from repostexchange). Their
+      // followers are the high-intent leads. No social-graph fill.
       const seedSync = await pool.query(
         `INSERT INTO sc_seed_accounts (permalink, soundcloud_id, username, followers_count, active, priority)
-         SELECT permalink, soundcloud_id, COALESCE(username, full_name, permalink), followers_count, true,
-                CASE WHEN is_promoter THEN 2 ELSE 0 END
+         SELECT permalink, soundcloud_id, COALESCE(username, full_name, permalink), followers_count, true, 2
          FROM sc_artists a
-         WHERE permalink IS NOT NULL
-           AND (is_promoter = true OR followers_count BETWEEN 500 AND 100000)
+         WHERE permalink IS NOT NULL AND is_promoter = true
            AND NOT EXISTS (SELECT 1 FROM sc_seed_accounts s WHERE s.permalink = a.permalink)
-         ORDER BY (is_promoter) DESC, followers_count DESC
-         LIMIT 20000
          ON CONFLICT (permalink) DO NOTHING`
       ).catch(() => ({ rowCount: 0 }));
       (cleanup as Record<string, number>).new_seeds = seedSync.rowCount ?? 0;

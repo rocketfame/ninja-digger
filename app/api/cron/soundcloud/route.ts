@@ -72,20 +72,16 @@ export async function GET(request: Request) {
   // never balloons between daily truncates (it was the #1 space hog at 172MB).
   await pool.query("DELETE FROM url_cache WHERE fetched_at < now() - interval '6 hours'").catch(() => {});
 
-  // Self-expanding seed pool — promote fresh harvested artists in the follower
-  // sweet-spot (500-100k: has artist followers, not a mega fan-channel) into
-  // seeds BEFORE the prune below deletes the email-less ones. The seed row
-  // (just a permalink) persists even after the sc_artists row is pruned, so the
-  // graph keeps growing and the harvest never runs dry again.
+  // Seeds are ONLY Re-Ex advertisers (is_promoter, ingested from repostexchange).
+  // We deliberately do NOT seed from the social graph — those followers are
+  // low-intent. New advertisers arrive via /api/internal/soundcloud/ingest-
+  // campaigns (browser harvest) and become seeds through the daily sync.
   const newSeeds = await pool.query(
     `INSERT INTO sc_seed_accounts (permalink, soundcloud_id, username, followers_count, active, priority)
-     SELECT permalink, soundcloud_id, COALESCE(username, full_name, permalink), followers_count, true,
-            CASE WHEN is_promoter THEN 2 ELSE 0 END
+     SELECT permalink, soundcloud_id, COALESCE(username, full_name, permalink), followers_count, true, 2
      FROM sc_artists a
-     WHERE permalink IS NOT NULL AND (is_promoter = true OR followers_count BETWEEN 500 AND 100000)
-       AND harvested_at > now() - interval '25 hours'
+     WHERE permalink IS NOT NULL AND is_promoter = true
        AND NOT EXISTS (SELECT 1 FROM sc_seed_accounts s WHERE s.permalink = a.permalink)
-     ORDER BY (is_promoter) DESC, followers_count DESC LIMIT 500
      ON CONFLICT (permalink) DO NOTHING`
   ).then((r) => r.rowCount ?? 0).catch(() => 0);
 
