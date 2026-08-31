@@ -125,13 +125,14 @@ export async function GET(request: Request) {
       // the graph keeps growing on its own. Idempotent (ON CONFLICT keeps
       // existing cursors/progress). Capped per run so we never flood in one go.
       const seedSync = await pool.query(
-        `INSERT INTO sc_seed_accounts (permalink, soundcloud_id, username, followers_count, active)
-         SELECT permalink, soundcloud_id, COALESCE(username, full_name, permalink), followers_count, true
+        `INSERT INTO sc_seed_accounts (permalink, soundcloud_id, username, followers_count, active, priority)
+         SELECT permalink, soundcloud_id, COALESCE(username, full_name, permalink), followers_count, true,
+                CASE WHEN is_promoter THEN 2 ELSE 0 END
          FROM sc_artists a
          WHERE permalink IS NOT NULL
            AND (is_promoter = true OR followers_count BETWEEN 500 AND 100000)
            AND NOT EXISTS (SELECT 1 FROM sc_seed_accounts s WHERE s.permalink = a.permalink)
-         ORDER BY followers_count DESC
+         ORDER BY (is_promoter) DESC, followers_count DESC
          LIMIT 20000
          ON CONFLICT (permalink) DO NOTHING`
       ).catch(() => ({ rowCount: 0 }));

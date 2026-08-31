@@ -34,11 +34,17 @@ export async function GET(request: Request) {
   // coverage without exhausting any single one or flooding the DB.
   // Uncompleted seeds first (deep-harvest their newest 600 followers), then
   // seeds completed >14 days ago for a light refresh of new followers only.
+  // Re-Ex / promoter seeds (priority 2, paying advertisers whose followers are
+  // artists with intent) are harvested FIRST and refreshed sooner (5d) than the
+  // cold social-graph fill (priority 0, 14d), so the gold never drowns in volume.
   const seeds = harvestOk
     ? await pool.query<{ permalink: string }>(
         `SELECT permalink FROM sc_seed_accounts
-         WHERE active = true AND (completed_at IS NULL OR completed_at < now() - interval '14 days')
-         ORDER BY completed_at NULLS FIRST, last_harvested_at ASC NULLS FIRST LIMIT 8`)
+         WHERE active = true AND (
+           completed_at IS NULL
+           OR (priority >= 2 AND completed_at < now() - interval '5 days')
+           OR (priority < 2 AND completed_at < now() - interval '14 days'))
+         ORDER BY priority DESC, completed_at NULLS FIRST, last_harvested_at ASC NULLS FIRST LIMIT 8`)
     : { rows: [] as { permalink: string }[] };
 
   // Harvest FIRST and give it the budget — it's the only step that adds leads.
@@ -69,13 +75,14 @@ export async function GET(request: Request) {
   // (just a permalink) persists even after the sc_artists row is pruned, so the
   // graph keeps growing and the harvest never runs dry again.
   const newSeeds = await pool.query(
-    `INSERT INTO sc_seed_accounts (permalink, soundcloud_id, username, followers_count, active)
-     SELECT permalink, soundcloud_id, COALESCE(username, full_name, permalink), followers_count, true
+    `INSERT INTO sc_seed_accounts (permalink, soundcloud_id, username, followers_count, active, priority)
+     SELECT permalink, soundcloud_id, COALESCE(username, full_name, permalink), followers_count, true,
+            CASE WHEN is_promoter THEN 2 ELSE 0 END
      FROM sc_artists a
-     WHERE permalink IS NOT NULL AND followers_count BETWEEN 500 AND 100000
+     WHERE permalink IS NOT NULL AND (is_promoter = true OR followers_count BETWEEN 500 AND 100000)
        AND harvested_at > now() - interval '25 hours'
        AND NOT EXISTS (SELECT 1 FROM sc_seed_accounts s WHERE s.permalink = a.permalink)
-     ORDER BY followers_count DESC LIMIT 500
+     ORDER BY (is_promoter) DESC, followers_count DESC LIMIT 500
      ON CONFLICT (permalink) DO NOTHING`
   ).then((r) => r.rowCount ?? 0).catch(() => 0);
 
