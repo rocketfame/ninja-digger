@@ -70,9 +70,10 @@ export async function POST(request: Request) {
     // cap protects the 512MB tier from a single mega-channel.
     const followers = s.Followers ?? 0;
     if (s.Permalink && followers >= 30 && followers <= 50000) {
+      // priority 2 = Re-Ex advertiser (highest-intent) — harvested before anything.
       await pool.query(
-        `INSERT INTO sc_seed_accounts (permalink, soundcloud_id, username, followers_count, active)
-         VALUES ($1,$2,$3,$4,true) ON CONFLICT (permalink) DO NOTHING`,
+        `INSERT INTO sc_seed_accounts (permalink, soundcloud_id, username, followers_count, active, priority)
+         VALUES ($1,$2,$3,$4,true,2) ON CONFLICT (permalink) DO NOTHING`,
         [s.Permalink, s.ExternalId, s.Name, followers]
       ).catch(() => {});
     }
