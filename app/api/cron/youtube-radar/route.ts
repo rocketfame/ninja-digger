@@ -20,27 +20,44 @@ const API = "https://www.googleapis.com/youtube/v3";
 const SEARCHES_PER_RUN = 3;   // 3 × 100 units × 24 runs = 7,200/day (quota 10k)
 const RESULTS_PER_SEARCH = 50; // API max; same quota cost as 25
 
-// Two pools, mixed EVERY run so no hour is "weak": HIGH = niches where a
-// lease/booking email is almost always in the description (beat producers,
-// demo/booking pages) → 2 per run; ROTATE = genre premieres / indie releases
-// (lower email rate but fresh Spotify-linked artists) → 1 per run. Each pool
-// rotates independently so we cover it all over the day.
-const HIGH = [
-  "type beat 2026", "free type beat", "type beat", "prod by", "beat store",
-  "guitar type beat", "demo submission", "booking management music", "sample pack",
+// YouTube is enormous, so the whole game is QUERY DIVERSITY — hitting the long
+// tail of small producers/artists instead of re-scanning the same popular
+// channels. We build a big matrix of genres × angles and rotate deeply so every
+// run explores a fresh slice.
+const GENRES = [
+  "trap", "drill", "uk drill", "jersey club", "phonk", "hyperpop", "plugg", "rage",
+  "boom bap", "lofi", "lofi hip hop", "rnb", "soul", "afrobeat", "afro house",
+  "amapiano", "reggaeton", "dancehall", "baile funk", "gqom", "house", "deep house",
+  "tech house", "melodic techno", "techno", "minimal techno", "dnb", "drum and bass",
+  "garage", "uk garage", "dubstep", "future bass", "synthwave", "hardstyle",
+  "hardcore", "ambient", "downtempo", "jazz", "neo soul", "hip hop", "indie pop",
+  "bedroom pop", "shoegaze", "dream pop", "trance", "psytrance", "breakbeat",
+  "electro", "grime", "hyperpop", "emo rap", "cloud rap", "trap soul", "kpop",
+  "latin trap", "corridos", "sertanejo", "k-pop", "j-pop",
 ];
-const ROTATE = [
-  "melodic techno premiere", "afro house 2026", "drum and bass premiere",
-  "techno premiere", "deep house new", "phonk 2026", "amapiano new",
-  "future bass new", "trap new artist", "hip hop new artist", "lofi new",
-  "new single out now", "out now spotify", "official music video 2026",
-  "new EP", "unsigned artist", "independent artist new",
+// Angle applied to each genre. "type beat" is the email-goldmine (producers put
+// a lease/booking email in every description).
+const ANGLES = ["type beat", "type beat 2026", "premiere", "new 2026", "out now"];
+// Genre-independent indie phrases (fresh releases with contact links).
+const GENERIC = [
+  "free type beat", "prod by", "demo submission", "unsigned artist",
+  "independent artist new single", "official music video 2026", "new EP out now",
+  "out now spotify", "self released", "unreleased music", "beat store",
 ];
-function pickQueries(hour: number): string[] {
+// Flatten genre × angle + generics into one big pool (~300 unique queries).
+const POOL: string[] = [
+  ...GENRES.flatMap((g) => ANGLES.map((a) => `${g} ${a}`)),
+  ...GENERIC,
+];
+
+/** Rotate deeply through POOL by absolute hour so consecutive runs never repeat
+ * and the whole space is swept over time; force one email-rich "type beat"
+ * query per run. */
+function pickQueries(runIdx: number): string[] {
   return [
-    HIGH[(hour * 2) % HIGH.length],
-    HIGH[(hour * 2 + 1) % HIGH.length],
-    ROTATE[hour % ROTATE.length],
+    `${GENRES[runIdx % GENRES.length]} type beat`,        // email-rich producer niche
+    POOL[(runIdx * 2) % POOL.length],
+    POOL[(runIdx * 2 + 7) % POOL.length],                  // +7 stride → different slice
   ];
 }
 const LINK_RE = "open\\.spotify\\.com|spotify\\.link|soundcloud\\.com|linktr\\.ee|beacons\\.ai|bandcamp\\.com|band\\.link|hypeddit\\.com";
@@ -53,10 +70,14 @@ export async function GET(request: Request) {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) return NextResponse.json({ ok: true, skipped: "no YOUTUBE_API_KEY" });
 
-  // Mix email-rich + genre niches every run (see HIGH/ROTATE above).
-  const hour = new Date().getUTCHours();
-  const queries = pickQueries(hour).slice(0, SEARCHES_PER_RUN);
-  const publishedAfter = new Date(Date.now() - 21 * 86400000).toISOString();
+  // Absolute-hour index → deep rotation through the big query pool (see above),
+  // so each run explores a fresh slice of the long tail.
+  const runIdx = Math.floor(Date.now() / 3600000);
+  const queries = pickQueries(runIdx).slice(0, SEARCHES_PER_RUN);
+  // Vary the freshness window too, so we reach recent AND slightly older but
+  // still-active channels instead of the same newest uploads every time.
+  const windowDays = [30, 90, 14, 60][runIdx % 4];
+  const publishedAfter = new Date(Date.now() - windowDays * 86400000).toISOString();
 
   // 1) Search each query → collect unique channelIds (+ upload date) and the
   //    video ids so we can read the full per-video descriptions next.
