@@ -20,12 +20,22 @@ export async function GET(request: Request) {
   const senders = getSenders();
   const results = await Promise.all(
     senders.map(async (s) => {
+      // Non-secret diagnostics: reveal key TYPE (xsmtpsib=SMTP key vs xkeysib=API
+      // key) + length + whether login/key has stray whitespace — enough to spot
+      // the wrong key type or a paste error without exposing the secret.
+      const diag = {
+        login: s.login,
+        loginTrimOk: s.login === s.login.trim(),
+        keyPrefix: (s.key || "").slice(0, 9),
+        keyLen: (s.key || "").length,
+        keyTrimOk: s.key === s.key.trim(),
+      };
       const t = senderTransport(s);
       try {
         await t.verify();
-        return { id: s.id, from: s.from, cap: s.cap, ok: true };
+        return { id: s.id, from: s.from, cap: s.cap, ok: true, ...diag };
       } catch (e) {
-        return { id: s.id, from: s.from, cap: s.cap, ok: false, error: e instanceof Error ? e.message.slice(0, 160) : String(e).slice(0, 160) };
+        return { id: s.id, from: s.from, cap: s.cap, ok: false, error: e instanceof Error ? e.message.slice(0, 160) : String(e).slice(0, 160), ...diag };
       }
     })
   );
