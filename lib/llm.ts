@@ -24,10 +24,9 @@ export async function draftReplyAssist(
   // the exact product name / link / discount code are editable without a deploy.
   const o = ctx?.offer;
   const offerBlock = o?.name
-    ? `\n\nOUR CONCRETE OFFER (pitch this when they are interested or asking about pricing/next steps): "${o.name}" — a daily promotion designed to support and improve an existing chart position. Name it plainly, in one line.` +
-      (o.code ? ` Then share the discount code ${o.code} as a special personal discount from Max.` : ``) +
-      (o.url ? ` Include this link on its own line: ${o.url}` : ``) +
-      ` Do not stack multiple offers or invent prices.`
+    ? `\n\nOUR OFFER LINK (use when they are interested or ask about packages/reach/pricing/next steps): point them to "${o.name}" and put the link on ITS OWN LINE so they can browse the real packages and prices themselves: ${o.url ?? ""}.` +
+      (o.code ? ` Mention the code ${o.code} as a personal discount from Max.` : ``) +
+      ` Keep it to ONE short line plus the link - do NOT describe every package or invent prices; the link does the work.`
     : ``;
 
   const system =
@@ -37,8 +36,8 @@ export async function draftReplyAssist(
     `An artist just REPLIED to our outreach. Respond as JSON only: {"intent":"interested|question|not_interested|unsubscribe|other","reply":"<the reply text in the SAME language as the artist, plain text, no signature>"}.\n` +
     `STYLE (strict): keep it SHORT, 2 to 4 short sentences. Direct and professional, zero filler and zero hype phrases ("that's exactly the right time", "sound good?", "let's capitalize"). Sound like a busy competent person, not a marketer. Use only plain punctuation: commas, periods, question marks, and a simple hyphen "-" if needed. NEVER use em-dashes or en-dashes ("—" / "–"). No bullet points, no headings, no emoji.\n` +
     `HARD RULE: NEVER propose a call, meeting, Zoom, phone, or "quick chat". All communication stays in email.\n` +
-    `ANSWER THE QUESTION: when they ask what it looks like, what the reach is, or what packages are available, ANSWER IT in THIS email with substance. Never deflect with "I'll send details in the next email" or "I'll send a breakdown later" - that reads as a brush-off to a hot lead. Describe concretely what we do: real playlist placements and streams on Spotify/Apple, targeted YouTube views and channel promotion, all real listeners (never bots). Explain we build the package around their specific release/goal, and ask ONE qualifying question (their main platform or their next release date) so we can tailor it. If an offer link is provided below, include it.\n` +
-    `- interested / question: affirm the momentum briefly, then give the substantive answer above (what we do + tailor to them + one qualifier).\n` +
+    `ANSWER WITH THE LINK, not a sales paragraph: when they ask what it looks like, what the reach is, or what packages/prices are available, DO NOT write a long descriptive pitch and NEVER deflect with "I'll send details later" (that brushes off a hot lead). Instead: one short line that it's all real listeners (never bots), then send them straight to our packages via the offer link below so they see the real options and prices, then ask ONE qualifying question (their main platform or their next release date). Let the link do the work - keep the whole reply to 2-3 sentences.\n` +
+    `- interested / question: brief affirm, then the offer link + one qualifier. Short.\n` +
     `- not_interested / unsubscribe: a brief polite acknowledgement, do NOT pitch.\n` +
     `Never invent specific prices, exact numbers, chart positions, or fake guarantees. Be concrete about WHAT we do without fabricating stats.` +
     offerBlock;
