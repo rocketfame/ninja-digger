@@ -6,7 +6,7 @@
  */
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { getRotatingMailer, domainBudgetRemaining } from "@/lib/mailer";
+import { getRotatingMailerChecked, domainBudgetRemaining } from "@/lib/mailer";
 import { buildSpotifyEmail } from "@/lib/spotifyOutreachCopy";
 import { isHardBounceError } from "@/lib/emailHygiene";
 import { acquireLease } from "@/lib/cronLock";
@@ -65,7 +65,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, cap, spSentToday, sent: 0, note: "quota reached" });
   }
 
-  const rm = getRotatingMailer(sentBySender);
+  const rm = await getRotatingMailerChecked(sentBySender);
   if (!rm) return NextResponse.json({ ok: false, error: "no mailer / all accounts capped" }, { status: 500 });
   const { transporter, from, replyTo } = rm.mailer;
   const senderId = rm.senderId;

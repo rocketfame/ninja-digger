@@ -6,7 +6,7 @@
  */
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { getRotatingMailer, domainBudgetRemaining } from "@/lib/mailer";
+import { getRotatingMailerChecked, domainBudgetRemaining } from "@/lib/mailer";
 import { buildRadarEmail } from "@/lib/radarOutreachCopy";
 import { isHardBounceError } from "@/lib/emailHygiene";
 import { acquireLease } from "@/lib/cronLock";
@@ -44,7 +44,7 @@ export async function GET(request: Request) {
   const budget = Math.min(cap - sentToday, domainBudgetRemaining(sentBySender), PER_RUN);
   if (budget <= 0) return NextResponse.json({ ok: true, cap, sentToday, sent: 0, note: "quota reached" });
 
-  const rm = getRotatingMailer(sentBySender);
+  const rm = await getRotatingMailerChecked(sentBySender);
   if (!rm) return NextResponse.json({ ok: false, error: "no mailer / all capped" }, { status: 500 });
   const { transporter, from, replyTo } = rm.mailer;
   const pct = parseInt(await getSetting("sc_discount", "25"), 10) || 25;

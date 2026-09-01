@@ -13,7 +13,7 @@ import { validateEmailForOutreach, invalidateContactEmail, isHardBounceError } f
 const PLAIN_SIGNATURE = `\n\n--\nMax\nPromoSound`;
 
 import { JUNK_NAME_SQL, TIER_SQL } from "@/lib/leadQuality";
-import { getRotatingMailer, domainBudgetRemaining } from "@/lib/mailer";
+import { getRotatingMailerChecked, domainBudgetRemaining } from "@/lib/mailer";
 import { buildTouchEmail } from "@/lib/touchCopy";
 import { acquireLease } from "@/lib/cronLock";
 
@@ -170,7 +170,7 @@ export async function GET(request: Request) {
         `SELECT COALESCE(sender,'brevo1') sid, COUNT(*)::int c FROM outreach_events WHERE channel='email' AND sent_at >= CURRENT_DATE GROUP BY 1`
       ).then((r) => r.rows).catch(() => [] as { sid: string; c: number }[]);
       const sentBySender: Record<string, number> = Object.fromEntries(sbs.map((r) => [r.sid, r.c]));
-      const rm = getRotatingMailer(sentBySender);
+      const rm = await getRotatingMailerChecked(sentBySender);
       const mctx: MailerCtx | null = rm ? { transporter: rm.mailer.transporter, from: rm.mailer.from, replyTo: rm.mailer.replyTo, senderId: rm.senderId } : null;
       // Shared daily budget across all three touches so the cap can't be
       // exceeded 3x by running three back-to-back batches in one hour.
