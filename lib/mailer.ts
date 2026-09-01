@@ -28,28 +28,26 @@ export function getRotatingMailer(sentToday: Record<string, number>): { mailer: 
 }
 
 /**
- * Resilient rotation: try accounts least-used-first, VERIFY each account's SMTP
- * before using it, and skip any that fails auth/connection. This means one bad
- * account (e.g. a wrong SMTP key) can never halt outreach — sending falls back
- * to a working account. Returns null only if every account is capped or broken.
+ * Resilient rotation: pick the least-used account under its cap, EXCLUDING any
+ * account in the app_settings 'sender_blocklist' (comma-separated ids). A broken
+ * account (e.g. wrong SMTP key) is blocklisted so it can never halt outreach —
+ * rotation falls back to a working account. We deliberately do NOT SMTP-verify
+ * per run (verify is flaky/slow in serverless and was itself blocking sends).
  */
 export async function getRotatingMailerChecked(
   sentToday: Record<string, number>
 ): Promise<{ mailer: OutreachMailer; senderId: string } | null> {
-  const ordered = getSenders()
-    .map((s) => ({ s, sent: sentToday[s.id] ?? 0 }))
-    .filter((x) => x.sent < x.s.cap)
-    .sort((a, b) => a.sent - b.sent);
-  for (const { s } of ordered) {
-    const m = mailerFor(s);
-    try {
-      await m.transporter.verify();
-      return { mailer: m, senderId: s.id };
-    } catch (e) {
-      console.error(`[mailer] sender '${s.id}' (${s.from}) SMTP verify failed, skipping:`, e instanceof Error ? e.message : e);
-    }
-  }
-  return null;
+  const { pool } = await import("@/lib/db");
+  const blocked = new Set(
+    await pool
+      .query<{ value: string }>(`SELECT value FROM app_settings WHERE key = 'sender_blocklist'`)
+      .then((r) => (r.rows[0]?.value ?? "").split(",").map((x) => x.trim()).filter(Boolean))
+      .catch(() => [] as string[])
+  );
+  const usable = getSenders().filter((s) => !blocked.has(s.id));
+  const s = pickSender(usable, sentToday);
+  if (!s) return null;
+  return { mailer: mailerFor(s), senderId: s.id };
 }
 
 function mailerFor(s: Sender): OutreachMailer {
