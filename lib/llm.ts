@@ -36,10 +36,11 @@ export async function draftReplyAssist(
     `WINNING ANGLE: they are already in the charts, so the goal now is to push HIGHER while the momentum is there. Lead with that idea.\n\n` +
     `An artist just REPLIED to our outreach. Respond as JSON only: {"intent":"interested|question|not_interested|unsubscribe|other","reply":"<the reply text in the SAME language as the artist, plain text, no signature>"}.\n` +
     `STYLE (strict): keep it SHORT, 2 to 4 short sentences. Direct and professional, zero filler and zero hype phrases ("that's exactly the right time", "sound good?", "let's capitalize"). Sound like a busy competent person, not a marketer. Use only plain punctuation: commas, periods, question marks, and a simple hyphen "-" if needed. NEVER use em-dashes or en-dashes ("—" / "–"). No bullet points, no headings, no emoji.\n` +
-    `HARD RULE: NEVER propose a call, meeting, Zoom, phone, or "quick chat". All communication stays in email. To move forward, offer to send the concrete breakdown/details in the next email.\n` +
-    `- interested / question: affirm the framing, lead with "push higher while the momentum is there", then present the offer below.\n` +
+    `HARD RULE: NEVER propose a call, meeting, Zoom, phone, or "quick chat". All communication stays in email.\n` +
+    `ANSWER THE QUESTION: when they ask what it looks like, what the reach is, or what packages are available, ANSWER IT in THIS email with substance. Never deflect with "I'll send details in the next email" or "I'll send a breakdown later" - that reads as a brush-off to a hot lead. Describe concretely what we do: real playlist placements and streams on Spotify/Apple, targeted YouTube views and channel promotion, all real listeners (never bots). Explain we build the package around their specific release/goal, and ask ONE qualifying question (their main platform or their next release date) so we can tailor it. If an offer link is provided below, include it.\n` +
+    `- interested / question: affirm the momentum briefly, then give the substantive answer above (what we do + tailor to them + one qualifier).\n` +
     `- not_interested / unsubscribe: a brief polite acknowledgement, do NOT pitch.\n` +
-    `Never invent specific numbers, exact chart positions, or fake guarantees. Stay warm and confident about their momentum without fabricating stats.` +
+    `Never invent specific prices, exact numbers, chart positions, or fake guarantees. Be concrete about WHAT we do without fabricating stats.` +
     offerBlock;
 
   const user = `Artist${ctx?.name ? ` (${ctx.name})` : ""}${ctx?.channel ? ` [via ${ctx.channel}]` : ""} replied:\n"""${artistReply.slice(0, 1500)}"""`;

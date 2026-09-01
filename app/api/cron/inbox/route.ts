@@ -75,7 +75,9 @@ async function downloadText(client: ImapFlow, uid: number): Promise<{ reply: str
         .replace(/\n{3,}/g, "\n\n").trim() || null;
       text = text.slice(0, quoteIdx).trim();
     }
-    if (text.length > 0) return { reply: text.slice(0, REPLY_EXCERPT_CHARS), original: original ? original.slice(0, REPLY_EXCERPT_CHARS) : null };
+    // Keep more of the quoted history than the reply itself, so the full thread
+    // (including our original first touch) is visible in Telegram.
+    if (text.length > 0) return { reply: text.slice(0, REPLY_EXCERPT_CHARS), original: original ? original.slice(0, 2200) : null };
   }
   return null;
 }
@@ -341,7 +343,7 @@ export async function GET(request: Request) {
           const msgId = await sendTelegramMessage(
             `💬 <b>${o.source}</b>-відповідь${activate} від <b>${o.name || o.email}</b>\n${o.email}` +
             (excerpt ? `\n\n<blockquote>${tgEscape(excerpt.slice(0, 400))}</blockquote>` : "") +
-            (original ? `\n📩 <i>на наш лист:</i>\n<blockquote expandable>${tgEscape(original.slice(0, 500))}</blockquote>` : "") +
+            (original ? `\n📩 <i>на наш лист:</i>\n<blockquote expandable>${tgEscape(original.slice(0, 1800))}</blockquote>` : "") +
             (optedOut ? `\n🚫 <b>Не цікаво → закрито + blacklist</b> (більше не турбуємо).` : "") +
             (draft
               ? `\n💡 <b>Чернетка (${draft.intent})</b>:\n<code>${tgEscape(draft.reply)}</code>\n\n✅ <b>Approve &amp; Send</b> — надіслати як є.\n✏️ <b>Редагувати</b> — напишеш свій варіант, я відправлю.`
@@ -502,7 +504,7 @@ export async function GET(request: Request) {
             `📧 ${tgEscape(row.value)}\n` +
             (subject ? `✉️ ${tgEscape(subject)}\n` : "") +
             (excerpt ? `\n<blockquote>${tgEscape(excerpt)}</blockquote>\n` : "") +
-            (original ? `📩 <i>на наш лист:</i>\n<blockquote expandable>${tgEscape(original.slice(0, 500))}</blockquote>\n` : "") +
+            (original ? `📩 <i>на наш лист:</i>\n<blockquote expandable>${tgEscape(original.slice(0, 1800))}</blockquote>\n` : "") +
             (bpDraft ? `\n💡 <b>Чернетка (${bpDraft.intent})</b>:\n<code>${tgEscape(bpDraft.reply)}</code>\n` : "") +
             `\n✅ <b>Approve &amp; Send</b> — як є · ✏️ <b>Редагувати</b> — свій варіант.\n` +
             `<a href="https://ninja-digger.vercel.app/artist/${encodeURIComponent(row.artist_beatport_id)}">Відкрити картку ліда</a>`,
