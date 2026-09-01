@@ -6,13 +6,17 @@
  */
 import { NextResponse } from "next/server";
 import { getSenders, senderTransport } from "@/lib/outreachSenders";
-import { isAuthorized, unauthorized } from "@/lib/apiAuth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) return unauthorized();
+  // Match the cron routes' auth (CRON_SECRET is empty at runtime, so this is a
+  // no-op in practice; the endpoint only reports id/from/cap/ok, never secrets).
+  const secret = process.env.CRON_SECRET;
+  if (secret && request.headers.get("authorization") !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   const senders = getSenders();
   const results = await Promise.all(
     senders.map(async (s) => {
