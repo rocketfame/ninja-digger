@@ -102,7 +102,11 @@ export async function GET(request: Request) {
   //    what WE handed to Brevo yesterday with what BREVO says it delivered
   //    (aggregated report, primary account). The raw report is persisted in
   //    app_settings so it can be inspected without dashboard credentials.
-  if (process.env.BREVO_API_KEY) {
+  // Skip when brevo1 is deliberately out of rotation (sender_blocklist) — the
+  // account is known-broken and the alert would only repeat itself.
+  const blocklist = String(((await one(`SELECT value FROM app_settings WHERE key='sender_blocklist'`)) as { value?: unknown }).value ?? "");
+  const brevo1Blocked = blocklist.split(",").map((x) => x.trim()).includes("brevo1");
+  if (process.env.BREVO_API_KEY && !brevo1Blocked) {
     try {
       const res = await fetch("https://api.brevo.com/v3/smtp/statistics/reports?days=4", {
         headers: { "api-key": process.env.BREVO_API_KEY, accept: "application/json" },
@@ -132,9 +136,12 @@ export async function GET(request: Request) {
 
   // 6. Suppression leak — a send to a blacklisted/junk address in the last 24h
   //    means a barrel bypassed the pre-send gate. Must stay at zero.
+  //    Only sends made AFTER the address was blacklisted count — a scrub that
+  //    quarantines an address retroactively must not look like a bypass.
   const leak = await one(`SELECT COUNT(*) c FROM outreach_events o
-     WHERE o.channel='email' AND o.template_id LIKE '%\\_touch\\_%' AND o.sent_at > now() - interval '24 hours'
-       AND LOWER(o.contact_value) IN (SELECT LOWER(email) FROM email_blacklist)`);
+     JOIN email_blacklist b ON LOWER(b.email) = LOWER(o.contact_value)
+     WHERE o.channel='email' AND o.template_id LIKE '%\\_touch\\_%'
+       AND o.sent_at > now() - interval '24 hours' AND o.sent_at > b.created_at`);
   if (num((leak as { c?: unknown }).c) > 0) alerts.push(`🔴 ${num((leak as { c?: unknown }).c)} листів за 24год пішли на адреси з blacklist/junk — pre-send gate обійдено`);
 
   if (alerts.length > 0) {
