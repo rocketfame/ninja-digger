@@ -84,8 +84,41 @@ export async function GET(request: Request) {
     alerts.push(`🟠 brevo-poll застряг на ${pollDate} (сьогодні ${today}) — метрики не оновлюються`);
   }
 
+  // 5. DELIVERY BLACKOUT — the failure that hid for 4 days (2026-08-30..09-03):
+  //    the SMTP relay accepted every message but Brevo delivered none. Compare
+  //    what WE handed to Brevo yesterday with what BREVO says it delivered
+  //    (aggregated report, primary account). The raw report is persisted in
+  //    app_settings so it can be inspected without dashboard credentials.
+  if (process.env.BREVO_API_KEY) {
+    try {
+      const res = await fetch("https://api.brevo.com/v3/smtp/statistics/reports?days=4", {
+        headers: { "api-key": process.env.BREVO_API_KEY, accept: "application/json" },
+      });
+      const body = (await res.json().catch(() => ({}))) as { reports?: { date: string; requests: number; delivered: number; hardBounces: number; softBounces: number; blocked: number; opens: number }[] };
+      const rows = body.reports ?? [];
+      await pool.query(
+        `INSERT INTO app_settings (key, value, updated_at) VALUES ('brevo_daily_report', $1, now())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+        [JSON.stringify({ status: res.status, rows, ts: new Date().toISOString() }).slice(0, 4000)]
+      ).catch(() => {});
+      const y = rows.find((r) => r.date === yest);
+      const ours = await one(`SELECT COUNT(*) c FROM outreach_events WHERE channel='email' AND template_id LIKE '%\_touch\_%' AND COALESCE(sender,'brevo1')='brevo1' AND sent_at >= CURRENT_DATE - 1 AND sent_at < CURRENT_DATE`);
+      const sentY = num((ours as { c?: unknown }).c);
+      if (res.ok && sentY >= 20) {
+        const deliv = y ? num(y.delivered) : 0;
+        const req = y ? num(y.requests) : 0;
+        if (req < sentY * 0.5) alerts.push(`🔴 Brevo НЕ БАЧИТЬ наші листи: вчора віддали brevo1 ${sentY}, Brevo зафіксував requests=${req} — акаунт заблоковано/ключ не той?`);
+        else if (deliv < req * 0.5) alerts.push(`🔴 Brevo доставив лише ${deliv} з ${req} (blocked=${num(y?.blocked)}, hb=${num(y?.hardBounces)}) — репутація/блок акаунта`);
+      } else if (!res.ok) {
+        alerts.push(`🟠 Brevo API звіт недоступний (HTTP ${res.status}) — перевір BREVO_API_KEY`);
+      }
+    } catch (e) {
+      alerts.push(`🟠 Brevo delivery check впав: ${e instanceof Error ? e.message.slice(0, 80) : String(e).slice(0, 80)}`);
+    }
+  }
+
   if (alerts.length > 0) {
-    await sendTelegramMessage(`🐕 <b>WATCHDOG</b> — знайдено проблеми:\n\n${alerts.join("\n")}`).catch(() => {});
+    await sendTelegramMessage(`🐕 <b>WATCHDOG</b> — знайдено проблеми:\n\n${alerts.join("\n")}`).catch((e) => console.error("[watchdog] telegram failed:", e instanceof Error ? e.message : e));
   }
 
   return NextResponse.json({ ok: true, dbMb: mb, alerts, healthy: alerts.length === 0, ts: new Date().toISOString() });
