@@ -40,11 +40,24 @@ export function getRotatingMailer(sentToday: Record<string, number>): { mailer: 
  */
 export async function getSendersWithOverrides(): Promise<Sender[]> {
   const { pool } = await import("@/lib/db");
-  const caps = await pool
-    .query<{ key: string; value: string }>(`SELECT key, value FROM app_settings WHERE key LIKE 'sender_cap_%'`)
-    .then((r) => Object.fromEntries(r.rows.map((x) => [x.key.slice("sender_cap_".length), Number(x.value)])))
-    .catch(() => ({} as Record<string, number>));
-  return getSenders().map((s) => (caps[s.id] > 0 ? { ...s, cap: caps[s.id] } : s));
+  // sender_cap_<id> → daily cap; sender_from_<id> → from address ("Name <addr>" or bare addr);
+  // sender_from_all → from address for every account (outreach-domain switch in one setting).
+  const rows = await pool
+    .query<{ key: string; value: string }>(`SELECT key, value FROM app_settings WHERE key LIKE 'sender_cap_%' OR key LIKE 'sender_from_%'`)
+    .then((r) => r.rows)
+    .catch(() => [] as { key: string; value: string }[]);
+  const caps: Record<string, number> = {}, froms: Record<string, { from: string; name?: string }> = {};
+  for (const { key, value } of rows) {
+    if (key.startsWith("sender_cap_")) caps[key.slice(11)] = Number(value);
+    else if (key.startsWith("sender_from_")) {
+      const m = value.trim().match(/^(?:"?([^"<]+?)"?\s*<)?([^<>\s]+@[^<>\s]+)>?$/);
+      if (m) froms[key.slice(12)] = { from: m[2], name: m[1]?.trim() || undefined };
+    }
+  }
+  return getSenders().map((s) => {
+    const f = froms[s.id] ?? froms.all;
+    return { ...s, cap: caps[s.id] > 0 ? caps[s.id] : s.cap, from: f?.from ?? s.from, name: f?.name ?? s.name };
+  });
 }
 
 export async function getRotatingMailerChecked(
