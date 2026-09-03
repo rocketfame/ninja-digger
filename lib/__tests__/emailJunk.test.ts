@@ -62,6 +62,16 @@ describe("classifyEmail — placeholders, platforms, disposable, hostile", () =>
     bad("a@10minutemail.com", "disposable");
     bad("a@guerrillamail.com", "disposable");
   });
+  it("rejects relay/alias/burner addresses but keeps privacy providers", () => {
+    bad("abc123@privaterelay.appleid.com", "relay");
+    bad("dj@duck.com", "relay");
+    bad("x@mozmail.com", "relay");
+    bad("x@simplelogin.com", "relay");
+    bad("x@passinbox.com", "relay");
+    good("artist@proton.me");
+    good("artist@protonmail.com");
+    good("artist@tutanota.com");
+  });
   it("rejects hostile-country domains", () => {
     bad("dj@mail.ru", "hostile");
     bad("dj@yandex.com", "hostile");

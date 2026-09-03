@@ -9,7 +9,8 @@
  *   3. placeholders (user@domain.com, youremail@example.com, ejemplo, test@test)
  *   4. platform mailboxes that are never a person's inbox (bandcamp, facebook…)
  *   5. disposable / temp-mail domains (vendored blocklist, ~8.7k domains)
- *   6. hostile-country domains (.ru/.su/.by, yandex, mail.ru) — political filter
+ *   6a. relay/alias/burner services (Apple Hide My Email, duck.com, SimpleLogin…)
+ *   6b. hostile-country domains (.ru/.su/.by, yandex, mail.ru) — political filter
  *   7. HARD role mailboxes (RFC 2142 + common ops/legal/sales) — never
  *   8. SOFT role mailboxes (info@, booking@, mgmt@…) — allowed ONLY on a domain
  *      that looks like the artist's own (not freemail / platform / generic)
@@ -59,6 +60,12 @@ const TYPO_DOMAINS: Record<string, string> = {
   "iclod.com": "icloud.com", "icloud.con": "icloud.com",
 };
 
+// Relay / alias / burner addresses: the person hides their real inbox behind a
+// forwarding service (Apple Hide My Email, DuckDuckGo, Firefox Relay, SimpleLogin,
+// addy.io, Proton Pass aliases). Low intent, often one-shot — never worth a send.
+// NOTE: Proton Mail / Tutanota themselves are ordinary privacy providers and stay allowed.
+const RELAY_RE = /(^|\.)(privaterelay\.appleid\.com|duck\.com|mozmail\.com|relay\.firefox\.com|simplelogin\.(com|co|io|fr)|aleeas\.com|slmail\.me|silomails\.com|anonaddy\.(com|me)|addy\.io|addymail\.com|passmail\.net|passinbox\.com|passfwd\.com|passmail\.com|hidemyemail\.\w+|33mail\.com|dropmail\.me|spamgourmet\.com|trashmail\.\w+)$/i;
+
 const HOSTILE_RE = /(\.(ru|su|by)$)|((^|\.)(yandex|mail\.ru|rambler|bk\.ru|list\.ru|inbox\.ru)(\.|$))/i;
 
 // RFC 2142 + ops/legal/commerce roles: never a person, never a lead.
@@ -98,6 +105,7 @@ export function classifyEmail(raw: string | null | undefined): EmailVerdict {
   if (PLACEHOLDER_DOMAIN_RE.test(domain) || PLACEHOLDER_LOCAL_RE.test(local) || PLACEHOLDER_ANY_RE.test(email)) return { ok: false, email, reason: "placeholder address" };
   if (/^[0-9a-f]{16,}$/.test(local) || TRACKING_RE.test(domain)) return { ok: false, email, reason: `tracking/infrastructure host (${domain})` };
   if (DISPOSABLE.has(domain) || DISPOSABLE.has(reg)) return { ok: false, email, reason: `disposable domain (${domain})` };
+  if (RELAY_RE.test(domain)) return { ok: false, email, reason: `alias/relay address (${domain})` };
   if (HOSTILE_RE.test(domain)) return { ok: false, email, reason: `hostile domain (${domain})` };
   if (HARD_ROLE_RE.test(local)) return { ok: false, email, reason: `role address (${local}@)` };
   if (SOFT_ROLE_RE.test(local)) {
