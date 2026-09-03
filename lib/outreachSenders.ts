@@ -4,8 +4,10 @@
  * daily cap (reputation isolation).
  *
  * Config via env `OUTREACH_SENDERS` = JSON array (secrets stay in Vercel env):
- *   [{"id":"a1","login":"xxx@smtp-brevo.com","key":"xkeysib-...",
+ *   [{"id":"a1","login":"xxx@smtp-brevo.com","key":"xsmtpsib-...",
  *     "from":"max@getpromosound.com","name":"Max from PromoSound","cap":280}]
+ * Any env var whose name starts with OUTREACH_SENDERS (e.g. OUTREACH_SENDERS_3)
+ * is parsed the same way, so extra accounts can be added one var at a time.
  * If unset, falls back to the single legacy BREVO_SMTP_LOGIN/KEY (or Gmail) —
  * so behaviour is identical until multiple accounts are added.
  */
@@ -37,9 +39,13 @@ export function getSenders(): Sender[] {
     out.push({ id: "brevo1", login, key, from: defFrom, name: "Max from PromoSound", replyTo, cap: Number(process.env.DOMAIN_DAILY_MAX) || 280 });
   }
 
-  // Additional accounts from OUTREACH_SENDERS (JSON array).
-  const raw = process.env.OUTREACH_SENDERS;
-  if (raw) {
+  // Additional accounts from every env var starting with OUTREACH_SENDERS
+  // (OUTREACH_SENDERS, OUTREACH_SENDERS_3, ...), each a JSON array. Separate
+  // vars let a new account be added without re-entering existing keys.
+  const rawKeys = Object.keys(process.env).filter((k) => k.startsWith("OUTREACH_SENDERS")).sort();
+  for (const envKey of rawKeys) {
+    const raw = process.env[envKey];
+    if (!raw) continue;
     try {
       const arr = JSON.parse(raw) as Partial<Sender>[];
       for (const s of arr) {
