@@ -36,6 +36,7 @@ function randomUA(): string { return USER_AGENTS[Math.floor(Math.random() * USER
 const RATE_DELAY_MS = 1000;       // затримка між запитами до сайтів (було 2000)
 const SEARCH_DELAY_MS = 2000;     // довша затримка між запитами до пошуковиків (було 4000)
 const CACHE_TTL_SECONDS = 86400;  // 24h
+const CACHE_MAX_BODY = 150_000; // bytes; larger pages are fetched but not cached
 const REQUEST_TIMEOUT_MS = 10000;
 const GLOBAL_TIMEOUT_MS = 50000;  // глобальний таймаут для всього enrichment — повертаємо що є
 
@@ -246,11 +247,16 @@ async function fetchWithCache(url: string): Promise<string | null> {
   try {
     await jitteredDelay(RATE_DELAY_MS);
     const body = await fetchWithTimeout(normalized);
+    // Cache only reasonably small pages: 300KB+ HTML/JSON blobs (Instagram,
+    // app shells) were ~60% of url_cache and are never re-hit within the TTL.
+    // Extraction always runs on the freshly fetched body, so skipping the
+    // cache write loses nothing.
+    if (body.length > CACHE_MAX_BODY) return body;
     try {
       await pool.query(
         `INSERT INTO url_cache (url, body, fetched_at, ttl_seconds) VALUES ($1, $2, now(), $3)
          ON CONFLICT (url) DO UPDATE SET body = EXCLUDED.body, fetched_at = now()`,
-        [normalized, body.slice(0, 500000), CACHE_TTL_SECONDS]
+        [normalized, body, CACHE_TTL_SECONDS]
       );
     } catch {
       // Cache write failed; still return body

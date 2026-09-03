@@ -41,7 +41,7 @@ export async function GET(request: Request) {
   // weekly VACUUM FULL on the big history tables physically shrinks them so the
   // 512MB tier never creeps toward the cap. Low-traffic Sunday window.
   const vacuumed: Record<string, string> = {};
-  for (const t of ["bptoptracker_daily", "chart_entries", "url_cache", "email_events"]) {
+  for (const t of ["url_cache", "email_events", "sc_artists", "lead_scores", "artist_metrics", "artist_links", "bptoptracker_daily", "chart_entries"]) {
     await pool.query(`VACUUM FULL ${t}`).then(() => { vacuumed[t] = "ok"; }).catch((e) => { vacuumed[t] = String(e?.message ?? e).slice(0, 60); });
   }
   const dbMb = await pool.query(`SELECT round(pg_database_size(current_database())/1024/1024) mb`).then((r) => r.rows[0]?.mb).catch(() => null);
