@@ -14,7 +14,8 @@ export async function quarantineEmail(email: string, reason: string): Promise<vo
   await pool.query(`UPDATE sc_artists SET email_status='junk', updated_at=now() WHERE LOWER(email)=$1 AND COALESCE(email_status,'') NOT IN ('bounced','unsub')`, [e]).catch(() => {});
   await pool.query(`UPDATE spotify_leads SET email_status='junk', updated_at=now() WHERE LOWER(email)=$1 AND COALESCE(email_status,'') NOT IN ('bounced','unsub')`, [e]).catch(() => {});
   await pool.query(`UPDATE radar_leads SET email_status='junk', updated_at=now() WHERE LOWER(email)=$1 AND COALESCE(email_status,'') NOT IN ('bounced','unsub')`, [e]).catch(() => {});
-  await pool.query(`UPDATE artist_contacts SET status='junk' WHERE type='email' AND LOWER(TRIM(value))=$1 AND COALESCE(status,'ok') NOT IN ('bounced','blocked')`, [e]).catch(() => {});
+  // artist_contacts.status is constrained to ok/bounced/blocked — 'blocked' is its suppression state.
+  await pool.query(`UPDATE artist_contacts SET status='blocked' WHERE type='email' AND LOWER(TRIM(value))=$1 AND COALESCE(status,'ok') NOT IN ('bounced','blocked')`, [e]).catch((err) => console.error("[emailScrub] artist_contacts mark failed:", err instanceof Error ? err.message : err));
 }
 
 export type ScrubReport = { scanned: number; junk: number; byReason: Record<string, number>; samples: string[] };
