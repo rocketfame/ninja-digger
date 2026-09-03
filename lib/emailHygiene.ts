@@ -7,14 +7,8 @@
 
 import { promises as dns } from "dns";
 import { pool } from "@/lib/db";
+import { classifyEmail } from "@/lib/emailJunk";
 
-const EMAIL_RE = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-
-/** Role/system addresses that never belong in a lead list. */
-const JUNK_LOCAL = /^(no-?reply|do-?not-?reply|noreply|mailer-daemon|postmaster|abuse|spam|webmaster|hostmaster|admin|root|bounce|notifications?|alerts?)$/i;
-const JUNK_DOMAINS = /(^|\.)(example\.(com|org|net)|test\.com|sentry\.(io|com)|cloudflare\.com|wixpress\.com|sentry-next\.wixpress\.com|w3\.org|schema\.org|godaddy\.com|domain\.com)$/i;
-/** Regex-extraction artifacts: image/file names picked up as "emails". */
-const FILE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|css|js|pdf|mp3|wav)$/i;
 
 /**
  * Hostile-country email domains — russia (.ru/.su, Mail.ru group, Yandex,
@@ -55,13 +49,11 @@ export type EmailValidation = { ok: true } | { ok: false; reason: string };
 
 /** Full pre-send validation: syntax → junk patterns → MX/A record. */
 export async function validateEmailForOutreach(email: string): Promise<EmailValidation> {
-  const value = email.trim().toLowerCase();
-  if (!EMAIL_RE.test(value)) return { ok: false, reason: "invalid syntax" };
-  if (FILE_EXT_RE.test(value)) return { ok: false, reason: "file artifact" };
-  const [local, domain] = value.split("@");
-  if (JUNK_LOCAL.test(local)) return { ok: false, reason: `role address (${local}@)` };
-  if (JUNK_DOMAINS.test(domain)) return { ok: false, reason: `junk domain (${domain})` };
-  if (HOSTILE_DOMAIN_RE.test(domain)) return { ok: false, reason: `hostile domain (${domain})` };
+  // Static policy (syntax, artifacts, placeholders, platforms, disposable,
+  // hostile, role rules) lives in lib/emailJunk — the single source of truth.
+  const v = classifyEmail(email);
+  if (!v.ok) return { ok: false, reason: v.reason };
+  const domain = v.email.split("@")[1];
   if (!(await domainAcceptsMail(domain))) return { ok: false, reason: `no MX/A record (${domain})` };
   return { ok: true };
 }

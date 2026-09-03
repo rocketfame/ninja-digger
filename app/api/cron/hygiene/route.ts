@@ -6,6 +6,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { scrubJunkEmails } from "@/lib/emailScrub";
 import { pool } from "@/lib/db";
 import { validateEmailForOutreach, invalidateContactEmail } from "@/lib/emailHygiene";
 import { sendTelegramMessage } from "@/lib/telegram";
@@ -18,6 +19,9 @@ export async function GET(request: Request) {
   if (secret && request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // 0. Junk scrub across all lead tables (single policy in lib/emailJunk).
+  const scrub = await scrubJunkEmails().catch((e) => ({ scanned: 0, junk: -1, byReason: { error: 1 }, samples: [String(e?.message ?? e).slice(0, 80)] }));
 
   // 1. Re-validate all active emails
   const contacts = await pool.query<{ email: string }>(
@@ -90,6 +94,7 @@ export async function GET(request: Request) {
     `💬 Відповідей: ${replies7d} · 🚫 Відмов: ${optOut7d}\n` +
     `🆕 Нових лідів у чартах: ${newLeads7d}\n\n` +
     `🧽 Гігієна: перевірено ${contacts.rows.length} email, вичищено ${invalidated}\n` +
+    `🗑 Junk-скраб: переглянуто ${scrub.scanned}, у карантин ${scrub.junk}${scrub.junk > 0 ? " (" + Object.entries(scrub.byReason).map(([k, v]) => `${k}: ${v}`).join(", ") + ")" : ""}\n` +
     `📧 Валідних email-лідів: ${validLeads} · всього bounced: ${bounced7d}\n` +
     `⭐ Золота база (відповідали): ${golden}\n\n` +
     `🔥 <b>Прогрів:</b> ліміт ${currentCap} → <b>${newCap}</b>/день (${rampNote})\n\n` +

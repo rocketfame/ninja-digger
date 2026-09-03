@@ -60,6 +60,11 @@ url_cache prune кожні 6 год; steady-state prune SC. Зараз ~318MB �
 one-click unsubscribe + лінійний warmup +5/день. Потребує домену/DNS — крок користувача.
 Безкоштовна частина (RFC 8058 headers, HMAC unsubscribe, тротлінг) — робимо кодом.
 
+## Шар 3b — Гігієна бази (junk-email policy) ✅ 2026-09-03
+
+Єдина точка правди `lib/emailJunk.ts` (`classifyEmail` / `pickBestEmail`), покрита vitest (`npm test`). Правила: синтаксис/артефакти → платформи (bandcamp/facebook/linktree…) → плейсхолдери (user@domain, your@email) → трекінг (sentry/wixpress/cloudfront) → одноразові домени (vendored список 8.7k, `lib/data/disposable-domains.json`) → ворожі (.ru/.by/yandex) → HARD-ролі RFC 2142 + ops/sales (ніколи) → SOFT-ролі (info@, booking@, mgmt@, demo@) дозволені лише на власному домені артиста, не на freemail. Typo-домени (gmial.com) виправляються.
+Застосування: всі екстрактори (soundcloud, soundcloudEnrich, enrichV1, radar, spotify-crawl, spotify/enrich, ingest-campaigns, scripts/crawl-contacts via `npx tsx`), pre-send gate у всіх барелях (`validateEmailForOutreach` = policy + MX) з карантином у `email_blacklist` (`lib/emailScrub.ts`), тижневий скраб у hygiene, детектор витоку у watchdog (send на blacklist за 24h = алерт). Разовий скраб: `npx tsx scripts/scrub-junk-emails.mjs` (DRY=1 — прев'ю). Перший прогін 03.09: 33 689 адрес → 58 у карантин.
+
 ## Шар 4 — Безпека (🔧 наступний батч)
 
 - 🔧 auth на `/api/internal/*` (outreach, spotify/*) + `/api/leads/export` (зараз відкриті). **Увага:** `CRON_SECRET` у Vercel існує, але порожній у рантаймі → усі `/api/cron/*` відкриті. Фікс = задати реальне значення (Vercel сам шле Bearer у крони), тоді всі перевірки `if (secret && …)` оживають без змін коду.

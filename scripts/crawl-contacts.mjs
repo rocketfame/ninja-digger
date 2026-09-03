@@ -5,10 +5,11 @@
  * real contact email, and writes it back to spotify_leads. Fully server-side —
  * public pages, no Instagram session, no block risk.
  *
- * Usage: node scripts/crawl-contacts.mjs [limit]
+ * Usage: npx tsx scripts/crawl-contacts.mjs [limit]   (tsx: shares lib/emailJunk.ts)
  */
 import { readFileSync } from "node:fs";
 import pg from "pg";
+import { pickBestEmail } from "../lib/emailJunk.ts";
 
 // Load DATABASE_URL from .env.local
 const env = readFileSync(new URL("../.env.local", import.meta.url), "utf8");
@@ -20,23 +21,9 @@ const CONCURRENCY = 6;
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36";
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-// Junk / placeholder / generic hygiene — same spirit as the SoundCloud pipeline.
-const JUNK = /(^(support|help|admin|webmaster|postmaster|abuse|hostmaster|billing|noc|sysadmin|security|privacy|feedback|info|contact|hello|hi|team|mail|no-?reply|example|sample|test|demo|your|name|user|press|media|jobs|careers|legal|dmca|copyright|help-?desk|sales|guidelines|orders|shop|store|newsletter|subscribe)@)|(@(bandcamp|example|ejemplo|prueba|domain|yourdomain|yoursite|mysite|email|sentry|wixpress|godaddy|sentry\.io|test|placeholder|spacehey|linktr|linktree|beacons|hoo|tiktok|youtube|facebook|instagram|spotify|apple|distrokid|patreon|wix|squarespace|shopify|cloudflare)\.)|(\.(png|jpe?g|gif|svg|webp|css|js)$)|(ejemplo|youremail|yourname|tuemail|tucorreo)|(\.(ru|su|by)$)|(yandex\.)/i;
 
 function pickEmail(html) {
-  const seen = new Set();
-  // decode common HTML/unicode escapes so ">contact@" -> "contact@"
-  const clean = html.replace(/&[a-z]+;|\\u00[0-9a-f]{2}|u00[0-9a-f]{2}(?=[a-z])/gi, " ");
-  for (const raw of clean.match(EMAIL_RE) || []) {
-    const e = raw.trim().toLowerCase().replace(/[.,;]+$/, "");
-    if (e.length > 120 || seen.has(e)) continue;
-    seen.add(e);
-    // reject machine/tracking addresses: long hex local parts, or sentry/wixpress
-    // anywhere in the domain (incl. deep subdomains the anchored JUNK re misses)
-    if (/^[0-9a-f]{16,}@/.test(e) || /sentry|wixpress|\bingest\.|amazonaws|cloudfront/.test(e)) continue;
-    if (!JUNK.test(e)) return e;
-  }
-  return null;
+  return pickBestEmail(html);
 }
 
 async function fetchText(url, ms = 12000) {

@@ -8,7 +8,8 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRotatingMailerChecked, getSentBySenderToday } from "@/lib/mailer";
 import { buildRadarEmail } from "@/lib/radarOutreachCopy";
-import { isHardBounceError } from "@/lib/emailHygiene";
+import { isHardBounceError, validateEmailForOutreach } from "@/lib/emailHygiene";
+import { quarantineEmail } from "@/lib/emailScrub";
 import { acquireLease } from "@/lib/cronLock";
 
 export const dynamic = "force-dynamic";
@@ -64,11 +65,15 @@ export async function GET(request: Request) {
      ORDER BY heat_score DESC LIMIT $1`));
   leads = leads.slice(0, budget);
 
-  let sent = 0;
+  let sent = 0, skippedJunk = 0;
   for (const lead of leads) {
     if (sent > 0) await new Promise((r) => setTimeout(r, 20000 + Math.random() * 25000));
     const touch = (lead.touch + 1) as 1 | 2 | 3;
     const email = buildRadarEmail(lead.source, touch, lead.name || "there", pct);
+    // Pre-send gate: junk/role/placeholder/no-MX addresses never leave the
+    // building — they go to the suppression list instead of burning reputation.
+    const verdict = await validateEmailForOutreach(lead.email);
+    if (!verdict.ok) { await quarantineEmail(lead.email, `pre-send (radar): ${verdict.reason}`); skippedJunk++; continue; }
     try {
       await transporter.sendMail({ from, replyTo, to: lead.email, subject: email.subject, text: email.text });
       const recorded = await pool.query(
@@ -83,5 +88,5 @@ export async function GET(request: Request) {
       if (isHardBounceError(e)) await pool.query(`UPDATE radar_leads SET status='dead', email_status='bounced' WHERE id=$1`, [lead.id]).catch(() => {});
     }
   }
-  return NextResponse.json({ ok: true, cap, sentToday, sent, ts: new Date().toISOString() });
+  return NextResponse.json({ ok: true, cap, sentToday, sent, skippedJunk, ts: new Date().toISOString() });
 }

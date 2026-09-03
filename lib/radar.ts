@@ -4,17 +4,11 @@
  * extract email + platform links, score "heat", upsert into radar_leads.
  */
 import { pool } from "@/lib/db";
+import { pickBestEmail } from "@/lib/emailJunk";
 
-const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-const JUNK_EMAIL_RE = /(^(support|help|admin|webmaster|postmaster|abuse|hostmaster|billing|noc|sysadmin|security|privacy|feedback|info|contact|hello|team|mail|no-?reply)@)|(@(bandcamp|example|sentry|wixpress|godaddy|reddit|redditmail|youtube|sentry)\.)|(\.(png|jpg|gif)$)|(\.(ru|su|by)$)|(yandex\.)/i;
-
+/** Best contactable email in free text — single junk policy lives in lib/emailJunk. */
 export function extractEmail(text: string, explicit?: string | null): string | null {
-  const cands = [explicit, ...(text.match(EMAIL_RE) ?? [])].filter(Boolean) as string[];
-  for (const raw of cands) {
-    const e = raw.trim().toLowerCase().replace(/[.,;:]+$/, "");
-    if (!JUNK_EMAIL_RE.test(e) && e.length <= 120) return e;
-  }
-  return null;
+  return pickBestEmail(text, explicit);
 }
 
 export function extractUrl(text: string, host: string): string | null {

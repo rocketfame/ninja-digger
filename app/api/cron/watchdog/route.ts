@@ -130,6 +130,13 @@ export async function GET(request: Request) {
     }
   }
 
+  // 6. Suppression leak — a send to a blacklisted/junk address in the last 24h
+  //    means a barrel bypassed the pre-send gate. Must stay at zero.
+  const leak = await one(`SELECT COUNT(*) c FROM outreach_events o
+     WHERE o.channel='email' AND o.template_id LIKE '%\\_touch\\_%' AND o.sent_at > now() - interval '24 hours'
+       AND LOWER(o.contact_value) IN (SELECT LOWER(email) FROM email_blacklist)`);
+  if (num((leak as { c?: unknown }).c) > 0) alerts.push(`🔴 ${num((leak as { c?: unknown }).c)} листів за 24год пішли на адреси з blacklist/junk — pre-send gate обійдено`);
+
   if (alerts.length > 0) {
     await sendTelegramMessage(`🐕 <b>WATCHDOG</b> — знайдено проблеми:\n\n${alerts.join("\n")}`).catch((e) => console.error("[watchdog] telegram failed:", e instanceof Error ? e.message : e));
   }

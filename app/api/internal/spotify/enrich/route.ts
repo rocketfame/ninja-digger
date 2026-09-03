@@ -5,6 +5,7 @@
  * Parses bio + external_url for email / Spotify / SoundCloud / Linktree / website.
  */
 import { NextResponse } from "next/server";
+import { pickBestEmail } from "@/lib/emailJunk";
 import { pool } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -17,17 +18,8 @@ const CORS = {
 };
 export function OPTIONS() { return new NextResponse(null, { headers: CORS }); }
 
-const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-// Same junk hygiene as SoundCloud pipeline — no generic/support inboxes.
-const JUNK_EMAIL_RE = /(^(support|help|admin|webmaster|postmaster|abuse|hostmaster|billing|noc|sysadmin|security|privacy|feedback|info|contact|hello|team|mail|no-?reply)@)|(@(bandcamp|example|sentry|wixpress|godaddy)\.)|(\.(ru|su|by)$)|(yandex\.)/i;
-
 function pickEmail(text: string, explicit?: string | null): string | null {
-  const cands = [explicit, ...(text.match(EMAIL_RE) ?? [])].filter(Boolean) as string[];
-  for (const raw of cands) {
-    const e = raw.trim().toLowerCase().replace(/[.,;]+$/, "");
-    if (!JUNK_EMAIL_RE.test(e) && e.length <= 120) return e;
-  }
-  return null;
+  return pickBestEmail(text, explicit);
 }
 
 function findUrl(text: string, host: RegExp): string | null {

@@ -5,6 +5,7 @@
  * CORS-open so the repostexchange.com page can POST directly.
  */
 import { NextResponse } from "next/server";
+import { pickBestEmail } from "@/lib/emailJunk";
 import { pool } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +21,6 @@ export function OPTIONS() {
   return new NextResponse(null, { headers: CORS });
 }
 
-const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
-const JUNK = /(no-?reply|sentry\.io|ingest\.|@example\.|\.png|\.jpg|@soundcloud)/i;
 
 type Submitter = {
   ExternalId?: number; Name?: string; Permalink?: string; PermalinkUrl?: string; AvatarUrl?: string;
@@ -40,8 +39,7 @@ export async function POST(request: Request) {
   let upserted = 0;
   for (const s of items) {
     if (!s.ExternalId || !s.Name) continue;
-    const emailMatch = (s.Description ?? "").match(EMAIL_RE)?.[0]?.toLowerCase();
-    const email = emailMatch && !JUNK.test(emailMatch) ? emailMatch : null;
+    const email = pickBestEmail(s.Description ?? "");
     const res = await pool.query(
       `INSERT INTO sc_artists (soundcloud_id, permalink, permalink_url, username, full_name, avatar_url,
           followers_count, sc_created_at, genres, reputation, is_promoter, source_seed,

@@ -16,6 +16,7 @@
  */
 
 import * as cheerio from "cheerio";
+import { classifyEmail } from "@/lib/emailJunk";
 import { ProxyAgent } from "undici";
 import { query, pool } from "@/lib/db";
 import { computeConfidence, validateInstagramHandle } from "./enrichClassify";
@@ -509,15 +510,8 @@ const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 
 /** Нижній регістр для дедуплікації; false якщо це явно не контакт артиста. */
 function normalizeEmail(raw: string): string | null {
-  const e = raw.trim().toLowerCase().split(/[?&#\s]/)[0];
-  if (!e || !e.includes("@") || e.length > 254) return null;
-  if (e.endsWith(".png") || e.endsWith(".jpg") || e.endsWith(".gif") || e.endsWith(".webp")) return null;
-  const noReply = /^(noreply|no-reply|donotreply|do-not-reply|newsletter|notifications|webmaster|support|info@ra\.co|promotersupport)@/i;
-  if (noReply.test(e)) return null;
-  // Фільтруємо технічні/сервісні домени (sentry, error tracking, analytics тощо)
-  const junkDomains = /(@|\.)sentry\.io$|(@|\.)ingest\..*sentry|@ra\.co$|@bandcamp\.com$/i;
-  if (junkDomains.test(e)) return null;
-  return e;
+  const v = classifyEmail(raw.trim().split(/[?&#\s]/)[0]);
+  return v.ok ? v.email : null;
 }
 
 /** Витягує email з HTML; повертає унікальні нормалізовані з позначкою чи з mailto: (вища впевненість). */

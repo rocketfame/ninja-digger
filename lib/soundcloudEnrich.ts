@@ -5,18 +5,16 @@
  */
 
 import { pool } from "@/lib/db";
+import { classifyEmail } from "@/lib/emailJunk";
 import { fetchScDescription } from "@/lib/soundcloud";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-const JUNK_EMAIL_RE = /(no-?reply|do-?not-?reply|sentry\.io|\bingest\.|\.wixpress|@example\.|\.png|\.jpg|\.gif|@2x|cloudflare|@soundcloud|@w3\.org|@schema\.org|@fontawesome|\.sentry\.|@[0-9a-f]{16,}|bandcamp\.com|\.(ru|su|by)$|yandex\.|^(support|help|admin|webmaster|postmaster|abuse|hostmaster|billing|noc|sysadmin|security|privacy|feedback)@)/i;
 const URL_RE = /(https?:\/\/[^\s"'<>)]+|(?:www\.)?[a-z0-9-]+\.(?:com|net|io|co|me|net|link|ee|ai|fm)(?:\/[^\s"'<>)]*)?)/gi;
 
 function cleanEmail(raw: string): string | null {
-  const e = raw.trim().toLowerCase().replace(/[.,;:]+$/, "");
-  if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(e)) return null;
-  if (JUNK_EMAIL_RE.test(e)) return null;
-  return e;
+  const v = classifyEmail(raw);
+  return v.ok ? v.email : null;
 }
 
 async function fetchText(url: string): Promise<string | null> {

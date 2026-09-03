@@ -5,10 +5,9 @@
  */
 
 import { pool } from "@/lib/db";
+import { pickBestEmail } from "@/lib/emailJunk";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
-const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
-const JUNK_EMAIL_RE = /(no-?reply|example\.|\.png|\.jpg|sentry|soundcloud\.com|bandcamp\.com|\.(ru|su|by)$|yandex\.|^(support|help|admin|webmaster|postmaster|abuse|hostmaster|billing|noc|sysadmin|security|privacy|feedback)@)/i;
 
 let cachedClientId: { id: string; at: number } | null = null;
 
@@ -88,8 +87,7 @@ function nz<T>(s: T): T { return typeof s === "string" ? (s.replace(/\u0000/g, "
 
 async function upsertArtist(u: ScUser, seed: string): Promise<boolean> {
   if (u.track_count < 1) return false; // not a musician (listener-only) — skip
-  const emailMatch = (u.description ?? "").match(EMAIL_RE)?.[0]?.toLowerCase();
-  const email = emailMatch && !JUNK_EMAIL_RE.test(emailMatch) ? emailMatch : null;
+  const email = pickBestEmail(u.description ?? "");
   const res = await pool.query(
     `INSERT INTO sc_artists (soundcloud_id, permalink, permalink_url, username, full_name, city, country_code,
         description, avatar_url, track_count, followers_count, followings_count, likes_count, reposts_count,
@@ -229,7 +227,7 @@ export async function harvestSeedFollowers(permalink: string, maxPages = 4): Pro
     for (const u of data.collection) {
       const isNew = await upsertArtist(u, permalink);
       if (isNew) { harvested++; count++; }
-      if ((u.description ?? "").match(EMAIL_RE)) withEmail++;
+      if (pickBestEmail(u.description ?? "")) withEmail++;
     }
     cursor = data.next_href;
     if (!cursor) { done = true; break; }

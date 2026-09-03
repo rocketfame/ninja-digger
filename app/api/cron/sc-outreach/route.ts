@@ -8,7 +8,8 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRotatingMailerChecked, getSentBySenderToday } from "@/lib/mailer";
 import { buildScEmail } from "@/lib/scOutreachCopy";
-import { isHardBounceError } from "@/lib/emailHygiene";
+import { isHardBounceError, validateEmailForOutreach } from "@/lib/emailHygiene";
+import { quarantineEmail } from "@/lib/emailScrub";
 import { acquireLease } from "@/lib/cronLock";
 
 export const dynamic = "force-dynamic";
@@ -102,7 +103,7 @@ export async function GET(request: Request) {
   }
   leads = leads.slice(0, budget);
 
-  let sent = 0;
+  let sent = 0, skippedJunk = 0;
   const byTouch: Record<number, number> = { 1: 0, 2: 0, 3: 0 };
   for (const lead of leads) {
     if (sent > 0) await new Promise((r) => setTimeout(r, 20000 + Math.random() * 25000)); // 20-45s apart
@@ -110,6 +111,10 @@ export async function GET(request: Request) {
     const name = lead.full_name || lead.username || "there";
     const unsubUrl = `${BASE_URL}/api/unsubscribe?u=${Buffer.from(lead.email).toString("base64url")}`;
     const email = buildScEmail(touch, { name, pct, code, unsubUrl });
+    // Pre-send gate: junk/role/placeholder/no-MX addresses never leave the
+    // building — they go to the suppression list instead of burning reputation.
+    const verdict = await validateEmailForOutreach(lead.email);
+    if (!verdict.ok) { await quarantineEmail(lead.email, `pre-send (sc): ${verdict.reason}`); skippedJunk++; continue; }
     try {
       await transporter.sendMail({ from, replyTo, to: lead.email, subject: email.subject, text: email.text });
       const recorded = await pool.query(
@@ -128,5 +133,5 @@ export async function GET(request: Request) {
       }
     }
   }
-  return NextResponse.json({ ok: true, daysSinceStart, cap, scSentToday: scSentToday + sent, sent, byTouch, ts: new Date().toISOString() });
+  return NextResponse.json({ ok: true, daysSinceStart, cap, scSentToday: scSentToday + sent, sent, skippedJunk, byTouch, ts: new Date().toISOString() });
 }
