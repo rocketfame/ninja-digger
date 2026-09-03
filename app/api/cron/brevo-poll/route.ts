@@ -65,6 +65,11 @@ export async function GET(request: Request) {
   // One API key per Brevo account. Deduped so the same key isn't polled twice.
   const accounts: { id: string; key: string }[] = [];
   if (process.env.BREVO_API_KEY) accounts.push({ id: "brevo1", key: process.env.BREVO_API_KEY });
+  // Extra accounts as plain env vars: BREVO_API_KEY_<ID> (e.g. BREVO_API_KEY_BREVO2).
+  for (const k of Object.keys(process.env).filter((x) => x.startsWith("BREVO_API_KEY_")).sort()) {
+    const v = process.env[k];
+    if (v && !accounts.some((a) => a.key === v)) accounts.push({ id: k.slice("BREVO_API_KEY_".length).toLowerCase(), key: v });
+  }
   for (const s of getSenders()) if (s.apiKey && !accounts.some((a) => a.key === s.apiKey)) accounts.push({ id: s.id, key: s.apiKey });
   if (accounts.length === 0) return NextResponse.json({ ok: true, skipped: "no Brevo API keys" });
 

@@ -5,7 +5,9 @@
  * Use after adding a Brevo account to confirm its credentials actually work.
  */
 import { NextResponse } from "next/server";
-import { getSenders, senderTransport } from "@/lib/outreachSenders";
+import { senderTransport } from "@/lib/outreachSenders";
+import { getSendersWithOverrides } from "@/lib/mailer";
+import { pool } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -17,7 +19,8 @@ export async function GET(request: Request) {
   if (secret && request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const senders = getSenders();
+  const senders = await getSendersWithOverrides();
+  const blocklist = await pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key='sender_blocklist'`).then((r) => r.rows[0]?.value ?? "").catch(() => "?");
   const results = await Promise.all(
     senders.map(async (s) => {
       // Non-secret diagnostics: reveal key TYPE (xsmtpsib=SMTP key vs xkeysib=API
@@ -39,5 +42,5 @@ export async function GET(request: Request) {
       }
     })
   );
-  return NextResponse.json({ count: senders.length, senders: results, ts: new Date().toISOString() });
+  return NextResponse.json({ count: senders.length, blocklist, senders: results, ts: new Date().toISOString() });
 }

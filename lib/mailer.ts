@@ -34,6 +34,19 @@ export function getRotatingMailer(sentToday: Record<string, number>): { mailer: 
  * rotation falls back to a working account. We deliberately do NOT SMTP-verify
  * per run (verify is flaky/slow in serverless and was itself blocking sends).
  */
+/**
+ * Senders with runtime overrides from app_settings: `sender_cap_<id>` (daily cap)
+ * — lets an account's cap be retuned without re-entering its secret env JSON.
+ */
+export async function getSendersWithOverrides(): Promise<Sender[]> {
+  const { pool } = await import("@/lib/db");
+  const caps = await pool
+    .query<{ key: string; value: string }>(`SELECT key, value FROM app_settings WHERE key LIKE 'sender_cap_%'`)
+    .then((r) => Object.fromEntries(r.rows.map((x) => [x.key.slice("sender_cap_".length), Number(x.value)])))
+    .catch(() => ({} as Record<string, number>));
+  return getSenders().map((s) => (caps[s.id] > 0 ? { ...s, cap: caps[s.id] } : s));
+}
+
 export async function getRotatingMailerChecked(
   sentToday: Record<string, number>
 ): Promise<{ mailer: OutreachMailer; senderId: string; remaining: number } | null> {
@@ -44,7 +57,7 @@ export async function getRotatingMailerChecked(
       .then((r) => (r.rows[0]?.value ?? "").split(",").map((x) => x.trim()).filter(Boolean))
       .catch(() => [] as string[])
   );
-  const usable = getSenders().filter((s) => !blocked.has(s.id));
+  const usable = (await getSendersWithOverrides()).filter((s) => !blocked.has(s.id));
   const s = pickSender(usable, sentToday);
   if (!s) return null;
   // `remaining` = THIS account's headroom. Callers must budget against it, not
