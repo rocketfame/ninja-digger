@@ -144,9 +144,25 @@ export async function GET(request: Request) {
        AND o.sent_at > now() - interval '24 hours' AND o.sent_at > b.created_at`);
   if (num((leak as { c?: unknown }).c) > 0) alerts.push(`🔴 ${num((leak as { c?: unknown }).c)} листів за 24год пішли на адреси з blacklist/junk — pre-send gate обійдено`);
 
+  // Dedup: the same set of alerts is sent at most once per 12h (a manual
+  // re-run or the 3h schedule must not spam Telegram with identical text).
+  let suppressed = false;
   if (alerts.length > 0) {
+    const sig = alerts.join("|");
+    const prev = await one(`SELECT value FROM app_settings WHERE key='watchdog_last_alert'`);
+    const [prevSig, prevTs] = String((prev as { value?: unknown }).value ?? "").split("\n@@");
+    suppressed = prevSig === sig && !!prevTs && Date.now() - Date.parse(prevTs) < 12 * 3600 * 1000;
+    if (!suppressed) {
+      await pool.query(
+        `INSERT INTO app_settings (key, value, updated_at) VALUES ('watchdog_last_alert', $1, now())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+        [`${sig}\n@@${new Date().toISOString()}`]
+      ).catch(() => {});
+    }
+  }
+  if (alerts.length > 0 && !suppressed) {
     await sendTelegramMessage(`🐕 <b>WATCHDOG</b> — знайдено проблеми:\n\n${alerts.join("\n")}`).catch((e) => console.error("[watchdog] telegram failed:", e instanceof Error ? e.message : e));
   }
 
-  return NextResponse.json({ ok: true, dbMb: mb, alerts, healthy: alerts.length === 0, ts: new Date().toISOString() });
+  return NextResponse.json({ ok: true, dbMb: mb, alerts, suppressed, healthy: alerts.length === 0, ts: new Date().toISOString() });
 }
