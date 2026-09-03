@@ -42,13 +42,20 @@ export async function getSendersWithOverrides(): Promise<Sender[]> {
   const { pool } = await import("@/lib/db");
   // sender_cap_<id> → daily cap; sender_from_<id> → from address ("Name <addr>" or bare addr);
   // sender_from_all → from address for every account (outreach-domain switch in one setting).
+  // sender_warmup_<id> = YYYY-MM-DD → new domain/account warm-up: cap is
+  // additionally limited to round(20 * 1.25^days) (20, 25, 31, 39, 49, 61, 76,
+  // 95, 119, 149, 186, 233, …) so a fresh domain builds reputation gradually.
   const rows = await pool
-    .query<{ key: string; value: string }>(`SELECT key, value FROM app_settings WHERE key LIKE 'sender_cap_%' OR key LIKE 'sender_from_%'`)
+    .query<{ key: string; value: string }>(`SELECT key, value FROM app_settings WHERE key LIKE 'sender_cap_%' OR key LIKE 'sender_from_%' OR key LIKE 'sender_warmup_%'`)
     .then((r) => r.rows)
     .catch(() => [] as { key: string; value: string }[]);
-  const caps: Record<string, number> = {}, froms: Record<string, { from: string; name?: string }> = {};
+  const caps: Record<string, number> = {}, froms: Record<string, { from: string; name?: string }> = {}, warm: Record<string, number> = {};
   for (const { key, value } of rows) {
     if (key.startsWith("sender_cap_")) caps[key.slice(11)] = Number(value);
+    else if (key.startsWith("sender_warmup_")) {
+      const start = Date.parse(value.trim());
+      if (!Number.isNaN(start)) warm[key.slice(14)] = Math.round(20 * Math.pow(1.25, Math.max(0, Math.floor((Date.now() - start) / 86400000))));
+    }
     else if (key.startsWith("sender_from_")) {
       const m = value.trim().match(/^(?:"?([^"<]+?)"?\s*<)?([^<>\s]+@[^<>\s]+)>?$/);
       if (m) froms[key.slice(12)] = { from: m[2], name: m[1]?.trim() || undefined };
@@ -56,7 +63,8 @@ export async function getSendersWithOverrides(): Promise<Sender[]> {
   }
   return getSenders().map((s) => {
     const f = froms[s.id] ?? froms.all;
-    return { ...s, cap: caps[s.id] > 0 ? caps[s.id] : s.cap, from: f?.from ?? s.from, name: f?.name ?? s.name };
+    const base = caps[s.id] > 0 ? caps[s.id] : s.cap;
+    return { ...s, cap: warm[s.id] ? Math.min(base, warm[s.id]) : base, from: f?.from ?? s.from, name: f?.name ?? s.name };
   });
 }
 
