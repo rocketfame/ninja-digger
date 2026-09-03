@@ -53,14 +53,14 @@ export async function GET(request: Request) {
   if (secret && request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!(await acquireLease("radar-enrich", 4))) {
+  if (!(await acquireLease("radar-enrich", 6))) {
     return NextResponse.json({ ok: true, skipped: "locked" });
   }
 
   const leads = await pool
     .query<Lead>(
       `SELECT id, website, soundcloud_url, spotify_url FROM radar_leads
-       WHERE email IS NULL AND link_checked_at IS NULL
+       WHERE email IS NULL AND (link_checked_at IS NULL OR link_checked_at < now() - interval '14 days')
          AND (website IS NOT NULL OR soundcloud_url IS NOT NULL)
        ORDER BY heat_score DESC, created_at DESC LIMIT $1`,
       [PER_RUN]

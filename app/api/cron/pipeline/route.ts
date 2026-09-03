@@ -13,7 +13,7 @@ import { validateEmailForOutreach, invalidateContactEmail, isHardBounceError } f
 const PLAIN_SIGNATURE = `\n\n--\nMax\nPromoSound`;
 
 import { JUNK_NAME_SQL, TIER_SQL } from "@/lib/leadQuality";
-import { getRotatingMailerChecked, domainBudgetRemaining } from "@/lib/mailer";
+import { getRotatingMailerChecked, getSentBySenderToday } from "@/lib/mailer";
 import { buildTouchEmail } from "@/lib/touchCopy";
 import { acquireLease } from "@/lib/cronLock";
 
@@ -166,15 +166,14 @@ export async function GET(request: Request) {
       actions.push(`daily cap reached (${sentToday}/${cap})`);
     } else {
       // Pick a rotating Brevo account for this run (per-account daily cap).
-      const sbs = await pool.query<{ sid: string; c: number }>(
-        `SELECT COALESCE(sender,'brevo1') sid, COUNT(*)::int c FROM outreach_events WHERE channel='email' AND sent_at >= CURRENT_DATE GROUP BY 1`
-      ).then((r) => r.rows).catch(() => [] as { sid: string; c: number }[]);
-      const sentBySender: Record<string, number> = Object.fromEntries(sbs.map((r) => [r.sid, r.c]));
+      const sentBySender = await getSentBySenderToday();
       const rm = await getRotatingMailerChecked(sentBySender);
       const mctx: MailerCtx | null = rm ? { transporter: rm.mailer.transporter, from: rm.mailer.from, replyTo: rm.mailer.replyTo, senderId: rm.senderId } : null;
       // Shared daily budget across all three touches so the cap can't be
       // exceeded 3x by running three back-to-back batches in one hour.
-      let budget = Math.min(cap - sentToday, domainBudgetRemaining(sentBySender));
+      // Budget against the PICKED account's own headroom (one run = one account).
+      let budget = Math.min(cap - sentToday, rm ? rm.remaining : 0);
+      if (!rm) actions.push("bp: all sender accounts capped/blocked");
       const t1 = await sendBeatportBatch(1, "New", "Attempt 1", 0, budget, mctx); budget -= t1;
       const t2 = await sendBeatportBatch(2, "Attempt 1", "Attempt 2", 2, budget, mctx); budget -= t2;
       const t3 = await sendBeatportBatch(3, "Attempt 2", "No Response", 3, budget, mctx);

@@ -21,6 +21,7 @@ export type Sender = {
   name: string;
   replyTo?: string;
   cap: number;       // per-account daily send ceiling
+  apiKey?: string;   // optional Brevo API key (xkeysib-) so brevo-poll can pull this account's events
 };
 
 /** Build the sender pool. The PRIMARY account always comes from the legacy
@@ -58,6 +59,7 @@ export function getSenders(): Sender[] {
           name: s.name || "Max from PromoSound",
           replyTo: s.replyTo || replyTo,
           cap: Number(s.cap) || 280,
+          apiKey: s.apiKey || undefined,
         });
       }
     } catch { /* ignore bad JSON */ }

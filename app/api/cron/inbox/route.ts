@@ -29,6 +29,16 @@ function detectRole(body: string, email: string, artistName: string | null): str
 }
 
 export const dynamic = "force-dynamic";
+
+/** Stamp replied_at on the outreach sends that this reply answers (all channels),
+ * so reply-rate reporting works from outreach_events instead of Telegram rows. */
+async function markReplied(addr: string): Promise<void> {
+  await pool.query(
+    `UPDATE outreach_events SET replied_at = COALESCE(replied_at, now())
+     WHERE LOWER(contact_value) = $1 AND template_id LIKE '%\\_touch\\_%' AND sent_at > now() - interval '45 days'`,
+    [addr]
+  ).catch((e) => console.error("[cron/inbox] markReplied failed:", e instanceof Error ? e.message : e));
+}
 export const maxDuration = 300;
 
 const LOOKBACK_DAYS = 3;
@@ -94,7 +104,7 @@ export async function GET(request: Request) {
   // Runs every 5 min — a lease keeps overlapping ticks from doing IMAP+LLM twice.
   // (Dedup on the reply-insert already prevents double notifications; this just
   // saves the wasted work of two concurrent scans.)
-  if (!(await acquireLease("inbox", 4))) {
+  if (!(await acquireLease("inbox", 6))) {
     return NextResponse.json({ ok: true, skipped: "locked" });
   }
 
@@ -319,6 +329,7 @@ export async function GET(request: Request) {
 
         const notifyReply = async (o: { email: string; name: string | null; source: string; beatportId?: string | null }) => {
           const addr = o.email.toLowerCase().trim();
+          await markReplied(addr);
           const uid = uidByAddr.get(addr);
           const dl = uid ? await downloadText(client, uid) : null;
           const excerpt = dl?.reply ?? null;
@@ -425,6 +436,7 @@ export async function GET(request: Request) {
              VALUES ($1, 'reply', 'email', $2, now(), 'replied')`,
             [row.artist_beatport_id, row.value]
           ).catch(() => {});
+          await markReplied(addrKey);
           replies++;
           console.log(`[cron/inbox] reply detected from ${row.value} (artist ${row.artist_beatport_id})`);
 

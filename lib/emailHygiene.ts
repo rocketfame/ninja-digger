@@ -78,13 +78,18 @@ export async function invalidateContactEmail(email: string, reason: string): Pro
   return n;
 }
 
-const HARD_BOUNCE_CODES = new Set([550, 551, 553, 554]);
-const HARD_BOUNCE_RE = /(user unknown|does not exist|no such user|mailbox (unavailable|not found)|recipient (rejected|address rejected)|address not found|invalid recipient|account.*(disabled|deleted))/i;
+// Recipient-specific wording or RFC 3463 enhanced codes 5.1.1/5.1.2/5.1.3/5.1.6
+// (bad mailbox / bad domain / bad syntax / mailbox moved).
+const HARD_BOUNCE_RE = /(user unknown|does not exist|no such user|mailbox (unavailable|not found)|recipient (rejected|address rejected)|address not found|invalid recipient|account.*(disabled|deleted)|\b5\.1\.[1236]\b)/i;
 
-/** True when an SMTP send error means the address itself is dead (vs transient). */
+/**
+ * True when an SMTP send error means the ADDRESS itself is dead (vs transient).
+ * A bare relay-level 550/554 is NOT proof: Brevo answers 550 for daily-quota
+ * exhaustion, unauthenticated senders and blocked accounts — treating those as
+ * bounces used to mark whole batches of good leads dead.
+ */
 export function isHardBounceError(err: unknown): boolean {
   const e = err as { responseCode?: number; message?: string; response?: string };
-  if (e?.responseCode && HARD_BOUNCE_CODES.has(e.responseCode)) return true;
   const text = `${e?.message ?? ""} ${e?.response ?? ""}`;
   return HARD_BOUNCE_RE.test(text);
 }

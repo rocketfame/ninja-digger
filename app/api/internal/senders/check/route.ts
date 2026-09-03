@@ -24,7 +24,7 @@ export async function GET(request: Request) {
       // key) + length + whether login/key has stray whitespace — enough to spot
       // the wrong key type or a paste error without exposing the secret.
       const diag = {
-        login: s.login,
+        login: s.login.replace(/^(.{2}).*(@.*)$/, "$1***$2"),
         loginTrimOk: s.login === s.login.trim(),
         keyPrefix: (s.key || "").slice(0, 9),
         keyLen: (s.key || "").length,

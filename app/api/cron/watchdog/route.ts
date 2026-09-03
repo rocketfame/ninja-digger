@@ -50,6 +50,19 @@ export async function GET(request: Request) {
   chk("Beatport", (sends as Record<string, unknown>).bp, (paused as Record<string, unknown>).bp, (queues as Record<string, unknown>).bpq);
   chk("SoundCloud", (sends as Record<string, unknown>).sc, (paused as Record<string, unknown>).sc, (queues as Record<string, unknown>).scq);
   chk("Spotify", (sends as Record<string, unknown>).sp, (paused as Record<string, unknown>).sp, (queues as Record<string, unknown>).spq);
+  // Radar (YouTube/Reddit) barrel — was the only sender nobody watched.
+  const radar = await one(`SELECT
+      (SELECT COUNT(*) FROM outreach_events WHERE template_id LIKE 'radar_touch_%' AND sent_at > now() - interval '24 hours') sent,
+      (SELECT value FROM app_settings WHERE key='radar_outreach_paused') paused,
+      (SELECT COUNT(*) FROM radar_leads WHERE email IS NOT NULL AND COALESCE(touch,0)=0 AND COALESCE(status,'new') IN ('new','queued')) q`);
+  chk("Radar", (radar as Record<string, unknown>).sent, (radar as Record<string, unknown>).paused, (radar as Record<string, unknown>).q);
+
+  // 2b. Chart freshness — the condition ingest-heal exists for. If both the
+  //     daily pull (05:14) and the heal windows (07/09/11) failed, say so.
+  if (new Date().getUTCHours() >= 12) {
+    const ch = await one(`SELECT COUNT(*) c FROM bptoptracker_daily WHERE snapshot_date >= CURRENT_DATE - 1`);
+    if (num((ch as { c?: unknown }).c) === 0) alerts.push(`🔴 Beatport-чарти: нема знімка за сьогодні/вчора — daily та ingest-heal не спрацювали`);
+  }
 
   // 3. New emails in the last 24h — the exact failure that started this. BP
   //    contacts + SC enrichment must be producing. (Spotify is browser-driven,

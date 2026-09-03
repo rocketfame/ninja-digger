@@ -117,7 +117,7 @@ async function handleCommand(cmd: string): Promise<void> {
 /** Send an email to the artist from Max's Gmail, mark the lead In Progress, and
  * log the outbound event. Shared by Approve and Edit-send. Returns error text
  * on failure, null on success. */
-async function sendArtistEmail(o: { email: string; subject: string | null; body: string; artistId: string | null }): Promise<string | null> {
+async function sendArtistEmail(o: { email: string; subject: string | null; body: string; artistId: string | null; inReplyTo?: string | null }): Promise<string | null> {
   const user = process.env.GMAIL_USER, pass = process.env.GMAIL_APP_PASSWORD;
   if (!user || !pass) return "GMAIL не сконфігуровано";
   const subject = o.subject && o.subject.trim()
@@ -125,9 +125,13 @@ async function sendArtistEmail(o: { email: string; subject: string | null; body:
     : "Re: your message | PromoSound";
   try {
     const transporter = nodemailer.createTransport({ service: "gmail", auth: { user, pass } });
+    // Thread the reply under the artist's message (In-Reply-To/References) so it
+    // lands in their existing conversation instead of as a new unrelated email.
+    const mid = o.inReplyTo && o.inReplyTo.trim() ? (o.inReplyTo.trim().startsWith("<") ? o.inReplyTo.trim() : `<${o.inReplyTo.trim()}>`) : undefined;
     await transporter.sendMail({
       from: `"Max from PromoSound" <${user}>`, to: o.email, subject,
       text: o.body + TEXT_SIGNATURE, html: wrapEmailHtml(o.body + "\n\nBest,\nMax"),
+      ...(mid ? { inReplyTo: mid, references: mid } : {}),
     });
     if (o.artistId) {
       await pool.query(`INSERT INTO lead_profiles (artist_beatport_id, status, updated_at) VALUES ($1,'In Progress',now())
@@ -147,16 +151,22 @@ async function sendArtistEmail(o: { email: string; subject: string | null; body:
 /** Approve button: send the stored Claude draft to the artist as-is, then strip
  * the button so the same draft can't be sent twice. */
 async function handleApprove(msgId: number): Promise<void> {
-  type Row = { artist_beatport_id: string | null; artist_name: string | null; email: string; subject: string | null; draft: string | null };
+  type Row = { artist_beatport_id: string | null; artist_name: string | null; email: string; subject: string | null; draft: string | null; reply_msgid: string | null };
+  const exists = await pool.query<{ ok: boolean }>(`SELECT true ok FROM tg_notifications WHERE tg_message_id = $1`, [msgId]).then((r) => r.rows[0]).catch(() => undefined);
+  if (!exists) { await sendTelegramMessage("⚠️ Не знайшов цей лист у базі."); return; }
+  // ATOMIC claim: consume the draft in the same statement that reads it, so a
+  // double tap / Telegram redelivery can never send the same draft twice.
   const row = await pool.query<Row>(
-    `SELECT artist_beatport_id, artist_name, email, subject, draft FROM tg_notifications WHERE tg_message_id = $1`, [msgId]
+    `UPDATE tg_notifications SET draft = NULL WHERE tg_message_id = $1 AND draft IS NOT NULL
+     RETURNING artist_beatport_id, artist_name, email, subject, reply_msgid, (SELECT draft FROM tg_notifications t2 WHERE t2.tg_message_id = $1) AS draft`, [msgId]
   ).then((r) => r.rows[0]).catch(() => undefined);
-  if (!row) { await sendTelegramMessage("⚠️ Не знайшов цей лист у базі."); return; }
-  if (!row.draft) { await sendTelegramMessage("✅ Цю чернетку вже надіслано (або її нема). Щоб написати вручну — свайп-reply."); return; }
-  const err = await sendArtistEmail({ email: row.email, subject: row.subject, body: row.draft, artistId: row.artist_beatport_id });
-  if (err) { await sendTelegramMessage(`❌ Не вдалось надіслати: ${tgEscape(err)}`); return; }
-  // Consume the draft + remove the button → no accidental double-send.
-  await pool.query(`UPDATE tg_notifications SET draft = NULL WHERE tg_message_id = $1`, [msgId]).catch(() => {});
+  if (!row || !row.draft) { await sendTelegramMessage("✅ Цю чернетку вже надіслано (або її нема). Щоб написати вручну — свайп-reply."); return; }
+  const err = await sendArtistEmail({ email: row.email, subject: row.subject, body: row.draft, artistId: row.artist_beatport_id, inReplyTo: row.reply_msgid });
+  if (err) {
+    // Give the draft back so Approve can be retried after a transient SMTP error.
+    await pool.query(`UPDATE tg_notifications SET draft = $2 WHERE tg_message_id = $1 AND draft IS NULL`, [msgId, row.draft]).catch(() => {});
+    await sendTelegramMessage(`❌ Не вдалось надіслати: ${tgEscape(err)}`); return;
+  }
   await editMessageReplyMarkup(msgId, []);
   await sendTelegramMessage(`✅ <b>Надіслано</b> → ${tgEscape(row.artist_name ?? row.email)}\n📧 ${tgEscape(row.email)}\nСтатус ліда → In Progress`);
 }
@@ -271,8 +281,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const mapping = await pool.query<{ artist_beatport_id: string | null; artist_name: string | null; email: string; subject: string | null }>(
-    `SELECT artist_beatport_id, artist_name, email, subject FROM tg_notifications WHERE tg_message_id = $1`,
+  const mapping = await pool.query<{ artist_beatport_id: string | null; artist_name: string | null; email: string; subject: string | null; reply_msgid: string | null }>(
+    `SELECT artist_beatport_id, artist_name, email, subject, reply_msgid FROM tg_notifications WHERE tg_message_id = $1`,
     [replyToId]
   );
   const lead = mapping.rows[0];
@@ -284,7 +294,7 @@ export async function POST(request: Request) {
   // One send path for swipe-reply AND the Edit-button force-reply. sendArtistEmail
   // guards the null-artist_beatport_id case (SC/Spotify/Radar leads), so the
   // email goes out even when there's no Beatport profile row.
-  const err = await sendArtistEmail({ email: lead.email, subject: lead.subject, body: msg.text, artistId: lead.artist_beatport_id });
+  const err = await sendArtistEmail({ email: lead.email, subject: lead.subject, body: msg.text, artistId: lead.artist_beatport_id, inReplyTo: lead.reply_msgid });
   if (err) {
     await sendTelegramMessage(`❌ Помилка відправки: ${tgEscape(err)}`);
   } else {

@@ -36,7 +36,7 @@ export function getRotatingMailer(sentToday: Record<string, number>): { mailer: 
  */
 export async function getRotatingMailerChecked(
   sentToday: Record<string, number>
-): Promise<{ mailer: OutreachMailer; senderId: string } | null> {
+): Promise<{ mailer: OutreachMailer; senderId: string; remaining: number } | null> {
   const { pool } = await import("@/lib/db");
   const blocked = new Set(
     await pool
@@ -47,7 +47,26 @@ export async function getRotatingMailerChecked(
   const usable = getSenders().filter((s) => !blocked.has(s.id));
   const s = pickSender(usable, sentToday);
   if (!s) return null;
-  return { mailer: mailerFor(s), senderId: s.id };
+  // `remaining` = THIS account's headroom. Callers must budget against it, not
+  // against the domain total — one run sends through one account only.
+  return { mailer: mailerFor(s), senderId: s.id, remaining: Math.max(0, s.cap - (sentToday[s.id] ?? 0)) };
+}
+
+/**
+ * Per-sender sends today, counting ONLY real outreach sends (touch templates).
+ * Replies, Approve-sends and other non-outreach rows carry no sender and used to
+ * be charged to brevo1 via COALESCE — silently eating its daily cap.
+ */
+export async function getSentBySenderToday(): Promise<Record<string, number>> {
+  const { pool } = await import("@/lib/db");
+  const rows = await pool
+    .query<{ sid: string; c: number }>(
+      `SELECT COALESCE(sender,'brevo1') sid, COUNT(*)::int c FROM outreach_events
+       WHERE channel='email' AND template_id LIKE '%\\_touch\\_%' AND sent_at >= CURRENT_DATE GROUP BY 1`
+    )
+    .then((r) => r.rows)
+    .catch((e) => { console.error("[mailer] sentBySender query failed:", e instanceof Error ? e.message : e); return [] as { sid: string; c: number }[]; });
+  return Object.fromEntries(rows.map((r) => [r.sid, r.c]));
 }
 
 function mailerFor(s: Sender): OutreachMailer {

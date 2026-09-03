@@ -6,7 +6,7 @@
  */
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { getRotatingMailerChecked, domainBudgetRemaining } from "@/lib/mailer";
+import { getRotatingMailerChecked, getSentBySenderToday } from "@/lib/mailer";
 import { buildRadarEmail } from "@/lib/radarOutreachCopy";
 import { isHardBounceError } from "@/lib/emailHygiene";
 import { acquireLease } from "@/lib/cronLock";
@@ -37,15 +37,12 @@ export async function GET(request: Request) {
 
   const q = (s: string) => pool.query<{ c: number }>(s).then((r) => r.rows[0]?.c ?? 0).catch(() => 0);
   const sentToday = await q(`SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'radar_touch_%' AND sent_at >= CURRENT_DATE`);
-  const sbs = await pool.query<{ sid: string; c: number }>(
-    `SELECT COALESCE(sender,'brevo1') sid, COUNT(*)::int c FROM outreach_events WHERE channel='email' AND sent_at >= CURRENT_DATE GROUP BY 1`
-  ).then((r) => r.rows).catch(() => [] as { sid: string; c: number }[]);
-  const sentBySender: Record<string, number> = Object.fromEntries(sbs.map((r) => [r.sid, r.c]));
-  const budget = Math.min(cap - sentToday, domainBudgetRemaining(sentBySender), PER_RUN);
-  if (budget <= 0) return NextResponse.json({ ok: true, cap, sentToday, sent: 0, note: "quota reached" });
-
+  const sentBySender = await getSentBySenderToday();
   const rm = await getRotatingMailerChecked(sentBySender);
-  if (!rm) return NextResponse.json({ ok: false, error: "no mailer / all capped" }, { status: 500 });
+  if (!rm) return NextResponse.json({ ok: true, cap, sentToday, sent: 0, note: "all sender accounts capped/blocked" });
+  // Budget against the PICKED account's headroom (one run = one account).
+  const budget = Math.min(cap - sentToday, rm.remaining, PER_RUN);
+  if (budget <= 0) return NextResponse.json({ ok: true, cap, sentToday, sent: 0, note: "quota reached" });
   const { transporter, from, replyTo } = rm.mailer;
   const pct = parseInt(await getSetting("sc_discount", "25"), 10) || 25;
 
@@ -74,13 +71,14 @@ export async function GET(request: Request) {
     const email = buildRadarEmail(lead.source, touch, lead.name || "there", pct);
     try {
       await transporter.sendMail({ from, replyTo, to: lead.email, subject: email.subject, text: email.text });
-      await pool.query(
+      const recorded = await pool.query(
         `INSERT INTO outreach_events (artist_beatport_id, template_id, channel, contact_value, sent_at, outcome, sender)
          VALUES ($1,$2,'email',$3, now(),'sent',$4)`, [`radar:${lead.id}`, `radar_touch_${touch}`, lead.email, rm.senderId]
-      ).catch(() => {});
+      ).then(() => true).catch((e) => { console.error("[radar-outreach] outreach_events insert failed — stopping run:", e instanceof Error ? e.message : e); return false; });
       await pool.query(`UPDATE radar_leads SET touch=$2, status=$3, contacted_at=now(), updated_at=now() WHERE id=$1`,
         [lead.id, touch, touch === 3 ? "done" : "contacted"]).catch(() => {});
       sent++;
+      if (!recorded) break;
     } catch (e) {
       if (isHardBounceError(e)) await pool.query(`UPDATE radar_leads SET status='dead', email_status='bounced' WHERE id=$1`, [lead.id]).catch(() => {});
     }

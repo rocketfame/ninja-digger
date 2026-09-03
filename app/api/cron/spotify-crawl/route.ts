@@ -67,6 +67,7 @@ export async function GET(request: Request) {
   const { rows } = await pool.query<{ ig_username: string; linktree: string | null; website: string | null }>(
     `SELECT ig_username, linktree, website FROM spotify_leads
      WHERE email IS NULL AND (linktree IS NOT NULL OR website IS NOT NULL)
+       AND (crawl_attempted_at IS NULL OR crawl_attempted_at < now() - interval '14 days')
      ORDER BY followers DESC NULLS LAST LIMIT $1`, [PER_RUN]
   ).catch(() => ({ rows: [] as { ig_username: string; linktree: string | null; website: string | null }[] }));
 
@@ -77,6 +78,9 @@ export async function GET(request: Request) {
       const r = queue.shift()!;
       const email = await findEmail([r.linktree, r.website]);
       done++;
+      // Mark the attempt regardless of outcome — otherwise the same top-N rows
+      // are re-crawled every hour and the rest of the table is never reached.
+      await pool.query(`UPDATE spotify_leads SET crawl_attempted_at = now() WHERE ig_username = $1`, [r.ig_username]).catch(() => {});
       if (email) {
         await pool.query(
           `UPDATE spotify_leads SET email=$2, email_source='link_crawl', enriched_at=now(), updated_at=now() WHERE ig_username=$1 AND email IS NULL`,
