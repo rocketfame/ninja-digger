@@ -31,7 +31,12 @@ non-promoter tier≠A — tier-A/promoter тримаємо вічно, тому 
 - ✅ `watchdog` = self-audit 3×/день, Telegram-алерт лише на реальні збої
 - ✅ `brevo-poll` = курсор рухається лише при повному успіху + алерт (метрики не губляться)
 - ✅ `lib/db.ts` pool max 8→4 (Neon conn-ліміт при паралельних кронах)
-- 🔧 **Ідемпотентність відправки** — `FOR UPDATE SKIP LOCKED` у сендерах (зараз лише unique-index на event; фізичний дабл-send теоретично можливий при overlap двох крон-запусків)
+- ✅ (2026-09-03) Бюджет відправки = headroom ОБРАНОГО акаунта (не сума всіх); лічильник капу рахує лише `*_touch_*`; збій запису в outreach_events зупиняє ран (нема невидимих відправок)
+- ✅ (2026-09-03) brevo-poll ідемпотентний (unique email/event/ts), 2-денне вікно, всі акаунти з `apiKey`
+- ✅ (2026-09-03) watchdog: Brevo delivered-vs-sent (blackout-детектор), Radar, свіжість чартів; лізи inbox/radar-enrich 6 хв (> maxDuration)
+- ✅ (2026-09-03) Telegram Approve: атомарний claim чернетки + In-Reply-To/References
+- ✅ (2026-09-03) Видалено `cron/outreach` (Gmail без капу/паузи/лізи) та неавторизовані report-роути
+- 🔧 **Ідемпотентність відправки** — `FOR UPDATE SKIP LOCKED` у сендерах (дабл-send можливий лише при overlap двох інстансів одного крона поза лізою)
 
 **Neon 512MB (головний ризик «падіння»):** `pg_database_size` — перша перевірка у space-guard;
 url_cache prune кожні 6 год; steady-state prune SC. Зараз ~318MB — здорово.
@@ -52,7 +57,7 @@ one-click unsubscribe + лінійний warmup +5/день. Потребує д
 
 ## Шар 4 — Безпека (🔧 наступний батч)
 
-- 🔧 auth на `/api/internal/*` (outreach, spotify/*) + `/api/leads/export` (зараз відкриті)
+- 🔧 auth на `/api/internal/*` (outreach, spotify/*) + `/api/leads/export` (зараз відкриті). **Увага:** `CRON_SECRET` у Vercel існує, але порожній у рантаймі → усі `/api/cron/*` відкриті. Фікс = задати реальне значення (Vercel сам шле Bearer у крони), тоді всі перевірки `if (secret && …)` оживають без змін коду.
 - 🔧 HMAC-підпис brevo webhook (`X-Brevo-Signature`) + вимога TELEGRAM_WEBHOOK_SECRET
 - 🔧 HMAC на unsubscribe-токен (зараз base64 email → можна відписати будь-кого)
 
