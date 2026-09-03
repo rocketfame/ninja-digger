@@ -44,7 +44,12 @@ url_cache prune кожні 6 год; steady-state prune SC. Зараз ~318MB �
 **Vercel Queues/Workflows (Фаза 2, лише якщо Pro):** нативні ретраї/ідемпотентність/крок-функції
 без ліміту тривалості. Зараз overkill для 15 кронів — SKIP LOCKED + watchdog дають 90% надійності дешево.
 
-## Шар 3 — Deliverability (нотатка, користувач деприоритизував)
+## Шар 3 — Deliverability
+
+✅ (2026-09-03) **Окремий outreach-домен promosound.net** (Cloudflare, акаунт rocketfame): DKIM (brevo1/brevo2._domainkey CNAME), DMARC p=none, бренд-піддомен em.promosound.net для трекінг-лінків, SPF, MX через Cloudflare Email Routing. Авторизовано в brevo2 і brevo3, відправник Max from PromoSound <max@promosound.net>. Перемикання/розігрів без секретів: app_settings `sender_from_<id>`, `sender_warmup_<id>` (20·1.25^днів), `sender_cap_<id>`; для нового Brevo-акаунта в DNS потрібен лише свій TXT `brevo-code:…`.
+🔧 Хвости: злити SPF в один запис (`include:spf.brevo.com include:_spf.mx.cloudflare.net`), Email Routing rule max@ → Gmail, brevo1 → promosound.net після відповіді підтримки Brevo.
+
+### Стара нотатка
 
 Ред-флаги 2026 (Google/Yahoo bulk-правила):
 - `From: @gmail.com` через Brevo → DMARC-alignment неможливий, Gmail душить spoofing
