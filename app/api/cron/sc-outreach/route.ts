@@ -119,7 +119,9 @@ export async function GET(request: Request) {
       await transporter.sendMail({ from, replyTo, to: lead.email, subject: email.subject, text: email.text });
       const recorded = await pool.query(
         `INSERT INTO outreach_events (artist_beatport_id, template_id, channel, contact_value, sent_at, outcome, sender)
-         VALUES ($1,$2,'email',$3, now(),'sent',$4)`, [`sc:${lead.soundcloud_id}`, `sc_touch_${touch}`, lead.email, senderId]
+         VALUES ($1,$2,'email',$3, now(),'sent',$4)
+         ON CONFLICT (artist_beatport_id, template_id) WHERE channel = 'email' AND artist_beatport_id IS NOT NULL
+         DO UPDATE SET sent_at = now(), outcome = EXCLUDED.outcome, sender = EXCLUDED.sender, contact_value = EXCLUDED.contact_value, replied_at = NULL`, [`sc:${lead.soundcloud_id}`, `sc_touch_${touch}`, lead.email, senderId]
       ).then(() => true).catch((e) => { console.error("[sc-outreach] outreach_events insert failed — stopping run:", e instanceof Error ? e.message : e); return false; });
       // touch 3 is the last — mark done so it isn't picked again.
       const status = touch === 3 ? "No Response" : "Contacted";

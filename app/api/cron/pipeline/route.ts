@@ -100,7 +100,9 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
       // if the status write fails — otherwise a swallowed error uncaps sending.
       await pool.query(
         `INSERT INTO outreach_events (artist_beatport_id, template_id, channel, contact_value, sent_at, outcome, sender)
-         VALUES ($1, $2, 'email', $3, now(), $4, $5)`,
+         VALUES ($1, $2, 'email', $3, now(), $4, $5)
+         ON CONFLICT (artist_beatport_id, template_id) WHERE channel = 'email' AND artist_beatport_id IS NOT NULL
+         DO UPDATE SET sent_at = now(), outcome = EXCLUDED.outcome, sender = EXCLUDED.sender, contact_value = EXCLUDED.contact_value, replied_at = NULL`,
         [lead.id, `email_touch_${touchNum}`, primary, toStatus, senderId]
       ).catch((e) => console.error("[cron/pipeline] outreach_events insert failed:", e instanceof Error ? e.message : e));
       // Advance the lead state machine (won't throw now that the constraint
