@@ -18,6 +18,7 @@
 import pg from "pg";
 
 const FROM = process.env.FROM || "2026-08-30 12:41+00";
+const TO = process.env.TO || "2026-09-04 00:00+00"; // Brevo restored the Free plan on Sep 4; sends after that were delivered
 const SENDER = process.env.SENDER || "brevo1";
 const DRY = process.env.DRY === "1";
 const url = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
@@ -28,8 +29,8 @@ await c.connect();
 const affected = await c.query(
   `SELECT id, artist_beatport_id, template_id FROM outreach_events
    WHERE channel='email' AND template_id LIKE '%\\_touch\\_%' AND COALESCE(sender,'brevo1')=$1
-     AND sent_at >= $2::timestamptz AND COALESCE(outcome,'') <> 'undelivered'`, [SENDER, FROM]);
-console.log(`affected sends: ${affected.rowCount} (sender=${SENDER}, since ${FROM})`);
+     AND sent_at >= $2::timestamptz AND sent_at < $3::timestamptz AND COALESCE(outcome,'') <> 'undelivered'`, [SENDER, FROM, TO]);
+console.log(`affected sends: ${affected.rowCount} (sender=${SENDER}, ${FROM} → ${TO})`);
 if (DRY || affected.rowCount === 0) { await c.end(); process.exit(0); }
 
 await c.query("BEGIN");
@@ -44,7 +45,7 @@ try {
     UPDATE sc_artists s SET sc_touch = COALESCE(l.n,0),
       lead_status = CASE WHEN s.lead_status IN ('Contacted','No Response','New') OR s.lead_status IS NULL THEN (CASE WHEN COALESCE(l.n,0)=0 THEN 'New' ELSE 'Contacted' END) ELSE s.lead_status END,
       contacted_at = l.last, updated_at = now()
-    FROM ids LEFT JOIN live l ON l.sid = ids.sid WHERE s.soundcloud_id = ids.sid`, [affected.rows.map((r) => r.id)]);
+    FROM ids LEFT JOIN live l ON l.sid = ids.sid WHERE s.soundcloud_id::text = ids.sid`, [affected.rows.map((r) => r.id)]);
 
   // Spotify: sp:<ig_username>
   const sp = await c.query(`
@@ -54,7 +55,7 @@ try {
     UPDATE spotify_leads s SET sp_touch = COALESCE(l.n,0),
       lead_status = CASE WHEN s.lead_status IN ('Contacted','No Response','New') OR s.lead_status IS NULL THEN (CASE WHEN COALESCE(l.n,0)=0 THEN 'New' ELSE 'Contacted' END) ELSE s.lead_status END,
       contacted_at = l.last, updated_at = now()
-    FROM ids LEFT JOIN live l ON l.sid = ids.sid WHERE s.ig_username = ids.sid`, [affected.rows.map((r) => r.id)]);
+    FROM ids LEFT JOIN live l ON l.sid = ids.sid WHERE s.ig_username::text = ids.sid`, [affected.rows.map((r) => r.id)]);
 
   // Radar: radar:<id>
   const radar = await c.query(`
@@ -64,7 +65,7 @@ try {
     UPDATE radar_leads r SET touch = COALESCE(l.n,0),
       status = CASE WHEN r.status IN ('contacted','done','new','queued') OR r.status IS NULL THEN (CASE WHEN COALESCE(l.n,0)=0 THEN 'new' ELSE 'contacted' END) ELSE r.status END,
       contacted_at = l.last, updated_at = now()
-    FROM ids LEFT JOIN live l ON l.rid = ids.rid WHERE r.id = ids.rid`, [affected.rows.map((r) => r.id)]);
+    FROM ids LEFT JOIN live l ON l.rid = ids.rid WHERE r.id = ids.rid::bigint`, [affected.rows.map((r) => r.id)]);
 
   // Beatport: lead_profiles.status ∈ New / Attempt 1 / Attempt 2 / No Response
   const bp = await c.query(`
