@@ -118,13 +118,18 @@ export async function GET(request: Request) {
          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
         [JSON.stringify({ status: res.status, rows, ts: new Date().toISOString() }).slice(0, 4000)]
       ).catch(() => {});
-      const y = rows.find((r) => r.date === yest);
-      const ours = await one(`SELECT COUNT(*) c FROM outreach_events WHERE channel='email' AND template_id LIKE '%\_touch\_%' AND COALESCE(sender,'brevo1')='brevo1' AND sent_at >= CURRENT_DATE - 1 AND sent_at < CURRENT_DATE`);
-      const sentY = num((ours as { c?: unknown }).c);
+      // Compare the most recent day with a meaningful sample: today once it has
+      // ≥20 brevo1 sends (so a fixed account clears the alert the same day),
+      // otherwise yesterday.
+      const oursToday = await one(`SELECT COUNT(*) c FROM outreach_events WHERE channel='email' AND template_id LIKE '%\_touch\_%' AND COALESCE(sender,'brevo1')='brevo1' AND sent_at >= CURRENT_DATE`);
+      const oursYest = await one(`SELECT COUNT(*) c FROM outreach_events WHERE channel='email' AND template_id LIKE '%\_touch\_%' AND COALESCE(sender,'brevo1')='brevo1' AND sent_at >= CURRENT_DATE - 1 AND sent_at < CURRENT_DATE`);
+      const useToday = num((oursToday as { c?: unknown }).c) >= 20;
+      const y = rows.find((r) => r.date === (useToday ? today : yest));
+      const sentY = useToday ? num((oursToday as { c?: unknown }).c) : num((oursYest as { c?: unknown }).c);
       if (res.ok && sentY >= 20) {
         const deliv = y ? num(y.delivered) : 0;
         const req = y ? num(y.requests) : 0;
-        if (req < sentY * 0.5) alerts.push(`🔴 Brevo НЕ БАЧИТЬ наші листи: вчора віддали brevo1 ${sentY}, Brevo зафіксував requests=${req} — акаунт заблоковано/ключ не той?`);
+        if (req < sentY * 0.5) alerts.push(`🔴 Brevo НЕ БАЧИТЬ наші листи: ${useToday ? "сьогодні" : "вчора"} віддали brevo1 ${sentY}, Brevo зафіксував requests=${req} — акаунт заблоковано/ключ не той?`);
         else if (deliv < req * 0.5) alerts.push(`🔴 Brevo доставив лише ${deliv} з ${req} (blocked=${num(y?.blocked)}, hb=${num(y?.hardBounces)}) — репутація/блок акаунта`);
       } else if (!res.ok) {
         alerts.push(`🟠 Brevo API звіт недоступний (HTTP ${res.status}) — перевір BREVO_API_KEY`);
