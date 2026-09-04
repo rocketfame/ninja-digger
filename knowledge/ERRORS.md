@@ -40,3 +40,8 @@
 **Причина:** кожен екстрактор мав свій фільтр різної суворості (soundcloud, soundcloudEnrich, enrichV1, radar, spotify-crawl, crawl-contacts), а барелі SC/SP/Radar перед відправкою перевіряли лише blacklist і .ru. У базі лежали sentry-ingest, user@domain.com, @facebook.com, sales@ — і ~100 з них отримали листи.
 **Рішення:** `lib/emailJunk.ts` як єдина точка правди (vitest), pre-send `validateEmailForOutreach` у всіх барелях з карантином у email_blacklist, тижневий скраб, watchdog-детектор витоку. Перший скраб: 33 689 → 58 + 5 реле-аліасів у карантин.
 **Урок:** (1) політика даних живе в одному модулі з тестами, не в N regex. (2) Suppression list, який усі сендери вже поважають, дешевший за нові статуси. (3) Не плутати приватні провайдери (Proton) з одноразовими сервісами — дивитись на дані перед тим, як різати.
+
+## [2026-09-04] Rewind лідів × unique-індекс outreach_events = незаписані відправки і зупинка барелів
+**Причина:** після rewind (touch назад, старий рядок `outcome='undelivered'`) барель шле той самий touch знову, а частковий unique-індекс `(artist_beatport_id, template_id)` не дає вставити другий рядок. SC/SP/Radar після невдалої вставки зупиняли ран (1 лист/год), pipeline слав далі без запису → brevo1 перебрав кап (44 при 25), ~39 листів без обліку.
+**Рішення:** INSERT у всіх барелях став upsert `ON CONFLICT (artist_beatport_id, template_id) WHERE channel='email' … DO UPDATE SET sent_at=now(), outcome, sender`; сьогоднішні незаписані відправки дозаписано з подій Brevo (delivered).
+**Урок:** будь-який "повернути лід у чергу" має враховувати ідемпотентність запису відправки; тестувати rewind на одному лідові через повний цикл (rewind → крон → запис), а не лише на SQL-рівні.
