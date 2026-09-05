@@ -43,7 +43,7 @@ export async function draftReplyAssist(
     offerBlock +
     (ctx?.facts
       ? `\n\nVERIFIED FACTS about this artist from our own chart tracking (the ONLY numbers you may cite):\n${ctx.facts}\n` +
-        `USE THEM: when they ask "which track?", "where did you see it?", "am I charting?" or what caught our attention, name the exact track title, the chart and the positions/dates from the facts, and include the relevant link(s) EACH ON ITS OWN LINE (the BP Top Tracker chart/history link is the source we track, the Beatport link is the track itself). Never cite any position, date or track that is not in the facts.`
+        `USE THEM: when they ask "which track?", "where did you see it?", "am I charting?" or what caught our attention, name the exact track title, the chart and the positions/dates from the facts, and ALWAYS include the BP Top Tracker artist history link on its own line right after naming the track (it is the source we track, so they can verify), and the Beatport track link only if they ask where to find the track. Never cite any position, date or track that is not in the facts.`
       : ``);
 
   const user = `Artist${ctx?.name ? ` (${ctx.name})` : ""}${ctx?.channel ? ` [via ${ctx.channel}]` : ""} replied:\n"""${artistReply.slice(0, 1500)}"""`;
@@ -62,7 +62,14 @@ export async function draftReplyAssist(
     const parsed = JSON.parse(json) as { intent?: string; reply?: string };
     if (!parsed.reply) return null;
     // Deterministic cleanup: the model occasionally ignores the no-dash rule.
-    const reply = parsed.reply.replace(/\s+[—–]\s+/g, ", ").replace(/[—–]/g, "-");
+    let reply = parsed.reply.replace(/\s+[—–]\s+/g, ", ").replace(/[—–]/g, "-");
+    // Deterministic guarantee: when we cited chart facts, the reply must carry
+    // the source link (BP Top Tracker artist history) so the artist can verify.
+    const bptt = ctx?.facts?.match(/https:\/\/www\.bptoptracker\.com\/artist\/[^\s]+/)?.[0];
+    if (bptt && !/bptoptracker\.com/.test(reply) && /chart|beatport|top 100/i.test(reply)) {
+      const cut = reply.search(/[.!?](\s|$)/);
+      reply = cut > 0 ? `${reply.slice(0, cut + 1)}\nChart history: ${bptt}\n${reply.slice(cut + 1).trimStart()}` : `${reply}\nChart history: ${bptt}`;
+    }
     return { intent: parsed.intent || "other", reply };
   } catch {
     return null;
