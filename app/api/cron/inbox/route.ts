@@ -16,6 +16,7 @@ import { sendTelegramMessage, tgEscape } from "@/lib/telegram";
 import { draftReplyAssist } from "@/lib/llm";
 import { classifyEmail } from "@/lib/enrichClassify";
 import { acquireLease } from "@/lib/cronLock";
+import { getBeatportFacts } from "@/lib/leadFacts";
 
 /** Role from the text right before the email ("Bookings: x@y") or from the address itself. */
 function detectRole(body: string, email: string, artistName: string | null): string {
@@ -505,7 +506,9 @@ export async function GET(request: Request) {
             continue;
           }
 
-          const bpDraft = excerpt ? await draftReplyAssist(excerpt, { name, channel: "Beatport", offer: await getOffer("Beatport") }) : null;
+          const bpDraft = excerpt
+            ? await draftReplyAssist(excerpt, { name, channel: "Beatport", offer: await getOffer("Beatport"), facts: await getBeatportFacts(row.artist_beatport_id) })
+            : null;
           const bpKb = [
             ...(bpDraft ? [[{ text: "✅ Approve & Send", callback_data: "approve" }, { text: "✏️ Редагувати", callback_data: "edit" }]] : []),
             [{ text: "🙈 Ігнорувати", callback_data: "ignore" }],

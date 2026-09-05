@@ -15,7 +15,7 @@ type Draft = { intent: string; reply: string } | null;
  */
 export async function draftReplyAssist(
   artistReply: string,
-  ctx?: { name?: string | null; channel?: string; offer?: { name?: string; url?: string | null; code?: string | null } }
+  ctx?: { name?: string | null; channel?: string; offer?: { name?: string; url?: string | null; code?: string | null }; facts?: string | null }
 ): Promise<Draft> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key || !artistReply?.trim()) return null;
@@ -40,7 +40,11 @@ export async function draftReplyAssist(
     `- interested / question: brief affirm, then the offer link + one qualifier. Short.\n` +
     `- not_interested / unsubscribe: a brief polite acknowledgement, do NOT pitch.\n` +
     `Never invent specific prices, exact numbers, chart positions, or fake guarantees. Be concrete about WHAT we do without fabricating stats.` +
-    offerBlock;
+    offerBlock +
+    (ctx?.facts
+      ? `\n\nVERIFIED FACTS about this artist from our own chart tracking (the ONLY numbers you may cite):\n${ctx.facts}\n` +
+        `USE THEM: when they ask "which track?", "where did you see it?", "am I charting?" or what caught our attention, name the exact track title, the chart and the positions/dates from the facts, and include the relevant link(s) EACH ON ITS OWN LINE (the BP Top Tracker chart/history link is the source we track, the Beatport link is the track itself). Never cite any position, date or track that is not in the facts.`
+      : ``);
 
   const user = `Artist${ctx?.name ? ` (${ctx.name})` : ""}${ctx?.channel ? ` [via ${ctx.channel}]` : ""} replied:\n"""${artistReply.slice(0, 1500)}"""`;
 
