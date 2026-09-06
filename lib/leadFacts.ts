@@ -6,17 +6,14 @@
  * generic rather than inventing.
  */
 import { pool } from "@/lib/db";
+import { isCatalogRelease } from "@/lib/releaseAge";
 
 const BPTT = "https://www.bptoptracker.com";
 const BEATPORT = "https://www.beatport.com";
 
 type Row = { snapshot_date: string; genre_slug: string | null; position: number; track_title: string | null; label_name: string | null; artist_link_path: string | null; artist_name: string | null; released: string | null };
 
-/** True when the charting track is a catalog/classic release (older than a year). */
-export function isCatalogRelease(released: string | null | undefined, now = Date.now()): boolean {
-  if (!released || !/^\d{4}-\d{2}-\d{2}/.test(released)) return false;
-  return now - Date.parse(released) > 365 * 86400000;
-}
+export { isCatalogRelease };
 
 const genreName = (slug: string | null) =>
   (slug ?? "").split("-").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ") || "Beatport";

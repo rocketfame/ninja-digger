@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isCatalogRelease } from "../leadFacts";
+import { isCatalogRelease } from "../releaseAge";
 
 describe("isCatalogRelease", () => {
   const now = Date.parse("2026-09-06");
