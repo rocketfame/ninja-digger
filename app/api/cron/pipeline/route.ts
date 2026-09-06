@@ -44,6 +44,10 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
         AND (lp.status ${touchNum === 1 ? "IS NULL OR lp.status = 'New'" : `= '${fromStatus}'`})
         ${minDays > 0 ? `AND lp.updated_at < now() - interval '${minDays} days'` : ""}
         ${touchNum === 1 ? "AND am.last_seen >= current_date - 14" : ""}
+        ${touchNum === 1 ? `AND NOT EXISTS (
+          SELECT 1 FROM bptoptracker_daily b
+          WHERE b.artist_beatport_id = ac.artist_beatport_id AND b.snapshot_date >= current_date - 14
+            AND (CASE WHEN b.released ~ '^\\d{4}-\\d{2}-\\d{2}' THEN b.released::date ELSE NULL END) < current_date - 365)` : ""}
         AND NOT ${JUNK_NAME_SQL}
         AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)
       ORDER BY ac.artist_beatport_id, ac.confidence DESC

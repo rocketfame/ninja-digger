@@ -179,10 +179,10 @@ export async function POST(request: Request) {
             : "snapshot_date, genre_slug, position, track_title, artist_name, artists_full, label_name, released, movement";
       const onConflict =
         withArtistId && withLinkPath
-          ? "ON CONFLICT (snapshot_date, genre_slug, position) DO UPDATE SET artist_beatport_id = COALESCE(EXCLUDED.artist_beatport_id, bptoptracker_daily.artist_beatport_id), artist_link_path = COALESCE(EXCLUDED.artist_link_path, bptoptracker_daily.artist_link_path)"
+          ? "ON CONFLICT (snapshot_date, genre_slug, position) DO UPDATE SET artist_beatport_id = COALESCE(EXCLUDED.artist_beatport_id, bptoptracker_daily.artist_beatport_id), artist_link_path = COALESCE(EXCLUDED.artist_link_path, bptoptracker_daily.artist_link_path), released = CASE WHEN EXCLUDED.released ~ '^\\d{4}-\\d{2}-\\d{2}' THEN EXCLUDED.released ELSE bptoptracker_daily.released END"
           : withArtistId
-            ? "ON CONFLICT (snapshot_date, genre_slug, position) DO UPDATE SET artist_beatport_id = COALESCE(EXCLUDED.artist_beatport_id, bptoptracker_daily.artist_beatport_id)"
-            : "ON CONFLICT (snapshot_date, genre_slug, position) DO NOTHING";
+            ? "ON CONFLICT (snapshot_date, genre_slug, position) DO UPDATE SET artist_beatport_id = COALESCE(EXCLUDED.artist_beatport_id, bptoptracker_daily.artist_beatport_id), released = CASE WHEN EXCLUDED.released ~ '^\\d{4}-\\d{2}-\\d{2}' THEN EXCLUDED.released ELSE bptoptracker_daily.released END"
+            : "ON CONFLICT (snapshot_date, genre_slug, position) DO UPDATE SET released = CASE WHEN EXCLUDED.released ~ '^\\d{4}-\\d{2}-\\d{2}' THEN EXCLUDED.released ELSE bptoptracker_daily.released END";
       const result = await pool.query(
         `INSERT INTO bptoptracker_daily (${insertCols}) VALUES ${placeholders.join(", ")} ${onConflict}`,
         values

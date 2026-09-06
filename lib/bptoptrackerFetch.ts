@@ -80,7 +80,7 @@ function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
       title: $row.find("td.title").text().trim(),
       artists: $row.find("td.artists").text().trim(),
       label: $row.find("td.label").text().trim(),
-      released: $row.find("td.released").text().trim(),
+      released: $row.find("td.releasedate, td.released").text().trim(),
       progression: $row.find("td.progression").text().trim(),
     };
     const texts = tds.map((__, td) => $(td).text().trim()).get();
@@ -89,13 +89,16 @@ function parseChartHtml(html: string, pageUrl: string): BptoptrackerDailyRow[] {
     let title = byClass.title || (texts.length >= 5 ? (texts[1] ?? texts[2] ?? texts[3] ?? "").replace(/[↑↓→]\d*/g, "").trim() : "");
     let artists = byClass.artists || (texts.length >= 5 ? (texts[2] ?? texts[3] ?? texts[4] ?? "") : "");
     let label = byClass.label || (texts.length >= 5 ? (texts[3] ?? texts[4] ?? texts[7] ?? "") : "");
-    let released = byClass.released || (texts.length >= 5 ? (texts[4] ?? texts[5] ?? texts[8] ?? "") : "");
+    // Release date lives in the 9th cell (td.releasedate). Never fall back to a
+    // non-date cell — that used to store the artists list under `released`.
+    const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+    let released = DATE_RE.test(byClass.released) ? byClass.released : (texts.find((t: string) => DATE_RE.test(t)) ?? "");
     let movement = byClass.progression?.match(/[↑↓→]\d*/)?.[0] ?? texts[1]?.match(/[↑↓→]\d*/)?.[0] ?? "";
     if (!title && !artists && texts.length >= 9) {
       title = (texts[3] ?? "").replace(/[↑↓→]\d*/g, "").trim();
       artists = texts[4] ?? "";
       label = texts[7] ?? "";
-      released = texts[8] ?? "";
+      released = DATE_RE.test(texts[8] ?? "") ? texts[8] : released;
     }
     const primaryArtist = artists.split(",").map((a: string) => a.trim()).filter(Boolean)[0]?.trim() || "";
     if (isBlockedArtist(primaryArtist) || isBlockedTrack(title)) return;
