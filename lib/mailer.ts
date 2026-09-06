@@ -81,9 +81,21 @@ export async function getRotatingMailerChecked(
   const usable = (await getSendersWithOverrides()).filter((s) => !blocked.has(s.id));
   const s = pickSender(usable, sentToday);
   if (!s) return null;
-  // `remaining` = THIS account's headroom. Callers must budget against it, not
-  // against the domain total — one run sends through one account only.
-  return { mailer: mailerFor(s), senderId: s.id, remaining: Math.max(0, s.cap - (sentToday[s.id] ?? 0)) };
+  // PACING: spread each account's daily cap over the sending day instead of
+  // burning it in the first 2-3 hourly runs (a 39/day warm-up cap was gone by
+  // 09:41 UTC, then 10 idle hours). Hourly allowance = ceil(cap / 12), so the
+  // barrels keep sending from morning to evening in small, even batches.
+  const lastHour = await pool
+    .query<{ sid: string; c: number }>(
+      `SELECT COALESCE(sender,'brevo1') sid, COUNT(*)::int c FROM outreach_events
+       WHERE channel='email' AND template_id LIKE '%\\_touch\\_%' AND sent_at > now() - interval '60 minutes' GROUP BY 1`
+    )
+    .then((r) => Object.fromEntries(r.rows.map((x) => [x.sid, x.c])) as Record<string, number>)
+    .catch(() => ({} as Record<string, number>));
+  const hourly = Math.max(3, Math.ceil(s.cap / 12));
+  // `remaining` = THIS account's headroom for this run (daily AND hourly).
+  const remaining = Math.max(0, Math.min(s.cap - (sentToday[s.id] ?? 0), hourly - (lastHour[s.id] ?? 0)));
+  return { mailer: mailerFor(s), senderId: s.id, remaining };
 }
 
 /**
