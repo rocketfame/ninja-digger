@@ -238,9 +238,10 @@ export async function harvestSeedFollowers(permalink: string, maxPages = 4): Pro
   await pool.query(
     `UPDATE sc_seed_accounts
        SET cursor = $1, harvested_count = $2, last_harvested_at = now(),
-           completed_at = CASE WHEN $3 THEN now() ELSE completed_at END
+           completed_at = CASE WHEN $3 THEN now() ELSE completed_at END,
+           emails_found = emails_found + $5
      WHERE permalink = $4`,
-    [nowCompleted ? null : cursor, count, nowCompleted, permalink]
+    [nowCompleted ? null : cursor, count, nowCompleted, permalink, withEmail]
   );
   return { harvested, withEmail, done, refresh };
 }

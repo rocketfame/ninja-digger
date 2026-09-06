@@ -42,12 +42,20 @@ export async function GET(request: Request) {
   // seeds (gold at 5d, cold graph at 14d) for their new followers.
   const seeds = harvestOk
     ? await pool.query<{ permalink: string }>(
+        // QUALITY GATE: a seed whose followers yielded <2% bio-emails over 150+
+        // harvested profiles is a listener graph, not an artist graph — skip it.
+        // Among the rest, prefer never-run seeds, then the best historical yield
+        // (emails_found / harvested_count), so the 8 slots per run go to seeds
+        // that actually produce contacts.
         `SELECT permalink FROM sc_seed_accounts
          WHERE active = true AND (
            completed_at IS NULL
            OR (priority >= 2 AND completed_at < now() - interval '5 days')
            OR (priority < 2 AND completed_at < now() - interval '14 days'))
-         ORDER BY (completed_at IS NULL) DESC, priority DESC, last_harvested_at ASC NULLS FIRST LIMIT 8`)
+           AND NOT (harvested_count >= 150 AND emails_found * 100.0 / GREATEST(harvested_count, 1) < 2)
+         ORDER BY (completed_at IS NULL) DESC,
+                  (emails_found * 100.0 / GREATEST(harvested_count, 1)) DESC,
+                  priority DESC, last_harvested_at ASC NULLS FIRST LIMIT 8`)
     : { rows: [] as { permalink: string }[] };
 
   // Harvest FIRST and give it the budget — it's the only step that adds leads.
