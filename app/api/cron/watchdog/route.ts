@@ -77,10 +77,15 @@ export async function GET(request: Request) {
   //     (need refuel), the cron is timing out, or SoundCloud broke. This is the
   //     exact class of failure that kept slipping through unnoticed.
   const scHarvest = await one(`SELECT COUNT(*) c FROM sc_artists WHERE harvested_at > now() - interval '3 hours'`);
-  const scDue = await one(`SELECT COUNT(*) c FROM sc_seed_accounts WHERE active AND (completed_at IS NULL OR (priority>=2 AND completed_at<now()-interval '5 days') OR (priority<2 AND completed_at<now()-interval '14 days'))`);
+  // "due" = seeds the harvester is actually allowed to use: past the quality
+  // gate (>=2% bio-email yield) and not touched in the last 5 days.
+  const scDue = await one(`SELECT COUNT(*) c FROM sc_seed_accounts WHERE active
+      AND (completed_at IS NULL OR (priority>=2 AND completed_at<now()-interval '5 days') OR (priority<2 AND completed_at<now()-interval '14 days'))
+      AND NOT (harvested_count >= 150 AND emails_found * 100.0 / GREATEST(harvested_count, 1) < 2)
+      AND (last_harvested_at IS NULL OR last_harvested_at < now() - interval '5 days')`);
   const due = num((scDue as { c?: unknown }).c);
   if (num((scHarvest as { c?: unknown }).c) < 100) {
-    alerts.push(`🔴 SoundCloud: харвест майже стоїть (${num((scHarvest as { c?: unknown }).c)} фоловерів за 3год)${due < 50 ? ` — сіди вичерпані (due ${due}), треба дозаправку` : ` — крон падає/таймаутить (due ${due})`}`);
+    alerts.push(`🟠 SoundCloud: харвест майже стоїть (${num((scHarvest as { c?: unknown }).c)} фоловерів за 3год)${due < 50 ? ` — якісні сіди вичерпані (придатних до збору: ${due}). Потрібен новий збір рекламодавців з repostexchange.com (браузер, логін користувача).` : ` — придатних сідів ${due}, а збір не йде: крон падає/таймаутить`}`);
   }
   // Proactive Re-Ex refuel warning — fire BEFORE the harvest collapses, while the
   // last fresh seeds are still being worked, so there's time to collect more.

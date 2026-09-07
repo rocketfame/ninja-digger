@@ -53,6 +53,7 @@ export async function GET(request: Request) {
            OR (priority >= 2 AND completed_at < now() - interval '5 days')
            OR (priority < 2 AND completed_at < now() - interval '14 days'))
            AND NOT (harvested_count >= 150 AND emails_found * 100.0 / GREATEST(harvested_count, 1) < 2)
+           AND (last_harvested_at IS NULL OR last_harvested_at < now() - interval '5 days')
          ORDER BY (completed_at IS NULL) DESC,
                   (emails_found * 100.0 / GREATEST(harvested_count, 1)) DESC,
                   priority DESC, last_harvested_at ASC NULLS FIRST LIMIT 8`)
