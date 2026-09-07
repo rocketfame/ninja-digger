@@ -154,7 +154,7 @@ export async function GET(request: Request) {
   // a random 35% skip which made BP dribble ~5/day and show spotty 0s in the
   // hourly report while SC/SP (no such dice) sent steadily. The daily ramp cap
   // still bounds volume; the per-run batch + domain ceiling keep it safe.
-  if (hour >= 6 && hour <= 21) {
+  if (hour >= 7) { // 07:00-23:59 UTC — see hourWeight() in lib/mailer
     let bpStart = await pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key='bp_outreach_start'`)
       .then((r) => r.rows[0]?.value).catch(() => undefined);
     if (!bpStart) {

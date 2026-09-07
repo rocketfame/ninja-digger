@@ -30,7 +30,7 @@ export async function GET(request: Request) {
   if ((await getSetting("radar_outreach_paused", "1")) === "1") return NextResponse.json({ ok: true, paused: true });
   if (!(await acquireLease("radar-outreach"))) return NextResponse.json({ ok: true, skipped: "locked" });
   const hour = new Date().getUTCHours();
-  if (hour < 6 || hour > 20) return NextResponse.json({ ok: true, skipped: "night" });
+  if (hour < 7) return NextResponse.json({ ok: true, skipped: "night" }); // 07:00-23:59 UTC: Europe morning → US West afternoon
 
   let start = await getSetting("radar_outreach_start", "");
   if (!start) { start = new Date().toISOString(); await pool.query(`INSERT INTO app_settings (key,value) VALUES ('radar_outreach_start',$1) ON CONFLICT (key) DO NOTHING`, [start]).catch(() => {}); }

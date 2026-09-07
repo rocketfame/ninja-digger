@@ -45,7 +45,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, skipped: "locked" });
   }
   const hour = new Date().getUTCHours();
-  if (hour < 6 || hour > 20) return NextResponse.json({ ok: true, skipped: "night" });
+  if (hour < 7) return NextResponse.json({ ok: true, skipped: "night" }); // 07:00-23:59 UTC: Europe morning → US West afternoon
 
   let start = await getSetting("sp_outreach_start", "");
   if (!start) { start = new Date().toISOString(); await setSetting("sp_outreach_start", start); }

@@ -14,6 +14,21 @@ export type OutreachMailer = {
 };
 
 /**
+ * Send-hour weights (UTC) — where our recipients are awake and reading mail:
+ * 07-12 Europe morning/lunch (1.0), 13-17 US East morning + Europe afternoon
+ * (1.5), 18-23 US daytime + West Coast morning (1.5), 00-06 nobody (0).
+ * The daily cap is spread across the day proportionally to these weights, so
+ * the budget lands in the recipient's working hours instead of running out by
+ * 18:00 UTC (= 11:00 in Los Angeles).
+ */
+export function hourWeight(utcHour: number): number {
+  if (utcHour >= 7 && utcHour <= 12) return 1;
+  if (utcHour >= 13 && utcHour <= 23) return 1.5;
+  return 0;
+}
+export const WEIGHT_SUM = Array.from({ length: 24 }, (_, h) => hourWeight(h)).reduce((a, b) => a + b, 0); // 6*1 + 11*1.5 = 22.5
+
+/**
  * Multi-account rotating mailer. Given how many were already sent per account
  * today, picks the least-used account under its cap and returns a ready mailer
  * tagged with senderId (store it in outreach_events.sender). Returns null when
@@ -92,7 +107,7 @@ export async function getRotatingMailerChecked(
     )
     .then((r) => Object.fromEntries(r.rows.map((x) => [x.sid, x.c])) as Record<string, number>)
     .catch(() => ({} as Record<string, number>));
-  const hourly = Math.max(3, Math.ceil(s.cap / 12));
+  const hourly = Math.max(2, Math.ceil(s.cap * hourWeight(new Date().getUTCHours()) / WEIGHT_SUM));
   // `remaining` = THIS account's headroom for this run (daily AND hourly).
   const remaining = Math.max(0, Math.min(s.cap - (sentToday[s.id] ?? 0), hourly - (lastHour[s.id] ?? 0)));
   return { mailer: mailerFor(s), senderId: s.id, remaining };

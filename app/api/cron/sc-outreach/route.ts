@@ -50,7 +50,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, skipped: "locked" });
   }
   const hour = new Date().getUTCHours();
-  if (hour < 6 || hour > 20) return NextResponse.json({ ok: true, skipped: "night" });
+  if (hour < 7) return NextResponse.json({ ok: true, skipped: "night" }); // 07:00-23:59 UTC: Europe morning → US West afternoon
 
   // First live run stamps the ramp start date.
   let start = await getSetting("sc_outreach_start", "");

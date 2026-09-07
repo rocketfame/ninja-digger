@@ -129,3 +129,19 @@ describe("pickBestEmail", () => {
     expect(pickBestEmail("support@x.com user@domain.com")).toBeNull();
   });
 });
+
+import { hourWeight, WEIGHT_SUM } from "../mailer";
+describe("send-hour pacing", () => {
+  it("weights US daytime higher than Europe morning and zero at night", () => {
+    expect(hourWeight(3)).toBe(0);
+    expect(hourWeight(8)).toBe(1);
+    expect(hourWeight(15)).toBe(1.5);
+    expect(hourWeight(22)).toBe(1.5);
+    expect(WEIGHT_SUM).toBe(22.5);
+  });
+  it("spreads a 61/day cap into ~3/h mornings and ~4/h US hours", () => {
+    expect(Math.ceil(61 * hourWeight(9) / WEIGHT_SUM)).toBe(3);
+    expect(Math.ceil(61 * hourWeight(16) / WEIGHT_SUM)).toBe(5);
+    expect(Math.ceil(280 * hourWeight(16) / WEIGHT_SUM)).toBe(19);
+  });
+});
