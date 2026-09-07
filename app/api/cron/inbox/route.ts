@@ -295,7 +295,7 @@ export async function GET(request: Request) {
         // Concrete offer per channel, read from app_settings (offer_<ch>_name /
         // _url / _code) so the exact product + link + discount code are editable
         // without a deploy. Cached per run.
-        const offerCache = new Map<string, { name: string; url: string | null; code: string | null } | null>();
+        const offerCache = new Map<string, { name: string; url: string | null; code: string | null; facts: string | null } | null>();
         const getOffer = async (source: string) => {
           const s = source.toLowerCase();
           const ch = s.startsWith("beatport") ? "beatport" : s.startsWith("soundcloud") ? "soundcloud"
