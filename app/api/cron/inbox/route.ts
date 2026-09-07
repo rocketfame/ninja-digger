@@ -303,12 +303,12 @@ export async function GET(request: Request) {
           if (!ch) return undefined;
           if (!offerCache.has(ch)) {
             const rows = await pool.query<{ key: string; value: string }>(
-              `SELECT key, value FROM app_settings WHERE key IN ($1,$2,$3)`,
-              [`offer_${ch}_name`, `offer_${ch}_url`, `offer_${ch}_code`]
+              `SELECT key, value FROM app_settings WHERE key IN ($1,$2,$3,$4)`,
+              [`offer_${ch}_name`, `offer_${ch}_url`, `offer_${ch}_code`, `offer_${ch}_facts`]
             ).then((r) => r.rows).catch(() => [] as { key: string; value: string }[]);
             const m = Object.fromEntries(rows.map((r) => [r.key, r.value]));
             offerCache.set(ch, m[`offer_${ch}_name`]
-              ? { name: m[`offer_${ch}_name`], url: m[`offer_${ch}_url`] || null, code: m[`offer_${ch}_code`] || null }
+              ? { name: m[`offer_${ch}_name`], url: m[`offer_${ch}_url`] || null, code: m[`offer_${ch}_code`] || null, facts: m[`offer_${ch}_facts`] || null }
               : null);
           }
           return offerCache.get(ch) ?? undefined;

@@ -15,7 +15,7 @@ type Draft = { intent: string; reply: string } | null;
  */
 export async function draftReplyAssist(
   artistReply: string,
-  ctx?: { name?: string | null; channel?: string; offer?: { name?: string; url?: string | null; code?: string | null }; facts?: string | null; thread?: string | null; customer?: boolean }
+  ctx?: { name?: string | null; channel?: string; offer?: { name?: string; url?: string | null; code?: string | null; facts?: string | null }; facts?: string | null; thread?: string | null; customer?: boolean }
 ): Promise<Draft> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key || !artistReply?.trim()) return null;
@@ -45,6 +45,9 @@ export async function draftReplyAssist(
     `- not_interested / unsubscribe: a brief polite acknowledgement, do NOT pitch.\n` +
     `Never invent specific prices, exact numbers, chart positions, or fake guarantees. Be concrete about WHAT we do without fabricating stats.` +
     offerBlock +
+    (o?.facts
+      ? `\n\nPRODUCT FACTS (the ONLY claims you may make about how the service works, delivery, timing, reporting and results — anything not listed here you must not promise or invent):\n${o.facts}\n`
+      : ``) +
     (ctx?.facts
       ? `\n\nVERIFIED FACTS about this artist from our own chart tracking (the ONLY numbers you may cite):\n${ctx.facts}\n` +
         `USE THEM: when they ask "which track?", "where did you see it?", "am I charting?" or what caught our attention, name the exact track title, the chart and the positions/dates from the facts, and ALWAYS include the BP Top Tracker artist history link on its own line right after naming the track (it is the source we track, so they can verify), and the Beatport track link only if they ask where to find the track. Never cite any position, date or track that is not in the facts.`
