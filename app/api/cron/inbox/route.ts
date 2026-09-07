@@ -266,6 +266,21 @@ export async function GET(request: Request) {
         // Newest inbound Message-ID per address (fetch order is oldest→newest, so
         // Map.set keeps the latest).
         const msgIdByAddr = new Map(replyFrom.map((r) => [r.addr, r.messageId]));
+        // An opt-out anywhere in the window must win, even if the lead sent a
+        // newer message afterwards (UR: "No thanks" was followed by another
+        // reply and got skipped because only the newest message per address
+        // was looked at). Download the OLDER messages of multi-message senders
+        // and remember who opted out.
+        const optOutByAddr = new Set<string>();
+        {
+          const newestUid = new Map<string, number>();
+          for (const r of replyFrom) newestUid.set(r.addr, Math.max(newestUid.get(r.addr) ?? 0, r.uid));
+          const older = replyFrom.filter((r) => r.uid !== newestUid.get(r.addr)).slice(0, 40);
+          for (const r of older) {
+            const t = await downloadText(client, r.uid).catch(() => null);
+            if (t?.reply && OPT_OUT_RE.test(t.reply)) optOutByAddr.add(r.addr);
+          }
+        }
         const unique = [...subjectByAddr.keys()];
 
         // Per-message dedup: notify once per distinct inbound Message-ID so a
@@ -341,7 +356,7 @@ export async function GET(request: Request) {
           const draft = excerpt ? await draftReplyAssist(excerpt, { name: o.name, channel: o.source, offer: await getOffer(o.source), thread: tc.thread, customer: tc.customer }) : null;
           // Not interested / unsubscribe → close + blacklist immediately (still
           // notify so a polite one-line ack can be sent via Approve).
-          const optedOut = draft?.intent === "not_interested" || draft?.intent === "unsubscribe" || (!!excerpt && OPT_OUT_RE.test(excerpt));
+          const optedOut = draft?.intent === "not_interested" || draft?.intent === "unsubscribe" || (!!excerpt && OPT_OUT_RE.test(excerpt)) || optOutByAddr.has(addr);
           if (optedOut) {
             await closeOptOut(o.email, o.source);
             // Not interested → mark their email as read in Gmail so it doesn't
@@ -488,16 +503,22 @@ export async function GET(request: Request) {
           }
 
           // Opt-out: close the lead, blacklist the email everywhere, notify differently
-          if (excerpt && OPT_OUT_RE.test(excerpt)) {
+          if ((excerpt && OPT_OUT_RE.test(excerpt)) || optOutByAddr.has(addrKey)) {
             await pool.query(
               `UPDATE lead_profiles SET status = 'Not Interested', updated_at = now() WHERE artist_beatport_id = $1`,
               [row.artist_beatport_id]
             );
+            // Blacklist EVERY address we hold for this artist — an opt-out is for
+            // the person, not the mailbox (UR had 4 contacts; a follow-up went
+            // to another one after "No thanks").
             await pool.query(
-              `INSERT INTO email_blacklist (email, reason) VALUES (LOWER(TRIM($1)), 'opt-out (auto-detected)')
+              `INSERT INTO email_blacklist (email, reason)
+               SELECT LOWER(TRIM(value)), 'opt-out (auto-detected, all contacts of ' || $1 || ')' FROM artist_contacts
+               WHERE artist_beatport_id = $1 AND type = 'email'
                ON CONFLICT (email) DO NOTHING`,
-              [row.value]
+              [row.artist_beatport_id]
             ).catch(() => {});
+            await pool.query(`UPDATE artist_contacts SET status = 'blocked' WHERE artist_beatport_id = $1 AND type = 'email'`, [row.artist_beatport_id]).catch(() => {});
             // Not interested → mark the email read in Gmail (handled already).
             if (uid) await client.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true }).catch(() => {});
             await sendTelegramMessage(
