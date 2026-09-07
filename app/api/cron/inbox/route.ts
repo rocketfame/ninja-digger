@@ -17,6 +17,7 @@ import { draftReplyAssist } from "@/lib/llm";
 import { classifyEmail } from "@/lib/enrichClassify";
 import { acquireLease } from "@/lib/cronLock";
 import { getBeatportFacts } from "@/lib/leadFacts";
+import { getThreadContext } from "@/lib/threadContext";
 
 /** Role from the text right before the email ("Bookings: x@y") or from the address itself. */
 function detectRole(body: string, email: string, artistName: string | null): string {
@@ -336,7 +337,8 @@ export async function GET(request: Request) {
           const excerpt = dl?.reply ?? null;
           const original = dl?.original ?? null;
           const subject = subjectByAddr.get(addr) || null;
-          const draft = excerpt ? await draftReplyAssist(excerpt, { name: o.name, channel: o.source, offer: await getOffer(o.source) }) : null;
+          const tc = excerpt ? await getThreadContext(addr, excerpt) : { thread: null, customer: false, turns: 0 };
+          const draft = excerpt ? await draftReplyAssist(excerpt, { name: o.name, channel: o.source, offer: await getOffer(o.source), thread: tc.thread, customer: tc.customer }) : null;
           // Not interested / unsubscribe → close + blacklist immediately (still
           // notify so a polite one-line ack can be sent via Approve).
           const optedOut = draft?.intent === "not_interested" || draft?.intent === "unsubscribe" || (!!excerpt && OPT_OUT_RE.test(excerpt));
@@ -364,9 +366,9 @@ export async function GET(request: Request) {
           );
           if (msgId != null) {
             await pool.query(
-              `INSERT INTO tg_notifications (tg_message_id, artist_beatport_id, artist_name, email, subject, draft, source, reply_msgid)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (tg_message_id) DO NOTHING`,
-              [msgId, o.beatportId ?? null, o.name, o.email, subject, draft?.reply ?? null, o.source, msgIdByAddr.get(addr) ?? null]
+              `INSERT INTO tg_notifications (tg_message_id, artist_beatport_id, artist_name, email, subject, draft, source, reply_msgid, excerpt)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (tg_message_id) DO NOTHING`,
+              [msgId, o.beatportId ?? null, o.name, o.email, subject, draft?.reply ?? null, o.source, msgIdByAddr.get(addr) ?? null, excerpt?.slice(0, 2000) ?? null]
             ).catch(() => {});
           }
           return msgId != null; // false → Telegram send failed, caller un-claims to retry
@@ -507,7 +509,7 @@ export async function GET(request: Request) {
           }
 
           const bpDraft = excerpt
-            ? await draftReplyAssist(excerpt, { name, channel: "Beatport", offer: await getOffer("Beatport"), facts: await getBeatportFacts(row.artist_beatport_id) })
+            ? await (async () => { const tc = await getThreadContext(addrKey, excerpt); return draftReplyAssist(excerpt, { name, channel: "Beatport", offer: await getOffer("Beatport"), facts: await getBeatportFacts(row.artist_beatport_id), thread: tc.thread, customer: tc.customer }); })()
             : null;
           const bpKb = [
             ...(bpDraft ? [[{ text: "✅ Approve & Send", callback_data: "approve" }, { text: "✏️ Редагувати", callback_data: "edit" }]] : []),
@@ -527,10 +529,10 @@ export async function GET(request: Request) {
           );
           if (tgMessageId != null) {
             await pool.query(
-              `INSERT INTO tg_notifications (tg_message_id, artist_beatport_id, artist_name, email, subject, draft, source, reply_msgid)
-               VALUES ($1, $2, $3, $4, $5, $6, 'Beatport', $7)
+              `INSERT INTO tg_notifications (tg_message_id, artist_beatport_id, artist_name, email, subject, draft, source, reply_msgid, excerpt)
+               VALUES ($1, $2, $3, $4, $5, $6, 'Beatport', $7, $8)
                ON CONFLICT (tg_message_id) DO NOTHING`,
-              [tgMessageId, row.artist_beatport_id, row.artist_name, row.value, subject || null, bpDraft?.reply ?? null, msgIdByAddr.get(addrKey) ?? null]
+              [tgMessageId, row.artist_beatport_id, row.artist_name, row.value, subject || null, bpDraft?.reply ?? null, msgIdByAddr.get(addrKey) ?? null, excerpt?.slice(0, 2000) ?? null]
             ).catch((e) => console.error("[cron/inbox] tg_notifications insert failed:", e instanceof Error ? e.message : e));
           } else {
             await unclaimInbound(addrKey); replies--; // TG send failed — retry next run

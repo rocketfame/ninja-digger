@@ -168,6 +168,7 @@ async function handleApprove(msgId: number): Promise<void> {
     await sendTelegramMessage(`❌ Не вдалось надіслати: ${tgEscape(err)}`); return;
   }
   await editMessageReplyMarkup(msgId, []);
+  await pool.query(`UPDATE tg_notifications SET sent_reply = $2, sent_at = now() WHERE tg_message_id = $1`, [msgId, row.draft]).catch(() => {});
   await sendTelegramMessage(`✅ <b>Надіслано</b> → ${tgEscape(row.artist_name ?? row.email)}\n📧 ${tgEscape(row.email)}\nСтатус ліда → In Progress`);
 }
 
@@ -295,6 +296,7 @@ export async function POST(request: Request) {
   // guards the null-artist_beatport_id case (SC/Spotify/Radar leads), so the
   // email goes out even when there's no Beatport profile row.
   const err = await sendArtistEmail({ email: lead.email, subject: lead.subject, body: msg.text, artistId: lead.artist_beatport_id, inReplyTo: lead.reply_msgid });
+  if (!err) await pool.query(`UPDATE tg_notifications SET sent_reply = $2, sent_at = now() WHERE tg_message_id = $1`, [replyToId, msg.text]).catch(() => {});
   if (err) {
     await sendTelegramMessage(`❌ Помилка відправки: ${tgEscape(err)}`);
   } else {
