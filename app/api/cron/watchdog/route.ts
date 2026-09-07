@@ -89,7 +89,7 @@ export async function GET(request: Request) {
   }
   // Proactive Re-Ex refuel warning — fire BEFORE the harvest collapses, while the
   // last fresh seeds are still being worked, so there's time to collect more.
-  else if (due < 60) {
+  else if (due < 120) {
     alerts.push(`🟠 Re-Ex база вигорає — лишилось ${due} свіжих сідів. Час зібрати нових рекламодавців з repostexchange.com/engage (я зроблю збір браузером).`);
   }
 
