@@ -130,7 +130,7 @@ describe("pickBestEmail", () => {
   });
 });
 
-import { hourWeight, WEIGHT_SUM } from "../mailer";
+import { hourWeight, WEIGHT_SUM } from "../sendPacing";
 describe("send-hour pacing", () => {
   it("weights US daytime higher than Europe morning and zero at night", () => {
     expect(hourWeight(3)).toBe(0);
