@@ -96,26 +96,43 @@ async function probe(host: string, email: string, from: string, helo: string): P
 export async function verifyBatchOnHost(
   host: string,
   emails: string[],
-  opts: { from?: string; helo?: string; perConnection?: number } = {}
+  opts: { from?: string; helo?: string; perTransaction?: number } = {}
 ): Promise<MailboxResult[]> {
   const from = opts.from ?? "max@promosound.net";
   const helo = opts.helo ?? "promosound.net";
-  const chunkSize = opts.perConnection ?? 40;
-  const out: MailboxResult[] = [];
+  const perTx = opts.perTransaction ?? 25;
 
-  for (let i = 0; i < emails.length; i += chunkSize) {
-    const chunk = emails.slice(i, i + chunkSize);
-    const results = await new Promise<MailboxResult[]>((resolve) => {
-      const sock = net.createConnection({ host, port: 25, timeout: 20000 });
-      const acc: MailboxResult[] = [];
+  // One MX host commonly serves many domains (Google Workspace, one.com,
+  // hostinger...). Servers reject "Multiple destination domains per
+  // transaction", so a transaction must stay within ONE domain: we reuse the
+  // connection but RSET + MAIL FROM again whenever the domain changes.
+  const byDomain = new Map<string, string[]>();
+  for (const e of emails) {
+    const d = e.split("@")[1] ?? "";
+    if (!byDomain.has(d)) byDomain.set(d, []);
+    byDomain.get(d)!.push(e);
+  }
+  const transactions: { domain: string; emails: string[] }[] = [];
+  for (const [domain, list] of byDomain) {
+    for (let i = 0; i < list.length; i += perTx) transactions.push({ domain, emails: list.slice(i, i + perTx) });
+  }
+
+  const out: MailboxResult[] = [];
+  const catchAllByDomain = new Map<string, boolean>();
+  let txIdx = 0;
+
+  while (txIdx < transactions.length) {
+    // One connection handles as many transactions as the server tolerates;
+    // when it drops we simply open the next one and continue where we stopped.
+    const handled = await new Promise<number>((resolve) => {
+      const sock = net.createConnection({ host, port: 25, timeout: 25000 });
       let settled = false;
+      let localDone = 0;
       const finish = () => {
         if (settled) return;
         settled = true;
         try { sock.destroy(); } catch { /* closed */ }
-        // Anything we did not get to is inconclusive, never a removal.
-        for (const e of chunk.slice(acc.length)) acc.push({ email: e, verdict: "unknown", note: "batch cut short" });
-        resolve(acc);
+        resolve(localDone);
       };
       sock.on("error", finish);
       sock.on("timeout", finish);
@@ -123,20 +140,26 @@ export async function verifyBatchOnHost(
         try {
           await readReply(sock, null, 12000);
           await readReply(sock, `EHLO ${helo}`);
-          await readReply(sock, `MAIL FROM:<${from}>`);
-          // Catch-all probe once per connection (same domain for the whole chunk).
-          const domain = chunk[0]?.split("@")[1] ?? "";
-          let catchAll = false;
-          try {
-            const rnd = `zz${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}@${domain}`;
-            const rp = await readReply(sock, `RCPT TO:<${rnd}>`, 8000);
-            catchAll = classifySmtpReply(parseInt(rp.slice(0, 3), 10), rp) === "valid";
-          } catch { /* inconclusive */ }
-          for (const email of chunk) {
-            const reply = await readReply(sock, `RCPT TO:<${email}>`, 8000);
-            const code = parseInt(reply.slice(0, 3), 10);
-            const v = classifySmtpReply(code, reply);
-            acc.push({ email, verdict: v === "valid" && catchAll ? "catch_all" : v, note: reply.split("\n")[0] });
+          for (let k = txIdx; k < transactions.length; k++) {
+            const { domain, emails: chunk } = transactions[k];
+            if (localDone > 0) await readReply(sock, "RSET", 6000);
+            await readReply(sock, `MAIL FROM:<${from}>`);
+
+            if (!catchAllByDomain.has(domain)) {
+              try {
+                const rnd = `zz${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}@${domain}`;
+                const rp = await readReply(sock, `RCPT TO:<${rnd}>`, 8000);
+                catchAllByDomain.set(domain, classifySmtpReply(parseInt(rp.slice(0, 3), 10), rp) === "valid");
+              } catch { catchAllByDomain.set(domain, false); }
+            }
+            const catchAll = catchAllByDomain.get(domain) === true;
+
+            for (const email of chunk) {
+              const reply = await readReply(sock, `RCPT TO:<${email}>`, 8000);
+              const v = classifySmtpReply(parseInt(reply.slice(0, 3), 10), reply);
+              out.push({ email, verdict: v === "valid" && catchAll ? "catch_all" : v, note: reply.split("\n")[0] });
+            }
+            localDone++;
           }
           try { await readReply(sock, "QUIT", 3000); } catch { /* ignore */ }
           finish();
@@ -145,7 +168,15 @@ export async function verifyBatchOnHost(
         }
       })();
     });
-    out.push(...results);
+
+    if (handled === 0) {
+      // This transaction could not be completed at all — mark it inconclusive
+      // (never a removal) and move on so one bad domain cannot stall the host.
+      for (const e of transactions[txIdx].emails) out.push({ email: e, verdict: "unknown", note: "connection failed" });
+      txIdx += 1;
+    } else {
+      txIdx += handled;
+    }
   }
   return out;
 }
