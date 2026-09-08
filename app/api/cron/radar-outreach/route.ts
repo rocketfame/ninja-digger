@@ -6,7 +6,7 @@
  */
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { getRotatingMailerChecked, getSentBySenderToday } from "@/lib/mailer";
+import { getRotatingMailersChecked, senderPool, getSentBySenderToday } from "@/lib/mailer";
 import { buildRadarEmail } from "@/lib/radarOutreachCopy";
 import { isHardBounceError, validateEmailForOutreach } from "@/lib/emailHygiene";
 import { quarantineEmail } from "@/lib/emailScrub";
@@ -15,7 +15,7 @@ import { acquireLease } from "@/lib/cronLock";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const PER_RUN = 22;
+const PER_RUN = 30;
 
 async function getSetting(key: string, fb: string) {
   return pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key=$1`, [key]).then((r) => r.rows[0]?.value ?? fb).catch(() => fb);
@@ -39,12 +39,15 @@ export async function GET(request: Request) {
   const q = (s: string) => pool.query<{ c: number }>(s).then((r) => r.rows[0]?.c ?? 0).catch(() => 0);
   const sentToday = await q(`SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'radar_touch_%' AND sent_at >= CURRENT_DATE`);
   const sentBySender = await getSentBySenderToday();
-  const rm = await getRotatingMailerChecked(sentBySender);
-  if (!rm) return NextResponse.json({ ok: true, cap, sentToday, sent: 0, note: "all sender accounts capped/blocked" });
-  // Budget against the PICKED account's headroom (one run = one account).
-  const budget = Math.min(cap - sentToday, rm.remaining, PER_RUN);
+  // One run draws from EVERY account with headroom, not just one: a single
+  // account's hourly slice is about a third of what the domain can send, and
+  // the other accounts would sit idle until their own barrel happened to pick
+  // them.
+  const senders = senderPool(await getRotatingMailersChecked(sentBySender));
+  if (senders.budget <= 0) return NextResponse.json({ ok: true, cap, sentToday, sent: 0, note: "all sender accounts capped/blocked" });
+  const budget = Math.min(cap - sentToday, senders.budget, PER_RUN);
   if (budget <= 0) return NextResponse.json({ ok: true, cap, sentToday, sent: 0, note: "quota reached" });
-  const { transporter, from, replyTo } = rm.mailer;
+
   const pct = parseInt(await getSetting("sc_discount", "25"), 10) || 25;
 
   // See sc-outreach: addresses handed to the marketing side are on hold.
@@ -69,7 +72,10 @@ export async function GET(request: Request) {
 
   let sent = 0, skippedJunk = 0;
   for (const lead of leads) {
-    if (sent > 0) await new Promise((r) => setTimeout(r, 6000 + Math.random() * 6000)); // 6-12s: 22 sends fit in the 300s budget
+    const m = senders.next();
+    if (!m) break; // every account's hourly headroom is spent
+    const { transporter, from, replyTo } = m.mailer;
+    if (sent > 0) await new Promise((r) => setTimeout(r, 4000 + Math.random() * 3000)); // 4-7s: 30 sends fit in the 300s budget
     const touch = (lead.touch + 1) as 1 | 2 | 3;
     const email = buildRadarEmail(lead.source, touch, lead.name || "there", pct);
     // Pre-send gate: junk/role/placeholder/no-MX addresses never leave the
@@ -82,7 +88,7 @@ export async function GET(request: Request) {
         `INSERT INTO outreach_events (artist_beatport_id, template_id, channel, contact_value, sent_at, outcome, sender)
          VALUES ($1,$2,'email',$3, now(),'sent',$4)
          ON CONFLICT (artist_beatport_id, template_id) WHERE channel = 'email' AND artist_beatport_id IS NOT NULL
-         DO UPDATE SET sent_at = now(), outcome = EXCLUDED.outcome, sender = EXCLUDED.sender, contact_value = EXCLUDED.contact_value, replied_at = NULL`, [`radar:${lead.id}`, `radar_touch_${touch}`, lead.email, rm.senderId]
+         DO UPDATE SET sent_at = now(), outcome = EXCLUDED.outcome, sender = EXCLUDED.sender, contact_value = EXCLUDED.contact_value, replied_at = NULL`, [`radar:${lead.id}`, `radar_touch_${touch}`, lead.email, m.senderId]
       ).then(() => true).catch((e) => { console.error("[radar-outreach] outreach_events insert failed — stopping run:", e instanceof Error ? e.message : e); return false; });
       await pool.query(`UPDATE radar_leads SET touch=$2, status=$3, contacted_at=now(), updated_at=now() WHERE id=$1`,
         [lead.id, touch, touch === 3 ? "done" : "contacted"]).catch(() => {});

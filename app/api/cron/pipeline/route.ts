@@ -13,7 +13,7 @@ import { validateEmailForOutreach, invalidateContactEmail, isHardBounceError } f
 const PLAIN_SIGNATURE = `\n\n--\nMax\nPromoSound`;
 
 import { JUNK_NAME_SQL, TIER_SQL } from "@/lib/leadQuality";
-import { getRotatingMailerChecked, getSentBySenderToday } from "@/lib/mailer";
+import { getRotatingMailersChecked, senderPool, getSentBySenderToday } from "@/lib/mailer";
 import { buildTouchEmail } from "@/lib/touchCopy";
 import { acquireLease } from "@/lib/cronLock";
 
@@ -22,12 +22,11 @@ export const maxDuration = 300; // 5 min for natural-paced sends
 
 
 
-type MailerCtx = { transporter: nodemailer.Transporter; from: string; replyTo?: string; senderId: string };
-async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus: string, minDays: number, budget: number, m: MailerCtx | null) {
-  if (!m) return 0;
+/** Draws one account per email from the shared pool, so a batch is not tied to a single account. */
+type SenderPool = ReturnType<typeof senderPool>;
+async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus: string, minDays: number, budget: number, senders: SenderPool) {
   if (budget <= 0) return 0; // daily cap already exhausted
-  const { transporter, from, replyTo, senderId } = m;
-  const limit = Math.min(14, budget);
+  const limit = Math.min(20, budget);
 
   // Touch 1 only for artists still in charts recently — a "congrats on your chart entry"
   // months after the fact reads as spam. Follow-ups (2/3) go regardless.
@@ -62,7 +61,11 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
 
   let sent = 0;
   for (const lead of leads.rows) {
-    if (sent > 0) await new Promise(r => setTimeout(r, 6000 + Math.random() * 6000)); // 6-12s between emails
+    const m = senders.next();
+    if (!m) break; // every account's hourly headroom is spent
+    const { transporter, from, replyTo } = m.mailer;
+    const senderId = m.senderId;
+    if (sent > 0) await new Promise(r => setTimeout(r, 4000 + Math.random() * 3000)); // 4-7s between emails
     try {
       const allEmails = await pool.query<{ value: string }>(
         `SELECT value FROM artist_contacts WHERE artist_beatport_id = $1 AND type = 'email' AND confidence >= 0.65
@@ -175,16 +178,15 @@ export async function GET(request: Request) {
     } else {
       // Pick a rotating Brevo account for this run (per-account daily cap).
       const sentBySender = await getSentBySenderToday();
-      const rm = await getRotatingMailerChecked(sentBySender);
-      const mctx: MailerCtx | null = rm ? { transporter: rm.mailer.transporter, from: rm.mailer.from, replyTo: rm.mailer.replyTo, senderId: rm.senderId } : null;
+      // Every account with headroom, not just one — see lib/mailer.
+      const senders = senderPool(await getRotatingMailersChecked(sentBySender));
       // Shared daily budget across all three touches so the cap can't be
       // exceeded 3x by running three back-to-back batches in one hour.
-      // Budget against the PICKED account's own headroom (one run = one account).
-      let budget = Math.min(cap - sentToday, rm ? rm.remaining : 0);
-      if (!rm) actions.push("bp: all sender accounts capped/blocked");
-      const t1 = await sendBeatportBatch(1, "New", "Attempt 1", 0, budget, mctx); budget -= t1;
-      const t2 = await sendBeatportBatch(2, "Attempt 1", "Attempt 2", 2, budget, mctx); budget -= t2;
-      const t3 = await sendBeatportBatch(3, "Attempt 2", "No Response", 3, budget, mctx);
+      let budget = Math.min(cap - sentToday, senders.budget);
+      if (senders.budget <= 0) actions.push("bp: all sender accounts capped/blocked");
+      const t1 = await sendBeatportBatch(1, "New", "Attempt 1", 0, budget, senders); budget -= t1;
+      const t2 = await sendBeatportBatch(2, "Attempt 1", "Attempt 2", 2, budget, senders); budget -= t2;
+      const t3 = await sendBeatportBatch(3, "Attempt 2", "No Response", 3, budget, senders);
       if (t1 + t2 + t3 > 0) actions.push(`bp: T1=${t1} T2=${t2} T3=${t3}`);
     }
   }

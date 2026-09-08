@@ -6,7 +6,7 @@
  */
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { getRotatingMailerChecked, getSentBySenderToday } from "@/lib/mailer";
+import { getRotatingMailersChecked, senderPool, getSentBySenderToday } from "@/lib/mailer";
 import { buildScEmail } from "@/lib/scOutreachCopy";
 import { isHardBounceError, validateEmailForOutreach } from "@/lib/emailHygiene";
 import { quarantineEmail } from "@/lib/emailScrub";
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const BASE_URL = "https://ninja-digger.vercel.app";
-const PER_RUN = 22;         // bounded by maxDuration/delay, not by taste
+const PER_RUN = 30;         // bounded by maxDuration/delay, not by taste
 const DOMAIN_DAILY_MAX = 280; // combined Beatport + SC ceiling (Brevo free ~300/day)
 
 async function getSetting(key: string, fallback: string): Promise<string> {
@@ -62,13 +62,14 @@ export async function GET(request: Request) {
   const q = (sql: string) => pool.query<{ c: number }>(sql).then((r) => r.rows[0]?.c ?? 0).catch(() => 0);
   const scSentToday = await q(`SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sc_touch_%' AND sent_at >= CURRENT_DATE`);
   const sentBySender = await getSentBySenderToday();
-  const rm = await getRotatingMailerChecked(sentBySender);
-  if (!rm) return NextResponse.json({ ok: true, cap, scSentToday, sent: 0, note: "all sender accounts capped/blocked" });
-  // Budget against the PICKED account's headroom (one run = one account).
-  const budget = Math.min(cap - scSentToday, rm.remaining, PER_RUN);
+  // One run draws from EVERY account with headroom, not just one: a single
+  // account's hourly slice is about a third of what the domain can send, and
+  // the other accounts would sit idle until their own barrel happened to pick
+  // them.
+  const senders = senderPool(await getRotatingMailersChecked(sentBySender));
+  if (senders.budget <= 0) return NextResponse.json({ ok: true, cap, scSentToday, sent: 0, note: "all sender accounts capped/blocked" });
+  const budget = Math.min(cap - scSentToday, senders.budget, PER_RUN);
   if (budget <= 0) return NextResponse.json({ ok: true, cap, scSentToday, sent: 0, note: "quota reached" });
-  const { transporter, from, replyTo } = rm.mailer;
-  const senderId = rm.senderId;
   const pct = parseInt(await getSetting("sc_discount", "25"), 10) || 25;
   const code = await getSetting("sc_promo_code", "SOUND20");
 
@@ -110,7 +111,11 @@ export async function GET(request: Request) {
   let sent = 0, skippedJunk = 0;
   const byTouch: Record<number, number> = { 1: 0, 2: 0, 3: 0 };
   for (const lead of leads) {
-    if (sent > 0) await new Promise((r) => setTimeout(r, 6000 + Math.random() * 6000)); // 6-12s: 22 sends fit in the 300s budget
+    const m = senders.next();
+    if (!m) break; // every account's hourly headroom is spent
+    const { transporter, from, replyTo } = m.mailer;
+    const senderId = m.senderId;
+    if (sent > 0) await new Promise((r) => setTimeout(r, 4000 + Math.random() * 3000)); // 4-7s: 30 sends fit in the 300s budget
     const touch = (lead.sc_touch + 1) as 1 | 2 | 3;
     const name = lead.full_name || lead.username || "there";
     const unsubUrl = `${BASE_URL}/api/unsubscribe?u=${Buffer.from(lead.email).toString("base64url")}`;

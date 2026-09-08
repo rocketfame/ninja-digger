@@ -69,9 +69,24 @@ export async function getSendersWithOverrides(): Promise<Sender[]> {
   });
 }
 
-export async function getRotatingMailerChecked(
+export type CheckedMailer = { mailer: OutreachMailer; senderId: string; remaining: number };
+
+/**
+ * Every usable account with the headroom it has RIGHT NOW, most headroom first.
+ *
+ * A run used to take one account and was therefore capped at that account's
+ * hourly slice — roughly a third of what the domain could send, with the other
+ * two accounts idle for the hour. Handing the barrel the whole set lets a
+ * single run fill the hour's budget across all of them.
+ *
+ * PACING: each account's daily cap is spread over the sending day instead of
+ * being burnt in the first 2-3 runs (a 39/day cap was once gone by 09:41 UTC,
+ * then 10 idle hours). The hourly allowance is weighted towards US waking
+ * hours — see lib/sendPacing.
+ */
+export async function getRotatingMailersChecked(
   sentToday: Record<string, number>
-): Promise<{ mailer: OutreachMailer; senderId: string; remaining: number } | null> {
+): Promise<CheckedMailer[]> {
   const { pool } = await import("@/lib/db");
   const blocked = new Set(
     await pool
@@ -80,12 +95,7 @@ export async function getRotatingMailerChecked(
       .catch(() => [] as string[])
   );
   const usable = (await getSendersWithOverrides()).filter((s) => !blocked.has(s.id));
-  const s = pickSender(usable, sentToday);
-  if (!s) return null;
-  // PACING: spread each account's daily cap over the sending day instead of
-  // burning it in the first 2-3 hourly runs (a 39/day warm-up cap was gone by
-  // 09:41 UTC, then 10 idle hours). Hourly allowance = ceil(cap / 12), so the
-  // barrels keep sending from morning to evening in small, even batches.
+  if (usable.length === 0) return [];
   const lastHour = await pool
     .query<{ sid: string; c: number }>(
       `SELECT COALESCE(sender,'brevo1') sid, COUNT(*)::int c FROM outreach_events
@@ -93,10 +103,36 @@ export async function getRotatingMailerChecked(
     )
     .then((r) => Object.fromEntries(r.rows.map((x) => [x.sid, x.c])) as Record<string, number>)
     .catch(() => ({} as Record<string, number>));
-  const hourly = Math.max(2, Math.ceil(s.cap * hourWeight(new Date().getUTCHours()) / WEIGHT_SUM));
-  // `remaining` = THIS account's headroom for this run (daily AND hourly).
-  const remaining = Math.max(0, Math.min(s.cap - (sentToday[s.id] ?? 0), hourly - (lastHour[s.id] ?? 0)));
-  return { mailer: mailerFor(s), senderId: s.id, remaining };
+  const weight = hourWeight(new Date().getUTCHours());
+  return usable
+    .map((s) => {
+      const hourly = Math.max(2, Math.ceil((s.cap * weight) / WEIGHT_SUM));
+      const remaining = Math.max(0, Math.min(s.cap - (sentToday[s.id] ?? 0), hourly - (lastHour[s.id] ?? 0)));
+      return { mailer: mailerFor(s), senderId: s.id, remaining };
+    })
+    .filter((m) => m.remaining > 0)
+    .sort((a, b) => b.remaining - a.remaining);
+}
+
+/**
+ * Round-robin over accounts that still have headroom, decrementing as it goes.
+ * `next()` returns null once the whole set is spent, which is the barrel's
+ * signal to stop for this run.
+ */
+export function senderPool(mailers: CheckedMailer[]) {
+  const left = mailers.map((m) => ({ ...m }));
+  return {
+    budget: left.reduce((n, m) => n + m.remaining, 0),
+    next(): CheckedMailer | null {
+      // Always draw from the account with the most headroom, so the accounts
+      // stay evenly used instead of one being drained first.
+      left.sort((a, b) => b.remaining - a.remaining);
+      const m = left[0];
+      if (!m || m.remaining <= 0) return null;
+      m.remaining--;
+      return m;
+    },
+  };
 }
 
 /**

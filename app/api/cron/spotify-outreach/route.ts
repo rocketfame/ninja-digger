@@ -6,7 +6,7 @@
  */
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { getRotatingMailerChecked, getSentBySenderToday } from "@/lib/mailer";
+import { getRotatingMailersChecked, senderPool, getSentBySenderToday } from "@/lib/mailer";
 import { buildSpotifyEmail } from "@/lib/spotifyOutreachCopy";
 import { isHardBounceError, validateEmailForOutreach } from "@/lib/emailHygiene";
 import { quarantineEmail } from "@/lib/emailScrub";
@@ -15,7 +15,7 @@ import { acquireLease } from "@/lib/cronLock";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const PER_RUN = 22;
+const PER_RUN = 30;
 const DOMAIN_DAILY_MAX = 280; // combined BP + SC + SP ceiling (Brevo free ~300/day)
 
 async function getSetting(key: string, fallback: string): Promise<string> {
@@ -58,13 +58,15 @@ export async function GET(request: Request) {
   // Per-account sends today (legacy NULL sender → 'brevo1'). Domain budget is now
   // the SUM of remaining capacity across all Brevo accounts.
   const sentBySender = await getSentBySenderToday();
-  const rm = await getRotatingMailerChecked(sentBySender);
-  if (!rm) return NextResponse.json({ ok: true, cap, spSentToday, sent: 0, note: "all sender accounts capped/blocked" });
-  // Budget against the PICKED account's headroom (one run = one account).
-  const budget = Math.min(cap - spSentToday, rm.remaining, PER_RUN);
+  // One run draws from EVERY account with headroom, not just one: a single
+  // account's hourly slice is about a third of what the domain can send, and
+  // the other accounts would sit idle until their own barrel happened to pick
+  // them.
+  const senders = senderPool(await getRotatingMailersChecked(sentBySender));
+  if (senders.budget <= 0) return NextResponse.json({ ok: true, cap, spSentToday, sent: 0, note: "all sender accounts capped/blocked" });
+  const budget = Math.min(cap - spSentToday, senders.budget, PER_RUN);
   if (budget <= 0) return NextResponse.json({ ok: true, cap, spSentToday, sent: 0, note: "quota reached" });
-  const { transporter, from, replyTo } = rm.mailer;
-  const senderId = rm.senderId;
+
   const pct = parseInt(await getSetting("sc_discount", "25"), 10) || 25;
 
   type Lead = { ig_username: string; full_name: string | null; email: string; sp_touch: number };
@@ -104,7 +106,11 @@ export async function GET(request: Request) {
   let sent = 0, skippedJunk = 0;
   const byTouch: Record<number, number> = { 1: 0, 2: 0, 3: 0 };
   for (const lead of leads) {
-    if (sent > 0) await new Promise((r) => setTimeout(r, 6000 + Math.random() * 6000)); // 6-12s: 22 sends fit in the 300s budget
+    const m = senders.next();
+    if (!m) break; // every account's hourly headroom is spent
+    const { transporter, from, replyTo } = m.mailer;
+    const senderId = m.senderId;
+    if (sent > 0) await new Promise((r) => setTimeout(r, 4000 + Math.random() * 3000)); // 4-7s: 30 sends fit in the 300s budget
     const touch = (lead.sp_touch + 1) as 1 | 2 | 3;
     const name = lead.full_name || lead.ig_username || "there";
     const email = buildSpotifyEmail(touch, { name, pct });
