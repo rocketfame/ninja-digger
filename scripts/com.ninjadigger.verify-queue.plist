@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Daily mailbox verification on this Mac. Vercel and Cloudflare Workers both
+  block outbound port 25 (measured: Vercel times out on 25, connects on 587 in
+  24ms), so this is the only free place to run it.
+
+  Install:
+    cp scripts/com.ninjadigger.verify-queue.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.ninjadigger.verify-queue.plist
+  Remove:
+    launchctl unload ~/Library/LaunchAgents/com.ninjadigger.verify-queue.plist
+    rm ~/Library/LaunchAgents/com.ninjadigger.verify-queue.plist
+  Log: /tmp/ninjadigger-verify.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ninjadigger.verify-queue</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd "$HOME/Documents/GitHub/ninja-digger" &amp;&amp; npx tsx scripts/verify-queue.mjs 4000 &gt;&gt; /tmp/ninjadigger-verify.log 2&gt;&amp;1</string>
+  </array>
+
+  <!-- 03:20 local time: outside the 07:00-23:59 UTC sending window, so a probe
+       never races a real send to the same domain. Missed runs (laptop asleep)
+       are executed once the machine wakes. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>3</integer>
+    <key>Minute</key><integer>20</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>Nice</key>
+  <integer>5</integer>
+</dict>
+</plist>

@@ -80,3 +80,10 @@ one-click unsubscribe + лінійний warmup +5/день. Потребує д
 5. 🔧 Security hardening (auth + HMAC)
 6. 🔧 Deliverability freebies (RFC 8058 unsubscribe headers + HMAC token)
 7. ⏸ Deliverability домен + Vercel Pro/Queues — рішення користувача, Фаза 2
+
+## Шар 3c — Верифікація скриньок (SMTP, layer 3) ✅ 2026-09-08
+
+`lib/smtpVerify.ts` + `scripts/verify-queue.mjs`. Після синтаксису/політики (`lib/emailJunk`) і MX — реальний RCPT TO до MX отримувача.
+**Правило безпеки:** ліда прибирає ТІЛЬКИ явний 5xx про скриньку. Таймаут, 4xx-грейлист, catch-all, policy-відмова (spam/blocked/rate limit) і провайдери, що глушать зонди (Microsoft/Yahoo/iCloud/Proofpoint/Mimecast), = `unknown`, лід недоторканий. Перевірено на розмічених даних: gmail 3/3 мертвих спіймано, 0 хибних спрацювань; MIT-пакет `deep-email-validator` на тому ж наборі позначив ЖИВУ hotmail-адресу невалідною → залежність не беремо.
+**Де запускати:** порт 25 заблокований і на Vercel (заміряно: TIMEOUT 8с на 25, CONNECTED 24мс на 587), і в Cloudflare Workers (архітектурно). Тому це локальний скрипт, не крон. Автозапуск: `scripts/com.ninjadigger.verify-queue.plist` (launchd, 03:20, поза вікном відправки).
+**Перший бойовий прохід (3000 з черги):** 85 мертвих у карантин, 2184 valid, 192 catch-all, 539 unknown → 3.5% мертвих серед розсуджених, що збігається з hard-bounce 1.3–6.8% у Brevo.
