@@ -15,7 +15,7 @@ import { acquireLease } from "@/lib/cronLock";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const PER_RUN = 30;
+const PER_RUN = 15;        // 4 runs/hour: the hourly allowance is spread, not burnt at once
 const DOMAIN_DAILY_MAX = 280; // combined BP + SC + SP ceiling (Brevo free ~300/day)
 
 async function getSetting(key: string, fallback: string): Promise<string> {
@@ -62,6 +62,11 @@ export async function GET(request: Request) {
   // account's hourly slice is about a third of what the domain can send, and
   // the other accounts would sit idle until their own barrel happened to pick
   // them.
+  // Rhythm, not a burst: four staggered runs an hour, each opening at a random
+  // point in its first minute. Three accounts interleaved inside a single
+  // 3-minute burst still looks like one machine; spread over the hour with an
+  // uneven start it looks like a person working through a list.
+  await new Promise((r) => setTimeout(r, Math.random() * 40000));
   const senders = senderPool(await getRotatingMailersChecked(sentBySender));
   if (senders.budget <= 0) return NextResponse.json({ ok: true, cap, spSentToday, sent: 0, note: "all sender accounts capped/blocked" });
   const budget = Math.min(cap - spSentToday, senders.budget, PER_RUN);
