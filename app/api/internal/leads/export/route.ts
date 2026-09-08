@@ -9,16 +9,28 @@
  *   - never exported twice (lead_exports is the ledger, email is the dedup key)
  *   - never anything in email_blacklist (junk, dead mailbox, opt-out, bounce)
  *   - by default only mailboxes SMTP-verified as live (email_verification.valid)
- *   - `engagement=engaged` restricts to people who actually opened/clicked our
- *     cold mail — a warm segment, far safer for the main domain than raw cold
+ *   - `engagement=replied` = people who wrote back to us (warmest we have)
+ *     `engagement=engaged` = people who opened our cold mail
+ *     Cold mail is plain text, so Brevo tracks NO clicks — do not ask for them.
  *
  * Params: platform=soundcloud|spotify|youtube|beatport|all, limit (max 5000),
  *         batch=<label>, format=json|csv, verified=only|any,
- *         engagement=any|engaged, min_followers=N, country=US,CA, dry=1 (preview)
+ *         engagement=any|engaged|replied, min_followers=N, country=US,CA, dry=1
  */
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { isAuthorized, unauthorized } from "@/lib/apiAuth";
+
+/**
+ * The marketing side gets its OWN token (LEADGEN_TOKEN), not the dashboard
+ * password: it must be able to pull batches and report outcomes, and nothing
+ * else. Dashboard/cron auth still works for us.
+ */
+function bridgeAuthorized(request: Request): boolean {
+  const token = process.env.LEADGEN_TOKEN;
+  if (token && request.headers.get("authorization") === `Bearer ${token}`) return true;
+  return isAuthorized(request);
+}
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -60,7 +72,7 @@ const csvCell = (v: unknown) => {
 };
 
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) return unauthorized();
+  if (!bridgeAuthorized(request)) return unauthorized();
   const q = new URL(request.url).searchParams;
 
   const platformParam = (q.get("platform") ?? "soundcloud").toLowerCase();
@@ -71,7 +83,11 @@ export async function GET(request: Request) {
   const limit = Math.min(5000, Math.max(1, parseInt(q.get("limit") ?? "500", 10) || 500));
   const dry = q.get("dry") === "1";
   const verifiedOnly = (q.get("verified") ?? "only") !== "any";
-  const engagedOnly = (q.get("engagement") ?? "any") === "engaged";
+  // NOTE: we send cold mail as plain text, so Brevo records NO clicks — the
+  // real warmth ladder here is: replied > opened > nothing.
+  const engagement = (q.get("engagement") ?? "any").toLowerCase();
+  const engagedOnly = engagement === "engaged";
+  const repliedOnly = engagement === "replied";
   // Segment axes for campaigns / ad audiences.
   const minFollowers = Math.max(0, parseInt(q.get("min_followers") ?? "0", 10) || 0);
   const countries = (q.get("country") ?? "").split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
@@ -89,6 +105,7 @@ export async function GET(request: Request) {
           AND s.email NOT IN (SELECT email FROM lead_exports)
           ${verifiedOnly ? `AND v.verdict = 'valid'` : `AND COALESCE(v.verdict,'unknown') <> 'invalid'`}
           ${engagedOnly ? `AND (s.opens > 0 OR s.email_status = 'engaged')` : ``}
+          ${repliedOnly ? `AND s.email IN (SELECT LOWER(email) FROM tg_notifications)` : ``}
           ${minFollowers > 0 ? `AND COALESCE(s.followers, 0) >= $2` : ``}
           ${countries.length > 0 ? `AND UPPER(COALESCE(s.country, '')) = ANY($${minFollowers > 0 ? 3 : 2}::text[])` : ``}
         ORDER BY s.email, s.found_at DESC NULLS LAST
@@ -118,7 +135,7 @@ export async function GET(request: Request) {
     filters: {
       platform: platformParam,
       verified: verifiedOnly ? "smtp-verified live only" : "not-invalid",
-      engagement: engagedOnly ? "opened or clicked our mail" : "any",
+      engagement: repliedOnly ? "replied to our cold mail (warmest)" : engagedOnly ? "opened our mail" : "any",
       ...(minFollowers > 0 ? { min_followers: minFollowers } : {}),
       ...(countries.length > 0 ? { country: countries } : {}),
     },
@@ -129,7 +146,7 @@ export async function GET(request: Request) {
 
 /** Feedback loop: { outcomes: [{ email, outcome }] }. Bad outcomes are suppressed here too. */
 export async function POST(request: Request) {
-  if (!isAuthorized(request)) return unauthorized();
+  if (!bridgeAuthorized(request)) return unauthorized();
   const body = (await request.json().catch(() => ({}))) as { outcomes?: { email?: string; outcome?: string }[] };
   const items = (body.outcomes ?? []).filter((o) => o.email && o.outcome);
   if (items.length === 0) return NextResponse.json({ error: "outcomes[] required" }, { status: 400 });
