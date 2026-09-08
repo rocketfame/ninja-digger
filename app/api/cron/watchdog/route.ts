@@ -136,6 +136,11 @@ export async function GET(request: Request) {
         const req = y ? num(y.requests) : 0;
         if (req < sentY * 0.5) alerts.push(`🔴 Brevo НЕ БАЧИТЬ наші листи: ${useToday ? "сьогодні" : "вчора"} віддали brevo1 ${sentY}, Brevo зафіксував requests=${req} — акаунт заблоковано/ключ не той?`);
         else if (deliv < req * 0.5) alerts.push(`🔴 Brevo доставив лише ${deliv} з ${req} (blocked=${num(y?.blocked)}, hb=${num(y?.hardBounces)}) — репутація/блок акаунта`);
+        // Volume is now uncapped by warm-up, so bounce rate is the guardrail.
+        const hb = y ? num(y.hardBounces) : 0;
+        if (req >= 50 && hb * 100 / req > 4) {
+          alerts.push(`🔴 Hard bounce ${(hb * 100 / req).toFixed(1)}% (${hb}/${req}) — вище 4%. Пригальмувати: постав sender_warmup_* на сьогодні або зменш sender_cap_*.`);
+        }
       } else if (!res.ok) {
         alerts.push(`🟠 Brevo API звіт недоступний (HTTP ${res.status}) — перевір BREVO_API_KEY`);
       }

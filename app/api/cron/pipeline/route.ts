@@ -27,7 +27,7 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
   if (!m) return 0;
   if (budget <= 0) return 0; // daily cap already exhausted
   const { transporter, from, replyTo, senderId } = m;
-  const limit = Math.min(5, budget);
+  const limit = Math.min(14, budget);
 
   // Touch 1 only for artists still in charts recently — a "congrats on your chart entry"
   // months after the fact reads as spam. Follow-ups (2/3) go regardless.
@@ -60,7 +60,7 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
 
   let sent = 0;
   for (const lead of leads.rows) {
-    if (sent > 0) await new Promise(r => setTimeout(r, 20000 + Math.random() * 40000)); // 20-60s between emails
+    if (sent > 0) await new Promise(r => setTimeout(r, 6000 + Math.random() * 6000)); // 6-12s between emails
     try {
       const allEmails = await pool.query<{ value: string }>(
         `SELECT value FROM artist_contacts WHERE artist_beatport_id = $1 AND type = 'email' AND confidence >= 0.65

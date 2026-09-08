@@ -15,7 +15,7 @@ import { acquireLease } from "@/lib/cronLock";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const PER_RUN = 8;
+const PER_RUN = 22;
 
 async function getSetting(key: string, fb: string) {
   return pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key=$1`, [key]).then((r) => r.rows[0]?.value ?? fb).catch(() => fb);
@@ -67,7 +67,7 @@ export async function GET(request: Request) {
 
   let sent = 0, skippedJunk = 0;
   for (const lead of leads) {
-    if (sent > 0) await new Promise((r) => setTimeout(r, 20000 + Math.random() * 25000));
+    if (sent > 0) await new Promise((r) => setTimeout(r, 6000 + Math.random() * 6000)); // 6-12s: 22 sends fit in the 300s budget
     const touch = (lead.touch + 1) as 1 | 2 | 3;
     const email = buildRadarEmail(lead.source, touch, lead.name || "there", pct);
     // Pre-send gate: junk/role/placeholder/no-MX addresses never leave the

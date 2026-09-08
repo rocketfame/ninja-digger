@@ -15,7 +15,7 @@ import { acquireLease } from "@/lib/cronLock";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const PER_RUN = 8;
+const PER_RUN = 22;
 const DOMAIN_DAILY_MAX = 280; // combined BP + SC + SP ceiling (Brevo free ~300/day)
 
 async function getSetting(key: string, fallback: string): Promise<string> {
@@ -100,7 +100,7 @@ export async function GET(request: Request) {
   let sent = 0, skippedJunk = 0;
   const byTouch: Record<number, number> = { 1: 0, 2: 0, 3: 0 };
   for (const lead of leads) {
-    if (sent > 0) await new Promise((r) => setTimeout(r, 20000 + Math.random() * 25000));
+    if (sent > 0) await new Promise((r) => setTimeout(r, 6000 + Math.random() * 6000)); // 6-12s: 22 sends fit in the 300s budget
     const touch = (lead.sp_touch + 1) as 1 | 2 | 3;
     const name = lead.full_name || lead.ig_username || "there";
     const email = buildSpotifyEmail(touch, { name, pct });
