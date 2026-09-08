@@ -43,6 +43,7 @@ async function apply(email: string, event: string) {
     await pool.query(`UPDATE sc_artists SET opens=opens+${isClick ? 0 : 1}, clicks=clicks+${isClick ? 1 : 0}, first_open_at=COALESCE(first_open_at,now()), email_status=CASE WHEN email_status IN ('bounced','unsub') THEN email_status ELSE 'engaged' END, updated_at=now() WHERE LOWER(email)=$1`, [email]).catch(() => {});
     await pool.query(`UPDATE spotify_leads SET opens=opens+${isClick ? 0 : 1}, clicks=clicks+${isClick ? 1 : 0}, first_open_at=COALESCE(first_open_at,now()), email_status=CASE WHEN email_status IN ('bounced','unsub') THEN email_status ELSE 'engaged' END, updated_at=now() WHERE LOWER(email)=$1`, [email]).catch(() => {});
     if (!isClick) await pool.query(`UPDATE artist_contacts SET opens=opens+1, first_open_at=COALESCE(first_open_at,now()) WHERE type='email' AND LOWER(TRIM(value))=$1`, [email]).catch(() => {});
+    await pool.query(`UPDATE radar_leads SET email_status=CASE WHEN email_status IN ('bounced','unsub') THEN email_status ELSE 'engaged' END, updated_at=now() WHERE LOWER(email)=$1`, [email]).catch(() => {});
   } else if (e === "hardbounces" || e === "hard_bounce" || e === "blocked" || e === "invalid" || e === "error") {
     await pool.query(`UPDATE sc_artists SET email_status='bounced', lead_status='Bounced', updated_at=now() WHERE LOWER(email)=$1`, [email]).catch(() => {});
     await pool.query(`UPDATE spotify_leads SET email_status='bounced', lead_status='Bounced', updated_at=now() WHERE LOWER(email)=$1`, [email]).catch(() => {});

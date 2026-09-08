@@ -10,7 +10,9 @@
  *   - never anything in email_blacklist (junk, dead mailbox, opt-out, bounce)
  *   - by default only mailboxes SMTP-verified as live (email_verification.valid)
  *   - `engagement=replied` = people who wrote back to us (warmest we have)
- *     `engagement=engaged` = people who opened our cold mail
+ *     `engagement=engaged` = people who opened our cold mail, taken straight
+ *     from email_events (Brevo's own log). Apple's `loadedbyproxy` pixel
+ *     prefetch is deliberately NOT an open — it is a machine, not a person.
  *     Cold mail is plain text, so Brevo tracks NO clicks — do not ask for them.
  *
  * Params: platform=soundcloud|spotify|youtube|beatport|all, limit (max 5000),
@@ -107,7 +109,7 @@ export async function GET(request: Request) {
         WHERE s.email NOT IN (SELECT LOWER(email) FROM email_blacklist)
           AND s.email NOT IN (SELECT email FROM lead_exports)
           ${verifiedOnly ? `AND v.verdict = 'valid'` : `AND COALESCE(v.verdict,'unknown') <> 'invalid'`}
-          ${engagedOnly ? `AND (s.opens > 0 OR s.email_status = 'engaged')` : ``}
+          ${engagedOnly ? `AND s.email IN (SELECT email FROM email_events WHERE event IN ('opened','uniqueopened','click','clicks'))` : ``}
           ${repliedOnly ? `AND s.email IN (SELECT LOWER(email) FROM tg_notifications)` : ``}
           ${minFollowers > 0 ? `AND COALESCE(s.followers, 0) >= $2` : ``}
           ${countries.length > 0 ? `AND UPPER(COALESCE(s.country, '')) = ANY($${minFollowers > 0 ? 3 : 2}::text[])` : ``}
