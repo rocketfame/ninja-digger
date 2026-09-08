@@ -11,6 +11,7 @@
  *
  * Usage:  DRY=1 npx tsx scripts/verify-queue.mjs [limit]
  *         npx tsx scripts/verify-queue.mjs 2000
+ *         CONCURRENCY=12 CHUNK=250 npx tsx scripts/verify-queue.mjs 30000
  */
 import { readFileSync } from "node:fs";
 
@@ -19,7 +20,7 @@ for (const k of ["DATABASE_URL", "DATABASE_URL_UNPOOLED"]) {
   const v = env.match(new RegExp(`^${k}=(.*)$`, "m"))?.[1]?.replace(/^["']|["']$/g, "").trim();
   if (v && !process.env[k]) process.env[k] = v;
 }
-const { verifyBatchOnHost, primaryMx } = await import("../lib/smtpVerify.ts");
+const { verifyBatchOnHost, allMx } = await import("../lib/smtpVerify.ts");
 const { quarantineEmail } = await import("../lib/emailScrub.ts");
 const { pool } = await import("../lib/db.ts");
 
@@ -96,14 +97,21 @@ const domains = [...byDomain.keys()];
 let resolved = 0;
 for (let i = 0; i < domains.length; i += 40) {
   await Promise.all(domains.slice(i, i + 40).map(async (d) => {
-    const host = await primaryMx(d);
+    const hosts = await allMx(d);
     resolved++;
-    if (!host) { // no MX, or a provider that blocks probes
+    if (hosts.length === 0) { // no MX, or a provider that blocks probes
       for (const e of byDomain.get(d)) unresolved.push(e); // counted once, in record()
       return;
     }
-    if (!byHost.has(host)) byHost.set(host, []);
-    byHost.get(host).push(...byDomain.get(d));
+    // Spread a domain's addresses over ALL of its MX hosts. gmail.com alone is
+    // ~70% of the base and publishes 5 hosts, so this turns one serial queue
+    // into five that can run at once.
+    const list = byDomain.get(d);
+    for (let j = 0; j < list.length; j++) {
+      const host = hosts[j % hosts.length];
+      if (!byHost.has(host)) byHost.set(host, []);
+      byHost.get(host).push(list[j]);
+    }
   }));
   if (i % 400 === 0) process.stdout.write(`  …MX ${resolved}/${domains.length}\n`);
 }
@@ -124,15 +132,24 @@ async function record(r) {
 }
 for (const e of unresolved) await record({ email: e, verdict: "unknown", note: "no MX / provider blocks probes" });
 
-const hosts = [...byHost.entries()].sort((a, b) => b[1].length - a[1].length);
-let hostIdx = 0, doneCount = 0;
+const CHUNK = parseInt(process.env.CHUNK || "250", 10);
+const units = [];
+for (const [host, emails] of byHost) {
+  for (let i = 0; i < emails.length; i += CHUNK) units.push([host, emails.slice(i, i + CHUNK)]);
+}
+// Biggest hosts first so the long pole starts immediately.
+units.sort((a, b) => b[1].length - a[1].length);
+console.log(`  ${units.length} work units of <=${CHUNK} addresses`);
+
+let unitIdx = 0, doneCount = 0;
 async function hostWorker() {
-  while (hostIdx < hosts.length) {
-    const [host, emails] = hosts[hostIdx++];
+  while (unitIdx < units.length) {
+    const [host, emails] = units[unitIdx++];
     const res = await verifyBatchOnHost(host, emails).catch(() => emails.map((e) => ({ email: e, verdict: "unknown" })));
     for (const r of res) await record(r);
     doneCount += emails.length;
-    process.stdout.write(`  …${doneCount}/${rows.length} invalid=${counts.invalid} (${host.slice(0, 34)})\n`);
+    const pct = ((100 * doneCount) / rows.length).toFixed(1);
+    process.stdout.write(`  …${doneCount}/${rows.length} (${pct}%) invalid=${counts.invalid} (${host.slice(0, 34)})\n`);
   }
 }
 await Promise.all(Array.from({ length: CONCURRENCY }, hostWorker));

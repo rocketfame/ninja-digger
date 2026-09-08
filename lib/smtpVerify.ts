@@ -192,14 +192,14 @@ export async function verifyBatchOnHost(
   return out;
 }
 
-/** Primary MX host for a domain, or null. Exported so callers can group work per host. */
-export async function primaryMx(domain: string): Promise<string | null> {
+/** Every usable MX host for a domain, best priority first; empty if unverifiable. */
+export async function allMx(domain: string): Promise<string[]> {
   try {
     const mx = (await dns.resolveMx(domain)).sort((a, b) => a.priority - b.priority).map((m) => m.exchange).filter(Boolean);
-    if (mx.length === 0) return null;
-    if (mx.some((h) => UNVERIFIABLE_MX.test(h))) return null; // provider blocks probes
-    return mx[0];
-  } catch { return null; }
+    if (mx.length === 0) return [];
+    if (mx.some((h) => UNVERIFIABLE_MX.test(h))) return []; // provider blocks probes
+    return mx;
+  } catch { return []; }
 }
 
 /**
