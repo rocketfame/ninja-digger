@@ -14,7 +14,7 @@
  *
  * Params: platform=soundcloud|spotify|youtube|beatport|all, limit (max 5000),
  *         batch=<label>, format=json|csv, verified=only|any,
- *         engagement=any|engaged, dry=1 (preview, records nothing)
+ *         engagement=any|engaged, min_followers=N, country=US,CA, dry=1 (preview)
  */
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
@@ -72,6 +72,9 @@ export async function GET(request: Request) {
   const dry = q.get("dry") === "1";
   const verifiedOnly = (q.get("verified") ?? "only") !== "any";
   const engagedOnly = (q.get("engagement") ?? "any") === "engaged";
+  // Segment axes for campaigns / ad audiences.
+  const minFollowers = Math.max(0, parseInt(q.get("min_followers") ?? "0", 10) || 0);
+  const countries = (q.get("country") ?? "").split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
   const batch = q.get("batch") ?? `${platformParam}-${new Date().toISOString().slice(0, 10)}`;
 
   const union = platforms.map(sourceSql).join("\n UNION ALL\n");
@@ -86,9 +89,11 @@ export async function GET(request: Request) {
           AND s.email NOT IN (SELECT email FROM lead_exports)
           ${verifiedOnly ? `AND v.verdict = 'valid'` : `AND COALESCE(v.verdict,'unknown') <> 'invalid'`}
           ${engagedOnly ? `AND (s.opens > 0 OR s.email_status = 'engaged')` : ``}
+          ${minFollowers > 0 ? `AND COALESCE(s.followers, 0) >= $2` : ``}
+          ${countries.length > 0 ? `AND UPPER(COALESCE(s.country, '')) = ANY($${minFollowers > 0 ? 3 : 2}::text[])` : ``}
         ORDER BY s.email, s.found_at DESC NULLS LAST
         LIMIT $1`,
-      [limit]
+      [limit, ...(minFollowers > 0 ? [minFollowers] : []), ...(countries.length > 0 ? [countries] : [])]
     )
     .then((r) => r.rows)
     .catch((e) => { throw e; });
@@ -110,7 +115,13 @@ export async function GET(request: Request) {
   }
   return NextResponse.json({
     batch, dry, count: rows.length,
-    filters: { platform: platformParam, verified: verifiedOnly ? "smtp-verified live only" : "not-invalid", engagement: engagedOnly ? "opened or clicked our mail" : "any" },
+    filters: {
+      platform: platformParam,
+      verified: verifiedOnly ? "smtp-verified live only" : "not-invalid",
+      engagement: engagedOnly ? "opened or clicked our mail" : "any",
+      ...(minFollowers > 0 ? { min_followers: minFollowers } : {}),
+      ...(countries.length > 0 ? { country: countries } : {}),
+    },
     leads: rows,
     ts: new Date().toISOString(),
   });
