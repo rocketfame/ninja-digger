@@ -40,28 +40,40 @@ export const maxDuration = 60;
 const PLATFORMS = ["soundcloud", "spotify", "youtube", "beatport"] as const;
 type Platform = (typeof PLATFORMS)[number];
 
-/** One SELECT per source table, normalised to the same shape. */
+/**
+ * One SELECT per source table, normalised to the same shape.
+ *
+ * Every branch MUST name and type its columns. In a UNION the names come from
+ * the first branch only, so unaliased branches worked under `platform=all`
+ * (soundcloud leads the union) and broke the moment a platform was requested on
+ * its own — the outer query looked for s.platform/s.name against columns called
+ * "?column?". Bare NULL needs a cast for the same reason: alone in a branch
+ * Postgres cannot infer its type.
+ */
 function sourceSql(p: Platform): string {
   switch (p) {
     case "soundcloud":
       return `SELECT LOWER(email) email, 'soundcloud' platform, COALESCE(full_name, username) name,
-                     followers_count followers, country_code country, permalink_url profile_url,
+                     followers_count::int followers, country_code::text country, permalink_url::text profile_url,
                      email_found_at found_at, COALESCE(opens,0) opens, email_status
                 FROM sc_artists
                WHERE email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')`;
     case "spotify":
-      return `SELECT LOWER(email), 'spotify', COALESCE(full_name, ig_username), followers, NULL, NULL,
-                     enriched_at, COALESCE(opens,0), email_status
+      return `SELECT LOWER(email) email, 'spotify' platform, COALESCE(full_name, ig_username) name,
+                     followers::int followers, NULL::text country, NULL::text profile_url,
+                     enriched_at found_at, COALESCE(opens,0) opens, email_status
                 FROM spotify_leads
                WHERE email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')`;
     case "youtube":
-      return `SELECT LOWER(email), 'youtube', name, followers, NULL, source_url,
-                     email_found_at, 0, email_status
+      return `SELECT LOWER(email) email, 'youtube' platform, name,
+                     followers::int followers, NULL::text country, source_url::text profile_url,
+                     email_found_at found_at, 0 opens, email_status
                 FROM radar_leads
                WHERE email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')`;
     case "beatport":
-      return `SELECT LOWER(TRIM(ac.value)), 'beatport', am.artist_name, NULL, NULL, NULL,
-                     ac.created_at, COALESCE(ac.opens,0), ac.status
+      return `SELECT LOWER(TRIM(ac.value)) email, 'beatport' platform, am.artist_name name,
+                     NULL::int followers, NULL::text country, NULL::text profile_url,
+                     ac.created_at found_at, COALESCE(ac.opens,0) opens, ac.status email_status
                 FROM artist_contacts ac
                 LEFT JOIN artist_metrics am ON am.artist_beatport_id = ac.artist_beatport_id
                WHERE ac.type='email' AND COALESCE(ac.status,'ok')='ok'`;
@@ -118,7 +130,13 @@ export async function GET(request: Request) {
       [limit, ...(minFollowers > 0 ? [minFollowers] : []), ...(countries.length > 0 ? [countries] : [])]
     )
     .then((r) => r.rows)
-    .catch((e) => { throw e; });
+    .catch((e: unknown) => {
+      console.error("[leads/export] query failed:", e);
+      return null;
+    });
+  if (rows === null) {
+    return NextResponse.json({ error: "query failed", batch, platform: platformParam }, { status: 500 });
+  }
 
   if (!dry && rows.length > 0) {
     await pool.query(
