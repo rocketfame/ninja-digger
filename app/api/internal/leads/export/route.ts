@@ -14,7 +14,7 @@
  *     Cold mail is plain text, so Brevo tracks NO clicks — do not ask for them.
  *
  * Params: platform=soundcloud|spotify|youtube|beatport|all, limit (max 5000),
- *         batch=<label>, format=json|csv, verified=only|any,
+ *         batch=<label>, format=json|csv, verified=only|any|all,
  *         engagement=any|engaged|replied, min_followers=N, country=US,CA, dry=1
  */
 import { NextResponse } from "next/server";
@@ -82,7 +82,10 @@ export async function GET(request: Request) {
   }
   const limit = Math.min(5000, Math.max(1, parseInt(q.get("limit") ?? "500", 10) || 500));
   const dry = q.get("dry") === "1";
-  const verifiedOnly = (q.get("verified") ?? "only") !== "any";
+  // Accept the obvious spellings for "don't filter" — a typo used to silently
+  // keep the strict filter and look like an empty segment.
+  const verifiedParam = (q.get("verified") ?? "only").toLowerCase();
+  const verifiedOnly = !["any", "all", "no", "false", "0", "off"].includes(verifiedParam);
   // NOTE: we send cold mail as plain text, so Brevo records NO clicks — the
   // real warmth ladder here is: replied > opened > nothing.
   const engagement = (q.get("engagement") ?? "any").toLowerCase();

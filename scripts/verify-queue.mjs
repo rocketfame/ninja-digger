@@ -28,10 +28,31 @@ const CONCURRENCY = parseInt(process.env.CONCURRENCY || "8", 10);
 const DRY = process.env.DRY === "1";
 const unresolved = [];
 
+// SEGMENT=engaged|replied verifies the warm segment first — it is what the
+// marketing bridge hands over, so it must not wait behind 30k cold addresses.
+const SEGMENT = (process.env.SEGMENT || "").toLowerCase();
+const SEGMENT_SQL = {
+  engaged: `SELECT LOWER(email) email, 'sc' src, email_found_at ts FROM sc_artists
+              WHERE email IS NOT NULL AND (COALESCE(opens,0) > 0 OR email_status='engaged')
+                AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')
+            UNION ALL
+            SELECT LOWER(email), 'sp', enriched_at FROM spotify_leads
+              WHERE email IS NOT NULL AND (COALESCE(opens,0) > 0 OR email_status='engaged')
+            UNION ALL
+            SELECT LOWER(TRIM(value)), 'bp', created_at FROM artist_contacts
+              WHERE type='email' AND COALESCE(opens,0) > 0 AND COALESCE(status,'ok')='ok'`,
+  replied: `SELECT LOWER(email) email, 'reply' src, MAX(created_at) ts FROM tg_notifications GROUP BY 1`,
+}[SEGMENT];
+
 // The queue, in the order the barrels will actually pick it up: untouched leads
 // first, newest contacts first (they were never validated by a real send).
 const { rows } = await pool.query(
-  `SELECT email, src FROM (
+  SEGMENT_SQL
+    ? `SELECT email, src FROM (${SEGMENT_SQL}) q
+        WHERE email NOT IN (SELECT LOWER(email) FROM email_blacklist)
+          AND email NOT IN (SELECT email FROM email_verification WHERE verdict IN ('valid','invalid'))
+        ORDER BY ts DESC NULLS LAST LIMIT $1`
+    : `SELECT email, src FROM (
      SELECT LOWER(email) email, 'sc' src, harvested_at ts FROM sc_artists
       WHERE email IS NOT NULL AND COALESCE(sc_touch,0)=0 AND (lead_status IS NULL OR lead_status='New')
         AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')

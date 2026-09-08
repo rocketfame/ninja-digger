@@ -156,8 +156,19 @@ export async function verifyBatchOnHost(
 
             for (const email of chunk) {
               const reply = await readReply(sock, `RCPT TO:<${email}>`, 8000);
-              const v = classifySmtpReply(parseInt(reply.slice(0, 3), 10), reply);
-              out.push({ email, verdict: v === "valid" && catchAll ? "catch_all" : v, note: reply.split("\n")[0] });
+              // A reply that names a DIFFERENT address than the one we just
+              // asked about is a desynchronised session (a late answer to the
+              // catch-all probe, or server-side pipelining). Judging on it once
+              // quarantined a live mailbox, so such replies decide nothing.
+              const named = reply.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,24}/g) ?? [];
+              const mismatched = named.length > 0 && !named.some((a) => a.toLowerCase() === email.toLowerCase());
+              const v = mismatched ? "unknown" : classifySmtpReply(parseInt(reply.slice(0, 3), 10), reply);
+              out.push({
+                email,
+                verdict: v === "valid" && catchAll ? "catch_all" : v,
+                note: mismatched ? `desynced reply (named ${named[0]})` : reply.split("\n")[0],
+              });
+              if (mismatched) break; // the session is out of step — reconnect
             }
             localDone++;
           }
