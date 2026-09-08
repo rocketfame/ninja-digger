@@ -80,7 +80,11 @@ export async function GET(request: Request) {
   const nextTouch = (sql: string): Promise<Lead[]> =>
     pool.query<Lead>(sql, [budget]).then((r) => r.rows).catch(() => [] as Lead[]);
   // Exclude blacklist AND hostile-country domains (russia .ru/.su, Yandex; Belarus .by).
-  const notBlacklisted = `LOWER(email) NOT IN (SELECT LOWER(email) FROM email_blacklist) AND email !~* '\\.(ru|su|by)$|yandex\\.'`;
+  // Handed to the marketing side = they own the conversation now. Sending cold
+  // mail in parallel would mean two different letters from one brand, which is
+  // the fastest way to earn complaints. Released only when they report 'cold'.
+  const notBlacklisted = `LOWER(email) NOT IN (SELECT LOWER(email) FROM email_blacklist) AND email !~* '\\.(ru|su|by)$|yandex\\.'
+     AND LOWER(email) NOT IN (SELECT email FROM lead_exports WHERE COALESCE(outcome,'') <> 'cold')`;
 
   let leads = await nextTouch(
     `SELECT soundcloud_id, username, full_name, email, sc_touch FROM sc_artists

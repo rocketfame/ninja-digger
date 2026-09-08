@@ -50,6 +50,8 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
             AND (CASE WHEN b.released ~ '^\\d{4}-\\d{2}-\\d{2}' THEN b.released::date ELSE NULL END) < current_date - 365)` : ""}
         AND NOT ${JUNK_NAME_SQL}
         AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)
+        -- handed to the marketing side → on hold until they report 'cold'
+        AND LOWER(TRIM(ac.value)) NOT IN (SELECT email FROM lead_exports WHERE COALESCE(outcome,'') <> 'cold')
       ORDER BY ac.artist_beatport_id, ac.confidence DESC
     ) t
     ORDER BY t.tier, CASE t.segment

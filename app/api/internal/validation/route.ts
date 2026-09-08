@@ -67,6 +67,18 @@ export async function GET() {
            COUNT(*) n
       FROM email_blacklist GROUP BY 1 ORDER BY 2 DESC`).then((r) => r.rows).catch(() => []);
 
+  // Proof of the no-double-contact rule: handed-over addresses must receive
+  // zero cold mail while the marketing side owns them.
+  const handover = await one<Record<string, string>>(`
+    SELECT COUNT(*) handed_over,
+           COUNT(*) FILTER (WHERE outcome IS NULL) awaiting_outcome,
+           COUNT(*) FILTER (WHERE outcome = 'cold') released_back,
+           (SELECT COUNT(*) FROM outreach_events o
+             JOIN lead_exports le ON le.email = LOWER(o.contact_value)
+            WHERE o.channel='email' AND o.template_id LIKE '%\\_touch\\_%'
+              AND o.sent_at > le.exported_at AND COALESCE(le.outcome,'') <> 'cold') cold_mail_after_handover_LEAK
+      FROM lead_exports`);
+
   const lastRun = await one<{ at: string; checked: string }>(
     `SELECT MAX(checked_at) at, COUNT(*) checked FROM email_verification WHERE checked_at > now() - interval '24 hours'`
   );
@@ -88,6 +100,7 @@ export async function GET() {
       verified_pct: sTotal ? Number(((100 * num(sent24h.to_verified_live)) / sTotal).toFixed(1)) : 0,
     },
     suppressed,
+    handover,
     verification_last_24h: { addresses_checked: num(lastRun.checked), last_check: lastRun.at ?? null },
     note: "Dead mailboxes go to email_blacklist; every sender barrel filters against it, so a suppressed address cannot be sent to.",
     ts: new Date().toISOString(),

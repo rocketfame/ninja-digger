@@ -47,7 +47,9 @@ export async function GET(request: Request) {
   const { transporter, from, replyTo } = rm.mailer;
   const pct = parseInt(await getSetting("sc_discount", "25"), 10) || 25;
 
-  const notBad = `email IS NOT NULL AND LOWER(email) NOT IN (SELECT LOWER(email) FROM email_blacklist) AND email !~* '\\.(ru|su|by)$|yandex\\.'`;
+  // See sc-outreach: addresses handed to the marketing side are on hold.
+  const notBad = `email IS NOT NULL AND LOWER(email) NOT IN (SELECT LOWER(email) FROM email_blacklist) AND email !~* '\\.(ru|su|by)$|yandex\\.'
+     AND LOWER(email) NOT IN (SELECT email FROM lead_exports WHERE COALESCE(outcome,'') <> 'cold')`;
   type Lead = { id: number; source: string; name: string | null; email: string; touch: number };
   const pick = (sql: string) => pool.query<Lead>(sql, [budget]).then((r) => r.rows).catch(() => [] as Lead[]);
 
