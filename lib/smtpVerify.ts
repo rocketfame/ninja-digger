@@ -87,6 +87,80 @@ async function probe(host: string, email: string, from: string, helo: string): P
 }
 
 /**
+ * Verify MANY mailboxes that share one MX host over a SINGLE connection.
+ * SMTP allows many RCPT TO per session, so 50 Gmail addresses cost one
+ * connection instead of 50 — roughly 10x faster AND gentler on the receiving
+ * server than hammering it with parallel connections (which is what gets a
+ * single sending IP throttled).
+ */
+export async function verifyBatchOnHost(
+  host: string,
+  emails: string[],
+  opts: { from?: string; helo?: string; perConnection?: number } = {}
+): Promise<MailboxResult[]> {
+  const from = opts.from ?? "max@promosound.net";
+  const helo = opts.helo ?? "promosound.net";
+  const chunkSize = opts.perConnection ?? 40;
+  const out: MailboxResult[] = [];
+
+  for (let i = 0; i < emails.length; i += chunkSize) {
+    const chunk = emails.slice(i, i + chunkSize);
+    const results = await new Promise<MailboxResult[]>((resolve) => {
+      const sock = net.createConnection({ host, port: 25, timeout: 20000 });
+      const acc: MailboxResult[] = [];
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        try { sock.destroy(); } catch { /* closed */ }
+        // Anything we did not get to is inconclusive, never a removal.
+        for (const e of chunk.slice(acc.length)) acc.push({ email: e, verdict: "unknown", note: "batch cut short" });
+        resolve(acc);
+      };
+      sock.on("error", finish);
+      sock.on("timeout", finish);
+      void (async () => {
+        try {
+          await readReply(sock, null, 12000);
+          await readReply(sock, `EHLO ${helo}`);
+          await readReply(sock, `MAIL FROM:<${from}>`);
+          // Catch-all probe once per connection (same domain for the whole chunk).
+          const domain = chunk[0]?.split("@")[1] ?? "";
+          let catchAll = false;
+          try {
+            const rnd = `zz${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}@${domain}`;
+            const rp = await readReply(sock, `RCPT TO:<${rnd}>`, 8000);
+            catchAll = classifySmtpReply(parseInt(rp.slice(0, 3), 10), rp) === "valid";
+          } catch { /* inconclusive */ }
+          for (const email of chunk) {
+            const reply = await readReply(sock, `RCPT TO:<${email}>`, 8000);
+            const code = parseInt(reply.slice(0, 3), 10);
+            const v = classifySmtpReply(code, reply);
+            acc.push({ email, verdict: v === "valid" && catchAll ? "catch_all" : v, note: reply.split("\n")[0] });
+          }
+          try { await readReply(sock, "QUIT", 3000); } catch { /* ignore */ }
+          finish();
+        } catch {
+          finish();
+        }
+      })();
+    });
+    out.push(...results);
+  }
+  return out;
+}
+
+/** Primary MX host for a domain, or null. Exported so callers can group work per host. */
+export async function primaryMx(domain: string): Promise<string | null> {
+  try {
+    const mx = (await dns.resolveMx(domain)).sort((a, b) => a.priority - b.priority).map((m) => m.exchange).filter(Boolean);
+    if (mx.length === 0) return null;
+    if (mx.some((h) => UNVERIFIABLE_MX.test(h))) return null; // provider blocks probes
+    return mx[0];
+  } catch { return null; }
+}
+
+/**
  * Verify one mailbox. Tries up to two MX hosts before giving up (a single
  * refused host is not evidence — that cost `deep-email-validator` two correct
  * detections on our set).
