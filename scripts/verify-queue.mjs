@@ -46,6 +46,7 @@ const { rows } = await pool.query(
       WHERE email IS NOT NULL AND COALESCE(sp_touch,0)=0 AND (lead_status IS NULL OR lead_status='New')
    ) q
    WHERE email NOT IN (SELECT LOWER(email) FROM email_blacklist)
+   AND (email NOT IN (SELECT email FROM email_verification WHERE verdict IN ('valid','invalid') OR checked_at > now() - interval '30 days'))
    ORDER BY ts DESC NULLS LAST
    LIMIT $1`,
   [LIMIT]
@@ -62,6 +63,14 @@ async function worker() {
     const row = rows[idx++];
     const r = await verifyMailbox(row.email).catch(() => ({ email: row.email, verdict: "unknown" }));
     counts[r.verdict] = (counts[r.verdict] ?? 0) + 1;
+    if (!DRY) {
+      // Ledger EVERY verdict, so "how much of the queue is verified" is answerable.
+      await pool.query(
+        `INSERT INTO email_verification (email, verdict, note, checked_at) VALUES ($1,$2,$3, now())
+         ON CONFLICT (email) DO UPDATE SET verdict = EXCLUDED.verdict, note = EXCLUDED.note, checked_at = now()`,
+        [r.email, r.verdict, (r.note ?? "").slice(0, 200)]
+      ).catch(() => {});
+    }
     if (r.verdict === "invalid") {
       if (samples.length < 12) samples.push(`${row.src} ${r.email} — ${r.note ?? ""}`);
       if (!DRY) await quarantineEmail(r.email, `smtp: mailbox does not exist (${r.note ?? "5xx"})`);
