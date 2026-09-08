@@ -42,4 +42,4 @@ npm run lint         # лінтер
 - `enrich/` — LLM-based enrichment
 - `lib/` — DB utils, outreach logic
 - `migrations/` — SQL migrations (001–010)
-- `knowledge/` — проєктна документація
+- `knowledge/` — проєктна документація (`AUTOMATION.md` — усе, що працює саме, і як це вимкнути)
