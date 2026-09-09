@@ -59,19 +59,14 @@ export async function GET(request: Request) {
   type Lead = { id: number; source: string; name: string | null; email: string; touch: number };
   const pick = (sql: string) => pool.query<Lead>(sql, [budget]).then((r) => r.rows).catch(() => [] as Lead[]);
 
-  let leads = await pick(
-    `SELECT id, source, name, email, touch FROM radar_leads
-     WHERE touch = 2 AND status='contacted' AND contacted_at < now() - interval '4 days' AND ${notBad}
-     ORDER BY heat_score DESC LIMIT $1`);
-  if (leads.length < budget) leads = leads.concat(await pick(
-    `SELECT id, source, name, email, touch FROM radar_leads
-     WHERE touch = 1 AND status='contacted' AND contacted_at < now() - interval '3 days' AND ${notBad}
-     ORDER BY heat_score DESC LIMIT $1`));
-  if (leads.length < budget) leads = leads.concat(await pick(
+  // ONE cold letter per lead, ever. People who are interested answer the first
+  // email; the second and third only added volume and complaint risk. A lead who
+  // reacts is followed up by hand — the reply lands in Telegram with a drafted
+  // answer, and nothing goes out until it is approved there.
+  const leads = (await pick(
     `SELECT id, source, name, email, touch FROM radar_leads
      WHERE COALESCE(touch,0) = 0 AND COALESCE(status,'new') IN ('new','queued') AND ${notBad}
-     ORDER BY heat_score DESC LIMIT $1`));
-  leads = leads.slice(0, budget);
+     ORDER BY heat_score DESC LIMIT $1`)).slice(0, budget);
 
   let sent = 0, skippedJunk = 0;
   for (const lead of leads) {

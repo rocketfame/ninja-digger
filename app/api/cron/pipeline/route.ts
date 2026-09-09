@@ -187,10 +187,9 @@ export async function GET(request: Request) {
       // exceeded 3x by running three back-to-back batches in one hour.
       let budget = Math.min(cap - sentToday, senders.budget);
       if (senders.budget <= 0) actions.push("bp: all sender accounts capped/blocked");
-      const t1 = await sendBeatportBatch(1, "New", "Attempt 1", 0, budget, senders); budget -= t1;
-      const t2 = await sendBeatportBatch(2, "Attempt 1", "Attempt 2", 2, budget, senders); budget -= t2;
-      const t3 = await sendBeatportBatch(3, "Attempt 2", "No Response", 3, budget, senders);
-      if (t1 + t2 + t3 > 0) actions.push(`bp: T1=${t1} T2=${t2} T3=${t3}`);
+      // ONE cold letter per lead — follow-ups happen by hand after a reply.
+      const t1 = await sendBeatportBatch(1, "New", "Attempt 1", 0, budget, senders);
+      if (t1 > 0) actions.push(`bp: T1=${t1}`);
     }
   }
 

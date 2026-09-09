@@ -122,25 +122,53 @@ export async function GET(request: Request) {
   });
 }
 
-/** Feedback loop: { outcomes: [{ email, outcome }] }. Bad outcomes are suppressed here too. */
+/**
+ * Feedback loop — and the whole of the "sync" with the marketing side.
+ *
+ * There is no second system to reconcile against: eSputnik reports what it did
+ * into email_events, the same table Brevo's events land in, tagged
+ * meta.src='esputnik' with the campaign. One timeline per person answers "who
+ * was mailed, from where, when" with a single query.
+ *
+ * Body: { outcomes: [{ email, outcome, at?, campaign? }] }
+ *   outcome: sent | delivered | opened | clicked | bounced | complained |
+ *            unsubscribed | converted | cold
+ *
+ * Two of them are load-bearing:
+ *   - anything negative suppresses the address for US too, immediately, so an
+ *     unsubscribe on the main domain can never be followed by a cold email
+ *   - 'cold' hands the lead back: we may contact it again
+ */
 export async function POST(request: Request) {
   if (!bridgeAuthorized(request)) return unauthorized();
-  const body = (await request.json().catch(() => ({}))) as { outcomes?: { email?: string; outcome?: string }[] };
+  const body = (await request.json().catch(() => ({}))) as {
+    outcomes?: { email?: string; outcome?: string; at?: string; campaign?: string }[];
+  };
   const items = (body.outcomes ?? []).filter((o) => o.email && o.outcome);
   if (items.length === 0) return NextResponse.json({ error: "outcomes[] required" }, { status: 400 });
 
   const { quarantineEmail } = await import("@/lib/emailScrub");
-  let recorded = 0, suppressed = 0;
-  for (const { email, outcome } of items) {
+  let recorded = 0, logged = 0, suppressed = 0, released = 0;
+  for (const { email, outcome, at, campaign } of items) {
     const e = String(email).trim().toLowerCase();
     const o = String(outcome).trim().toLowerCase();
+    const ts = at && !Number.isNaN(Date.parse(at)) ? new Date(at) : new Date();
+
+    await pool.query(
+      `INSERT INTO email_events (email, event, ts, meta) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (email, event, ts) DO NOTHING`,
+      [e, o, ts, JSON.stringify({ src: "esputnik", ...(campaign ? { campaign } : {}) })]
+    ).then((r) => { logged += r.rowCount ?? 0; }).catch(() => {});
+
     await pool.query(
       `UPDATE lead_exports SET outcome = $2, outcome_at = now() WHERE email = $1`, [e, o]
     ).then((r) => { recorded += r.rowCount ?? 0; }).catch(() => {});
+
     if (/bounce|complain|spam|unsub|invalid/.test(o)) {
-      await quarantineEmail(e, `esputnik feedback: ${o}`);
+      await quarantineEmail(e, `esputnik: ${o}`);
       suppressed++;
     }
+    if (o === "cold") released++;
   }
-  return NextResponse.json({ ok: true, recorded, suppressed, ts: new Date().toISOString() });
+  return NextResponse.json({ ok: true, recorded, logged, suppressed, released, ts: new Date().toISOString() });
 }

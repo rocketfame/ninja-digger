@@ -76,26 +76,15 @@ export async function GET(request: Request) {
   // Follow-ups first (warmer), then fresh openers. Touch 2 waits 3 days after
   // touch 1, touch 3 waits 4 more. A reply/bounce/opt-out flips lead_status and
   // drops the lead out of the sequence automatically.
-  let leads = await nextTouch(
+  // ONE cold letter per lead, ever. People who are interested answer the first
+  // email; the second and third only added volume and complaint risk. A lead who
+  // reacts is followed up by hand — the reply lands in Telegram with a drafted
+  // answer, and nothing goes out until it is approved there.
+  const leads = (await nextTouch(
     `SELECT ig_username, full_name, email, sp_touch FROM spotify_leads
-     WHERE sp_touch = 2 AND lead_status = 'Contacted' AND contacted_at < now() - interval '4 days'
+     WHERE sp_touch = 0 AND (lead_status IS NULL OR lead_status = 'New')
        AND email IS NOT NULL AND ${notBlacklisted}
-     ORDER BY followers DESC NULLS LAST LIMIT $1`);
-  if (leads.length < budget) {
-    leads = leads.concat(await nextTouch(
-      `SELECT ig_username, full_name, email, sp_touch FROM spotify_leads
-       WHERE sp_touch = 1 AND lead_status = 'Contacted' AND contacted_at < now() - interval '3 days'
-         AND email IS NOT NULL AND ${notBlacklisted}
-       ORDER BY followers DESC NULLS LAST LIMIT $1`));
-  }
-  if (leads.length < budget) {
-    leads = leads.concat(await nextTouch(
-      `SELECT ig_username, full_name, email, sp_touch FROM spotify_leads
-       WHERE sp_touch = 0 AND (lead_status IS NULL OR lead_status = 'New')
-         AND email IS NOT NULL AND ${notBlacklisted}
-       ORDER BY followers DESC NULLS LAST LIMIT $1`));
-  }
-  leads = leads.slice(0, budget);
+     ORDER BY followers DESC NULLS LAST LIMIT $1`)).slice(0, budget);
 
   let sent = 0, skippedJunk = 0;
   const byTouch: Record<number, number> = { 1: 0, 2: 0, 3: 0 };

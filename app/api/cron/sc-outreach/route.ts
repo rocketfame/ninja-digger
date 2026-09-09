@@ -81,26 +81,15 @@ export async function GET(request: Request) {
     pool.query<Lead>(sql, [budget]).then((r) => r.rows).catch(() => [] as Lead[]);
   const notBlacklisted = contactableSql();
 
-  let leads = await nextTouch(
+  // ONE cold letter per lead, ever. People who are interested answer the first
+  // email; the second and third only added volume and complaint risk. A lead who
+  // reacts is followed up by hand — the reply lands in Telegram with a drafted
+  // answer, and nothing goes out until it is approved there.
+  const leads = (await nextTouch(
     `SELECT soundcloud_id, username, full_name, email, sc_touch FROM sc_artists
-     WHERE sc_touch = 2 AND lead_status = 'Contacted' AND contacted_at < now() - interval '4 days'
-       AND email IS NOT NULL AND ${notBlacklisted}
-     ORDER BY (tier='A') DESC, followers_count DESC LIMIT $1`);
-  if (leads.length < budget) {
-    leads = leads.concat(await nextTouch(
-      `SELECT soundcloud_id, username, full_name, email, sc_touch FROM sc_artists
-       WHERE sc_touch = 1 AND lead_status = 'Contacted' AND contacted_at < now() - interval '3 days'
-         AND email IS NOT NULL AND ${notBlacklisted}
-       ORDER BY (tier='A') DESC, followers_count DESC LIMIT $1`));
-  }
-  if (leads.length < budget) {
-    leads = leads.concat(await nextTouch(
-      `SELECT soundcloud_id, username, full_name, email, sc_touch FROM sc_artists
-       WHERE sc_touch = 0 AND (lead_status IS NULL OR lead_status = 'New')
-         AND track_count >= 1 AND email IS NOT NULL AND ${notBlacklisted}
-       ORDER BY (tier='A') DESC, followers_count DESC LIMIT $1`));
-  }
-  leads = leads.slice(0, budget);
+     WHERE sc_touch = 0 AND (lead_status IS NULL OR lead_status = 'New')
+       AND track_count >= 1 AND email IS NOT NULL AND ${notBlacklisted}
+     ORDER BY (tier='A') DESC, followers_count DESC LIMIT $1`)).slice(0, budget);
 
   let sent = 0, skippedJunk = 0;
   const byTouch: Record<number, number> = { 1: 0, 2: 0, 3: 0 };
