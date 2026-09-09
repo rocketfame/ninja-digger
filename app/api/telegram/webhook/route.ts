@@ -13,6 +13,8 @@ import { pool } from "@/lib/db";
 import { sendTelegramMessage, sendForceReply, editMessageReplyMarkup, tgEscape, answerCallbackQuery, type InlineButton } from "@/lib/telegram";
 import { buildStats, buildDailyReport, buildFullReport, buildScReport } from "@/lib/reports";
 import { wrapEmailHtml, TEXT_SIGNATURE } from "@/lib/emailTemplate";
+import { setSetting } from "@/lib/settings";
+import { SUPPRESSED_SQL } from "@/lib/leadPolicy";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -39,15 +41,6 @@ const MENU_KEYBOARD: InlineButton[][] = [
   [{ text: "🌐 Дашборд", url: "https://ninja-digger.vercel.app/" }],
   [{ text: "💿 Beatport", url: "https://ninja-digger.vercel.app/leads" }, { text: "☁️ SoundCloud", url: "https://ninja-digger.vercel.app/sc-leads" }],
 ];
-
-
-async function setSetting(key: string, value: string): Promise<void> {
-  await pool.query(
-    `INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, now())
-     ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = now()`,
-    [key, value]
-  );
-}
 
 async function handleCommand(cmd: string): Promise<void> {
   switch (cmd) {
@@ -86,7 +79,7 @@ async function handleCommand(cmd: string): Promise<void> {
            LEFT JOIN lead_profiles lp ON lp.artist_beatport_id = ac.artist_beatport_id
            WHERE ac.type='email' AND ac.confidence>=0.65 AND (ac.status IS NULL OR ac.status='ok')
              AND (lp.status IS NULL OR lp.status='New') AND am.last_seen >= current_date - 14
-             AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)
+             AND LOWER(ac.value) NOT IN (${SUPPRESSED_SQL})
            ORDER BY ac.artist_beatport_id
          ) t
          ORDER BY CASE t.segment WHEN 'NEWCOMER' THEN 0 WHEN 'NEW_ENTRY' THEN 1 WHEN 'FAST_GROWING' THEN 2 ELSE 3 END,

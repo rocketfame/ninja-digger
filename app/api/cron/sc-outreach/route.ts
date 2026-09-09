@@ -8,11 +8,12 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRotatingMailersChecked, senderPool, getSentBySenderToday } from "@/lib/mailer";
 import { rampCap } from "@/lib/sendPacing";
-import { contactableSql } from "@/lib/leadSegments";
+import { contactableSql } from "@/lib/leadPolicy";
 import { buildScEmail } from "@/lib/scOutreachCopy";
 import { isHardBounceError, validateEmailForOutreach } from "@/lib/emailHygiene";
 import { quarantineEmail } from "@/lib/emailScrub";
 import { acquireLease } from "@/lib/cronLock";
+import { getSetting, setSetting } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -20,13 +21,6 @@ export const maxDuration = 300;
 const BASE_URL = "https://ninja-digger.vercel.app";
 const PER_RUN = 15;        // 4 runs/hour: the hourly allowance is spread, not burnt at once
 
-async function getSetting(key: string, fallback: string): Promise<string> {
-  return pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key=$1`, [key])
-    .then((r) => r.rows[0]?.value ?? fallback).catch(() => fallback);
-}
-async function setSetting(key: string, value: string): Promise<void> {
-  await pool.query(`INSERT INTO app_settings (key,value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=$2`, [key, value]).catch(() => {});
-}
 
 // Progressive warm-up: 20/day, growing ~25%/day (geometric), so we reach the
 // ceiling in ~10 days instead of weeks. Ceiling is app_settings 'outreach_ramp_max'
@@ -53,7 +47,8 @@ export async function GET(request: Request) {
 
   // First live run stamps the ramp start date.
   let start = await getSetting("sc_outreach_start", "");
-  if (!start) { start = new Date().toISOString(); await setSetting("sc_outreach_start", start); }
+  // A failed stamp is not worth aborting a send run: the next run recomputes it.
+  if (!start) { start = new Date().toISOString(); await setSetting("sc_outreach_start", start).catch(() => {}); }
   const daysSinceStart = Math.floor((Date.now() - Date.parse(start)) / 86400000);
   const rampMax = parseInt(await getSetting("outreach_ramp_max", "130"), 10) || 130;
   const cap = rampCap(daysSinceStart, rampMax);

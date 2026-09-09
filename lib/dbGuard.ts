@@ -10,6 +10,7 @@
  */
 import { pool } from "@/lib/db";
 import { sendTelegramMessage } from "@/lib/telegram";
+import { getSettingOrNull, setSetting } from "@/lib/settings";
 
 const RECLAIM_MB = 440;
 const ALERT_MB = 480;
@@ -22,16 +23,6 @@ async function sizeMB(): Promise<number> {
   return Number(r.rows[0].mb);
 }
 
-async function getSetting(key: string): Promise<string | null> {
-  return pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key=$1`, [key])
-    .then((r) => r.rows[0]?.value ?? null).catch(() => null);
-}
-async function setSetting(key: string, value: string): Promise<void> {
-  await pool.query(
-    `INSERT INTO app_settings (key, value) VALUES ($1,$2)
-     ON CONFLICT (key) DO UPDATE SET value=$2`, [key, value]
-  ).catch(() => {});
-}
 
 export async function defendDbSpace(): Promise<{ before: number; after: number; reclaimed: boolean; alerted: boolean }> {
   const before = await sizeMB();
@@ -61,7 +52,7 @@ export async function defendDbSpace(): Promise<{ before: number; after: number; 
   const after = await sizeMB();
 
   if (after >= ALERT_MB) {
-    const last = await getSetting("db_alert_at");
+    const last = await getSettingOrNull("db_alert_at");
     const lastMs = last ? Date.parse(last) : 0;
     if (!last || Date.now() - lastMs > ALERT_EVERY_MS) {
       await sendTelegramMessage(

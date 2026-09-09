@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   OPEN_EVENTS, PLATFORMS, contactableSql, isOpenEvent, leadSourcesSql,
-} from "../leadSegments";
+} from "../leadPolicy";
 
 const COLUMNS = ["email", "platform", "name", "followers", "country", "profile_url", "found_at", "touch", "email_status"];
 

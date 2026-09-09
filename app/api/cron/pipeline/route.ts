@@ -15,7 +15,7 @@ const PLAIN_SIGNATURE = `\n\n--\nMax\nPromoSound`;
 import { JUNK_NAME_SQL, TIER_SQL } from "@/lib/leadQuality";
 import { getRotatingMailersChecked, senderPool, getSentBySenderToday } from "@/lib/mailer";
 import { rampCap } from "@/lib/sendPacing";
-import { contactableSql } from "@/lib/leadSegments";
+import { contactableSql } from "@/lib/leadPolicy";
 import { buildTouchEmail } from "@/lib/touchCopy";
 import { acquireLease } from "@/lib/cronLock";
 

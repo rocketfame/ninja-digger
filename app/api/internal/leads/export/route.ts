@@ -22,7 +22,8 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { isAuthorized, unauthorized } from "@/lib/apiAuth";
-import { HANDED_OVER_SQL, OPENED_SQL, PLATFORMS, REPLIED_SQL, SUPPRESSED_SQL, leadSourcesSql, type Platform } from "@/lib/leadSegments";
+import { HANDED_OVER_SQL, OPENED_SQL, PLATFORMS, REPLIED_SQL, SUPPRESSED_SQL, leadSourcesSql, type Platform } from "@/lib/leadPolicy";
+import { csvCell } from "@/lib/csv";
 
 /**
  * The marketing side gets its OWN token (LEADGEN_TOKEN), not the dashboard
@@ -38,10 +39,6 @@ function bridgeAuthorized(request: Request): boolean {
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const csvCell = (v: unknown) => {
-  const s = v == null ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
 
 export async function GET(request: Request) {
   if (!bridgeAuthorized(request)) return unauthorized();

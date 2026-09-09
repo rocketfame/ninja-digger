@@ -9,18 +9,18 @@
  *
  * The "validated base" is not a separate list: verification writes dead
  * mailboxes into email_blacklist, and every sender barrel already filters
- * `LOWER(email) NOT IN (SELECT LOWER(email) FROM email_blacklist)`. So a
+ * `LOWER(email) NOT IN (${SUPPRESSED_SQL})`. So a
  * suppressed address is physically unable to receive a send.
  */
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { contactableSql, leadSourcesSql } from "@/lib/leadSegments";
+import { contactableSql, leadSourcesSql } from "@/lib/leadPolicy";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 // The sending queue = leads that have not been contacted yet and are still
-// contactable. Both halves come from lib/leadSegments so this audit measures
+// contactable. Both halves come from lib/leadPolicy so this audit measures
 // exactly what the barrels will pick up.
 const QUEUE_SQL = `SELECT email FROM (${leadSourcesSql()}) q WHERE q.touch = 0 AND ${contactableSql("q.email")}`;
 

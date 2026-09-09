@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { isAuthorized, unauthorized } from "@/lib/apiAuth";
 import { getSegmentRows, type EmailSegmentType } from "@/lib/emailSegments";
+import { csvCell } from "@/lib/csv";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -13,10 +14,6 @@ export const maxDuration = 60;
 const TYPES: EmailSegmentType[] = ["no_reply", "warm", "dead", "all_email", "not_contacted", "gems"];
 const ROLES = ["personal", "booking", "management", "generic", "unknown"];
 
-function csvCell(v: string | null): string {
-  const s = v ?? "";
-  return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 
 export async function GET(request: Request) {
   if (!isAuthorized(request)) return unauthorized();

@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 import { isAuthorized, unauthorized } from "@/lib/apiAuth";
 import { pool } from "@/lib/db";
+import { csvCell } from "@/lib/csv";
 
 export const dynamic = "force-dynamic";
 
@@ -19,10 +20,6 @@ type Row = {
   followers: number | null; video_count: number | null; heat_score: number; intent_signal: string | null; source: string;
 };
 
-const csvCell = (v: unknown) => {
-  const s = String(v ?? "");
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
 
 export async function GET(request: Request) {
   if (!isAuthorized(request)) return unauthorized();

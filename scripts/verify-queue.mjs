@@ -21,7 +21,7 @@ for (const k of ["DATABASE_URL", "DATABASE_URL_UNPOOLED"]) {
   if (v && !process.env[k]) process.env[k] = v;
 }
 const { verifyBatchOnHost, allMx } = await import("../lib/smtpVerify.ts");
-const { OPENED_SQL, REPLIED_SQL, SUPPRESSED_SQL, contactableSql, leadSourcesSql } = await import("../lib/leadSegments.ts");
+const { OPENED_SQL, REPLIED_SQL, SUPPRESSED_SQL, contactableSql, leadSourcesSql } = await import("../lib/leadPolicy.ts");
 const { quarantineEmail } = await import("../lib/emailScrub.ts");
 const { pool } = await import("../lib/db.ts");
 
@@ -33,7 +33,7 @@ const unresolved = [];
 // SEGMENT=engaged|replied verifies the warm segment first — it is what the
 // marketing bridge hands over, so it must not wait behind 30k cold addresses.
 const SEGMENT = (process.env.SEGMENT || "").toLowerCase();
-// Segment definitions come from lib/leadSegments, the same ones the marketing
+// Segment definitions come from lib/leadPolicy, the same ones the marketing
 // bridge hands over on — this script used to carry its own copy and disagreed.
 const SEGMENT_SQL = {
   engaged: `SELECT q.email, q.platform src, q.found_at ts FROM (${leadSourcesSql()}) q

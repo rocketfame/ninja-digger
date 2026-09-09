@@ -13,6 +13,7 @@ import { NextResponse } from "next/server";
 import { isAuthorized, unauthorized } from "@/lib/apiAuth";
 import { pool } from "@/lib/db";
 import * as nodemailer from "nodemailer";
+import { SUPPRESSED_SQL } from "@/lib/leadPolicy";
 
 export const maxDuration = 300; // 5 min for slow sends with 15-30s delays
 
@@ -120,7 +121,7 @@ export async function POST(request: Request) {
         JOIN artist_metrics am ON ac.artist_beatport_id = am.artist_beatport_id
         WHERE ac.artist_beatport_id = $1 AND ac.type = 'email' AND ac.confidence >= 0.65
           AND (ac.status IS NULL OR ac.status = 'ok')
-          AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)
+          AND LOWER(ac.value) NOT IN (${SUPPRESSED_SQL})
         ORDER BY ac.artist_beatport_id, ac.confidence DESC
       `;
       params = [specificArtistId];
@@ -133,7 +134,7 @@ export async function POST(request: Request) {
         LEFT JOIN lead_profiles lp ON ac.artist_beatport_id = lp.artist_beatport_id
         WHERE ac.type = 'email' AND ac.confidence >= 0.65
           AND (ac.status IS NULL OR ac.status = 'ok')
-          AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)
+          AND LOWER(ac.value) NOT IN (${SUPPRESSED_SQL})
           AND (lp.status IS NULL OR lp.status = $1)
         ORDER BY ac.artist_beatport_id, ac.confidence DESC
         LIMIT $2
@@ -163,7 +164,7 @@ export async function POST(request: Request) {
         `SELECT value FROM artist_contacts
          WHERE artist_beatport_id = $1 AND type = 'email' AND confidence >= 0.65
            AND (status IS NULL OR status = 'ok')
-           AND LOWER(value) NOT IN (SELECT LOWER(email) FROM email_blacklist)
+           AND LOWER(value) NOT IN (${SUPPRESSED_SQL})
          ORDER BY confidence DESC`,
         [lead.id]
       );

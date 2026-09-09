@@ -1,14 +1,11 @@
 import { NextResponse } from "next/server";
 import { isAuthorized, unauthorized } from "@/lib/apiAuth";
 import { pool } from "@/lib/db";
+import { csvCell } from "@/lib/csv";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-function csvCell(v: string | null): string {
-  const s = v ?? "";
-  return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 
 export async function GET(request: Request) {
   if (!isAuthorized(request)) return unauthorized();

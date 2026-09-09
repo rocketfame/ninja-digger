@@ -10,19 +10,14 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { getSenders } from "@/lib/outreachSenders";
-import { isOpenEvent } from "@/lib/leadSegments";
+import { isOpenEvent } from "@/lib/leadPolicy";
+import { getSetting, setSetting } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 type BrevoEvent = { email?: string; event?: string; date?: string };
 
-async function getSetting(key: string, fb: string) {
-  return pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key=$1`, [key]).then((r) => r.rows[0]?.value ?? fb).catch(() => fb);
-}
-async function setSetting(key: string, value: string) {
-  await pool.query(`INSERT INTO app_settings (key,value,updated_at) VALUES ($1,$2,now()) ON CONFLICT (key) DO UPDATE SET value=$2, updated_at=now()`, [key, value]).catch(() => {});
-}
 
 /** Record one event; returns true only when it was NEW (not seen before). */
 async function record(email: string, event: string, date: string | undefined, account: string): Promise<boolean> {
@@ -115,6 +110,9 @@ export async function GET(request: Request) {
     ).catch(() => {});
     return NextResponse.json({ ok: false, failed: true, processed, fresh, debug, ts: new Date().toISOString() }, { status: 500 });
   }
-  await setSetting("brevo_poll_since", endDate);
+  // Cursor write failing just means the next run re-polls the same window,
+  // which is idempotent — do not fail a completed poll over it.
+  await setSetting("brevo_poll_since", endDate).catch((e) =>
+    console.error("[brevo-poll] cursor write failed:", e instanceof Error ? e.message : e));
   return NextResponse.json({ ok: true, accounts: accounts.map((a) => a.id), window: [startDate, endDate], processed, fresh, ts: new Date().toISOString() });
 }

@@ -8,20 +8,18 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRotatingMailersChecked, senderPool, getSentBySenderToday } from "@/lib/mailer";
 import { rampCap } from "@/lib/sendPacing";
-import { contactableSql } from "@/lib/leadSegments";
+import { contactableSql } from "@/lib/leadPolicy";
 import { buildRadarEmail } from "@/lib/radarOutreachCopy";
 import { isHardBounceError, validateEmailForOutreach } from "@/lib/emailHygiene";
 import { quarantineEmail } from "@/lib/emailScrub";
 import { acquireLease } from "@/lib/cronLock";
+import { getSetting } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const PER_RUN = 15;        // 4 runs/hour: the hourly allowance is spread, not burnt at once
 
-async function getSetting(key: string, fb: string) {
-  return pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key=$1`, [key]).then((r) => r.rows[0]?.value ?? fb).catch(() => fb);
-}
 
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;

@@ -4,15 +4,11 @@
 
 import { pool } from "@/lib/db";
 import { getDailyCapacity } from "@/lib/mailer";
-import { SUPPRESSED_SQL } from "@/lib/leadSegments";
+import { getSettingOrNull } from "@/lib/settings";
+import { SUPPRESSED_SQL } from "@/lib/leadPolicy";
 
 const q = (sql: string) => pool.query(sql).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
 
-export async function getSetting(key: string): Promise<string | null> {
-  return pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key = $1`, [key])
-    .then((r) => r.rows[0]?.value ?? null)
-    .catch(() => null);
-}
 
 export async function buildStats(): Promise<string> {
   const [sentToday, sent7d, sentTotal, replied, won, optOut, queue, validEmails, bounced, newcomersToday] = await Promise.all([
@@ -27,13 +23,13 @@ export async function buildStats(): Promise<string> {
        LEFT JOIN lead_profiles lp ON lp.artist_beatport_id = ac.artist_beatport_id
        WHERE ac.type='email' AND ac.confidence>=0.65 AND (ac.status IS NULL OR ac.status='ok')
          AND (lp.status IS NULL OR lp.status='New') AND am.last_seen >= current_date - 14
-         AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)`),
+         AND LOWER(ac.value) NOT IN (${SUPPRESSED_SQL})`),
     q("SELECT COUNT(DISTINCT artist_beatport_id)::int c FROM artist_contacts WHERE type='email' AND (status IS NULL OR status='ok')"),
     q("SELECT COUNT(*)::int c FROM artist_contacts WHERE status='bounced'"),
     q(`SELECT COUNT(*)::int c FROM lead_scores ls JOIN artist_metrics am ON am.artist_beatport_id=ls.artist_beatport_id
        WHERE ls.segment='NEWCOMER' AND am.first_seen >= CURRENT_DATE - 1`),
   ]);
-  const paused = (await getSetting("outreach_paused")) === "1";
+  const paused = (await getSettingOrNull("outreach_paused")) === "1";
   return (
     `📊 <b>Lead Digger — статус</b>\n\n` +
     `${paused ? "⏸ Розсилка НА ПАУЗІ\n\n" : "▶️ Розсилка активна\n\n"}` +
@@ -50,8 +46,8 @@ export async function buildDailyReport(): Promise<string> {
   const [chartsToday, enrichRunsToday, paused, cap] = await Promise.all([
     q("SELECT COUNT(*)::int c FROM bptoptracker_daily WHERE snapshot_date = CURRENT_DATE"),
     q("SELECT COUNT(*)::int c FROM enrichment_runs WHERE started_at >= CURRENT_DATE"),
-    getSetting("outreach_paused").then((v) => v === "1"),
-    getSetting("daily_send_cap").then((v) => parseInt(v ?? "999", 10) || 999),
+    getSettingOrNull("outreach_paused").then((v) => v === "1"),
+    getSettingOrNull("daily_send_cap").then((v) => parseInt(v ?? "999", 10) || 999),
   ]);
   const [newLeads, newNewcomers, contactsFound, emailsFound, t1, t2, t3, replies, optOuts, bouncedToday, queue] = await Promise.all([
     q("SELECT COUNT(*)::int c FROM artist_metrics WHERE first_seen >= CURRENT_DATE"),
@@ -70,7 +66,7 @@ export async function buildDailyReport(): Promise<string> {
        LEFT JOIN lead_profiles lp ON lp.artist_beatport_id = ac.artist_beatport_id
        WHERE ac.type='email' AND ac.confidence>=0.65 AND (ac.status IS NULL OR ac.status='ok')
          AND (lp.status IS NULL OR lp.status='New') AND am.last_seen >= current_date - 14
-         AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)`),
+         AND LOWER(ac.value) NOT IN (${SUPPRESSED_SQL})`),
   ]);
   const totalSent = t1 + t2 + t3;
 
@@ -136,9 +132,9 @@ export async function buildScReport(): Promise<string> {
   const queue = await one<{ c: number }>(
     `SELECT COUNT(*)::int c FROM sc_artists
      WHERE email IS NOT NULL AND sc_touch = 0 AND (lead_status IS NULL OR lead_status='New') AND track_count >= 1
-       AND LOWER(email) NOT IN (SELECT LOWER(email) FROM email_blacklist)`
+       AND LOWER(email) NOT IN (${SUPPRESSED_SQL})`
   );
-  const paused = (await getSetting("sc_outreach_paused")) === "1";
+  const paused = (await getSettingOrNull("sc_outreach_paused")) === "1";
 
   const emails = totals?.emails ?? 0;
   const newEmails = today?.new_emails ?? 0;
@@ -198,7 +194,7 @@ export async function buildFullReport(period?: string): Promise<string> {
     n(`SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sc_touch_%' AND ${T}`),
     n(`SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sp_touch_%' AND ${T}`),
     n(`SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'radar_touch_%' AND ${T}`),
-    n(`SELECT COUNT(DISTINCT ac.artist_beatport_id)::int c FROM artist_contacts ac LEFT JOIN lead_profiles lp ON lp.artist_beatport_id=ac.artist_beatport_id WHERE ac.type='email' AND (lp.status IS NULL OR lp.status='New') AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)`),
+    n(`SELECT COUNT(DISTINCT ac.artist_beatport_id)::int c FROM artist_contacts ac LEFT JOIN lead_profiles lp ON lp.artist_beatport_id=ac.artist_beatport_id WHERE ac.type='email' AND (lp.status IS NULL OR lp.status='New') AND LOWER(ac.value) NOT IN (${SUPPRESSED_SQL})`),
     n(`SELECT COUNT(*)::int c FROM sc_artists WHERE email IS NOT NULL AND (lead_status IS NULL OR lead_status='New') AND ${notBl}`),
     n(`SELECT COUNT(*)::int c FROM spotify_leads WHERE email IS NOT NULL AND (lead_status IS NULL OR lead_status='New') AND ${notBl}`),
     n(`SELECT COUNT(*)::int c FROM radar_leads WHERE email IS NOT NULL AND (status IS NULL OR status='new') AND ${notBl}`),
@@ -206,10 +202,10 @@ export async function buildFullReport(period?: string): Promise<string> {
     n(`SELECT COUNT(*)::int c FROM sc_artists WHERE lead_status='Responded'`),
     n(`SELECT COUNT(*)::int c FROM spotify_leads WHERE lead_status='Responded'`),
     n(`SELECT COUNT(*)::int c FROM radar_leads WHERE status='responded'`),
-    getSetting("outreach_paused"),
-    getSetting("sc_outreach_paused"),
-    getSetting("sp_outreach_paused"),
-    getSetting("radar_outreach_paused"),
+    getSettingOrNull("outreach_paused"),
+    getSettingOrNull("sc_outreach_paused"),
+    getSettingOrNull("sp_outreach_paused"),
+    getSettingOrNull("radar_outreach_paused"),
     n(`SELECT COUNT(*)::int c FROM outreach_events WHERE channel='email' AND ${T}`),
     pool.query<{ c: number }>("SELECT (pg_database_size(current_database())/1048576.0)::numeric(10,1) c").then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0),
     n(`SELECT COUNT(*)::int c FROM radar_leads`),

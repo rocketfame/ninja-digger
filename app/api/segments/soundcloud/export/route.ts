@@ -5,14 +5,11 @@ import { NextResponse } from "next/server";
 import { isAuthorized, unauthorized } from "@/lib/apiAuth";
 import { pool } from "@/lib/db";
 import { SC_ACTIVITY, SC_ACTIVITY_SQL } from "@/lib/scActivity";
+import { csvCell } from "@/lib/csv";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-function csvCell(v: string | number | null): string {
-  const s = v == null ? "" : String(v);
-  return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 
 export async function GET(request: Request) {
   if (!isAuthorized(request)) return unauthorized();

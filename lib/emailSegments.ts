@@ -8,6 +8,7 @@
 
 import { pool } from "@/lib/db";
 import { JUNK_NAME_SQL, TIER_SQL } from "@/lib/leadQuality";
+import { SUPPRESSED_SQL } from "@/lib/leadPolicy";
 
 export type EmailSegmentType = "no_reply" | "warm" | "dead" | "all_email" | "not_contacted" | "gems";
 
@@ -54,7 +55,7 @@ export async function getSegmentRows(type: EmailSegmentType, role?: string | nul
          LEFT JOIN lead_profiles lp ON lp.artist_beatport_id = ac.artist_beatport_id
          LEFT JOIN lead_scores ls ON ls.artist_beatport_id = ac.artist_beatport_id
          WHERE ac.type = 'email' AND (ac.status IS NULL OR ac.status = 'ok')
-           AND LOWER(TRIM(ac.value)) NOT IN (SELECT LOWER(email) FROM email_blacklist)
+           AND LOWER(TRIM(ac.value)) NOT IN (${SUPPRESSED_SQL})
            AND NOT ${JUNK_NAME_SQL}
            ${extra} ${roleCond}
          ORDER BY ac.artist_beatport_id, ac.confidence DESC
@@ -95,7 +96,7 @@ export async function getSegmentRows(type: EmailSegmentType, role?: string | nul
        LEFT JOIN lead_scores ls ON ls.artist_beatport_id = lp.artist_beatport_id
        WHERE lp.status = ANY($1::text[])
          AND ac.type = 'email' AND (ac.status IS NULL OR ac.status = 'ok')
-         AND LOWER(TRIM(ac.value)) NOT IN (SELECT LOWER(email) FROM email_blacklist)
+         AND LOWER(TRIM(ac.value)) NOT IN (${SUPPRESSED_SQL})
          AND NOT ${JUNK_NAME_SQL}
        ORDER BY ac.artist_beatport_id, ac.confidence DESC
      ) t
@@ -120,7 +121,7 @@ export async function getSegmentStats(): Promise<SegmentStats[]> {
        JOIN artist_contacts ac ON ac.artist_beatport_id = lp.artist_beatport_id
        LEFT JOIN artist_metrics am ON am.artist_beatport_id = lp.artist_beatport_id
        WHERE lp.status = ANY($1::text[]) AND ac.type='email' AND (ac.status IS NULL OR ac.status='ok')
-         AND LOWER(TRIM(ac.value)) NOT IN (SELECT LOWER(email) FROM email_blacklist)
+         AND LOWER(TRIM(ac.value)) NOT IN (${SUPPRESSED_SQL})
          AND NOT ${JUNK_NAME_SQL}`,
       [NO_REPLY_STATUSES]
     ),
@@ -147,7 +148,7 @@ export async function getSegmentStats(): Promise<SegmentStats[]> {
        JOIN artist_contacts ac ON ac.artist_beatport_id = lp.artist_beatport_id
        JOIN artist_metrics am ON am.artist_beatport_id = lp.artist_beatport_id
        WHERE lp.status = ANY($1::text[]) AND ac.type='email' AND (ac.status IS NULL OR ac.status='ok')
-         AND LOWER(TRIM(ac.value)) NOT IN (SELECT LOWER(email) FROM email_blacklist)
+         AND LOWER(TRIM(ac.value)) NOT IN (${SUPPRESSED_SQL})
          AND NOT ${JUNK_NAME_SQL}
          AND ${TIER_SQL} = 'A'`,
       [NO_REPLY_STATUSES]
@@ -159,7 +160,7 @@ export async function getSegmentStats(): Promise<SegmentStats[]> {
      FROM artist_contacts ac
      JOIN artist_metrics am ON am.artist_beatport_id = ac.artist_beatport_id
      WHERE ac.type='email' AND (ac.status IS NULL OR ac.status='ok')
-       AND LOWER(TRIM(ac.value)) NOT IN (SELECT LOWER(email) FROM email_blacklist)
+       AND LOWER(TRIM(ac.value)) NOT IN (${SUPPRESSED_SQL})
        AND NOT ${JUNK_NAME_SQL}
        AND ${TIER_SQL} = 'A'`
   );
