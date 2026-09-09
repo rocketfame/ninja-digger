@@ -21,6 +21,7 @@ for (const k of ["DATABASE_URL", "DATABASE_URL_UNPOOLED"]) {
   if (v && !process.env[k]) process.env[k] = v;
 }
 const { verifyBatchOnHost, allMx } = await import("../lib/smtpVerify.ts");
+const { OPENED_SQL, REPLIED_SQL, SUPPRESSED_SQL, contactableSql, leadSourcesSql } = await import("../lib/leadSegments.ts");
 const { quarantineEmail } = await import("../lib/emailScrub.ts");
 const { pool } = await import("../lib/db.ts");
 
@@ -32,17 +33,13 @@ const unresolved = [];
 // SEGMENT=engaged|replied verifies the warm segment first — it is what the
 // marketing bridge hands over, so it must not wait behind 30k cold addresses.
 const SEGMENT = (process.env.SEGMENT || "").toLowerCase();
+// Segment definitions come from lib/leadSegments, the same ones the marketing
+// bridge hands over on — this script used to carry its own copy and disagreed.
 const SEGMENT_SQL = {
-  engaged: `SELECT LOWER(email) email, 'sc' src, email_found_at ts FROM sc_artists
-              WHERE email IS NOT NULL AND (COALESCE(opens,0) > 0 OR email_status='engaged')
-                AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')
-            UNION ALL
-            SELECT LOWER(email), 'sp', enriched_at FROM spotify_leads
-              WHERE email IS NOT NULL AND (COALESCE(opens,0) > 0 OR email_status='engaged')
-            UNION ALL
-            SELECT LOWER(TRIM(value)), 'bp', created_at FROM artist_contacts
-              WHERE type='email' AND COALESCE(opens,0) > 0 AND COALESCE(status,'ok')='ok'`,
-  replied: `SELECT LOWER(email) email, 'reply' src, MAX(created_at) ts FROM tg_notifications GROUP BY 1`,
+  engaged: `SELECT q.email, q.platform src, q.found_at ts FROM (${leadSourcesSql()}) q
+             WHERE q.email IN (${OPENED_SQL})`,
+  replied: `SELECT LOWER(email) email, 'reply' src, MAX(created_at) ts FROM tg_notifications
+             WHERE email IS NOT NULL GROUP BY 1`,
 }[SEGMENT];
 
 // The queue, in the order the barrels will actually pick it up: untouched leads
@@ -50,28 +47,14 @@ const SEGMENT_SQL = {
 const { rows } = await pool.query(
   SEGMENT_SQL
     ? `SELECT email, src FROM (${SEGMENT_SQL}) q
-        WHERE email NOT IN (SELECT LOWER(email) FROM email_blacklist)
+        WHERE email NOT IN (${SUPPRESSED_SQL})
           AND email NOT IN (SELECT email FROM email_verification WHERE verdict IN ('valid','invalid'))
         ORDER BY ts DESC NULLS LAST LIMIT $1`
-    : `SELECT email, src FROM (
-     SELECT LOWER(email) email, 'sc' src, harvested_at ts FROM sc_artists
-      WHERE email IS NOT NULL AND COALESCE(sc_touch,0)=0 AND (lead_status IS NULL OR lead_status='New')
-        AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')
-     UNION ALL
-     SELECT LOWER(TRIM(value)), 'bp', created_at FROM artist_contacts
-      WHERE type='email' AND COALESCE(status,'ok')='ok'
-     UNION ALL
-     SELECT LOWER(email), 'radar', created_at FROM radar_leads
-      WHERE email IS NOT NULL AND COALESCE(touch,0)=0 AND COALESCE(status,'new') IN ('new','queued')
-        AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')
-     UNION ALL
-     SELECT LOWER(email), 'sp', created_at FROM spotify_leads
-      WHERE email IS NOT NULL AND COALESCE(sp_touch,0)=0 AND (lead_status IS NULL OR lead_status='New')
-   ) q
-   WHERE email NOT IN (SELECT LOWER(email) FROM email_blacklist)
-   AND (email NOT IN (SELECT email FROM email_verification WHERE verdict IN ('valid','invalid') OR checked_at > now() - interval '30 days'))
-   ORDER BY ts DESC NULLS LAST
-   LIMIT $1`,
+    : `SELECT q.email, q.platform src FROM (${leadSourcesSql()}) q
+        WHERE q.touch = 0 AND ${contactableSql("q.email")}
+          AND q.email NOT IN (SELECT email FROM email_verification
+                               WHERE verdict IN ('valid','invalid') OR checked_at > now() - interval '30 days')
+        ORDER BY q.found_at DESC NULLS LAST LIMIT $1`,
   [LIMIT]
 );
 

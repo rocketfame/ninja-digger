@@ -14,23 +14,15 @@
  */
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { contactableSql, leadSourcesSql } from "@/lib/leadSegments";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const QUEUE_SQL = `
-  SELECT LOWER(email) email FROM sc_artists
-   WHERE email IS NOT NULL AND COALESCE(sc_touch,0)=0 AND (lead_status IS NULL OR lead_status='New')
-     AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')
-  UNION ALL
-  SELECT LOWER(TRIM(value)) FROM artist_contacts WHERE type='email' AND COALESCE(status,'ok')='ok'
-  UNION ALL
-  SELECT LOWER(email) FROM radar_leads
-   WHERE email IS NOT NULL AND COALESCE(touch,0)=0 AND COALESCE(status,'new') IN ('new','queued')
-     AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')
-  UNION ALL
-  SELECT LOWER(email) FROM spotify_leads
-   WHERE email IS NOT NULL AND COALESCE(sp_touch,0)=0 AND (lead_status IS NULL OR lead_status='New')`;
+// The sending queue = leads that have not been contacted yet and are still
+// contactable. Both halves come from lib/leadSegments so this audit measures
+// exactly what the barrels will pick up.
+const QUEUE_SQL = `SELECT email FROM (${leadSourcesSql()}) q WHERE q.touch = 0 AND ${contactableSql("q.email")}`;
 
 export async function GET() {
   const one = async <T>(sql: string): Promise<T> =>

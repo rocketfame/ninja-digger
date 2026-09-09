@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRotatingMailersChecked, senderPool, getSentBySenderToday } from "@/lib/mailer";
 import { rampCap } from "@/lib/sendPacing";
+import { contactableSql } from "@/lib/leadSegments";
 import { buildScEmail } from "@/lib/scOutreachCopy";
 import { isHardBounceError, validateEmailForOutreach } from "@/lib/emailHygiene";
 import { quarantineEmail } from "@/lib/emailScrub";
@@ -83,12 +84,7 @@ export async function GET(request: Request) {
   type Lead = { soundcloud_id: string; username: string; full_name: string | null; email: string; sc_touch: number };
   const nextTouch = (sql: string): Promise<Lead[]> =>
     pool.query<Lead>(sql, [budget]).then((r) => r.rows).catch(() => [] as Lead[]);
-  // Exclude blacklist AND hostile-country domains (russia .ru/.su, Yandex; Belarus .by).
-  // Handed to the marketing side = they own the conversation now. Sending cold
-  // mail in parallel would mean two different letters from one brand, which is
-  // the fastest way to earn complaints. Released only when they report 'cold'.
-  const notBlacklisted = `LOWER(email) NOT IN (SELECT LOWER(email) FROM email_blacklist) AND email !~* '\\.(ru|su|by)$|yandex\\.'
-     AND LOWER(email) NOT IN (SELECT email FROM lead_exports WHERE COALESCE(outcome,'') <> 'cold')`;
+  const notBlacklisted = contactableSql();
 
   let leads = await nextTouch(
     `SELECT soundcloud_id, username, full_name, email, sc_touch FROM sc_artists

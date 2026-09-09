@@ -15,6 +15,7 @@ const PLAIN_SIGNATURE = `\n\n--\nMax\nPromoSound`;
 import { JUNK_NAME_SQL, TIER_SQL } from "@/lib/leadQuality";
 import { getRotatingMailersChecked, senderPool, getSentBySenderToday } from "@/lib/mailer";
 import { rampCap } from "@/lib/sendPacing";
+import { contactableSql } from "@/lib/leadSegments";
 import { buildTouchEmail } from "@/lib/touchCopy";
 import { acquireLease } from "@/lib/cronLock";
 
@@ -49,9 +50,7 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
           WHERE b.artist_beatport_id = ac.artist_beatport_id AND b.snapshot_date >= current_date - 14
             AND (CASE WHEN b.released ~ '^\\d{4}-\\d{2}-\\d{2}' THEN b.released::date ELSE NULL END) < current_date - 365)` : ""}
         AND NOT ${JUNK_NAME_SQL}
-        AND LOWER(ac.value) NOT IN (SELECT LOWER(email) FROM email_blacklist)
-        -- handed to the marketing side → on hold until they report 'cold'
-        AND LOWER(TRIM(ac.value)) NOT IN (SELECT email FROM lead_exports WHERE COALESCE(outcome,'') <> 'cold')
+        AND ${contactableSql("TRIM(ac.value)")}
       ORDER BY ac.artist_beatport_id, ac.confidence DESC
     ) t
     ORDER BY t.tier, CASE t.segment
@@ -69,9 +68,12 @@ async function sendBeatportBatch(touchNum: number, fromStatus: string, toStatus:
     if (sent > 0) await new Promise(r => setTimeout(r, 4000 + Math.random() * 3000)); // 4-7s between emails
     try {
       const allEmails = await pool.query<{ value: string }>(
+        // Same eligibility rule as the row that selected this lead: an artist's
+        // SECOND address was only blacklist-checked here, so a handed-over
+        // contact could still receive cold mail.
         `SELECT value FROM artist_contacts WHERE artist_beatport_id = $1 AND type = 'email' AND confidence >= 0.65
            AND (status IS NULL OR status = 'ok')
-           AND LOWER(value) NOT IN (SELECT LOWER(email) FROM email_blacklist)
+           AND ${contactableSql("TRIM(value)")}
          ORDER BY confidence DESC`,
         [lead.id]
       );

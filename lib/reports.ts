@@ -4,6 +4,7 @@
 
 import { pool } from "@/lib/db";
 import { getDailyCapacity } from "@/lib/mailer";
+import { SUPPRESSED_SQL } from "@/lib/leadSegments";
 
 const q = (sql: string) => pool.query(sql).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
 
@@ -169,7 +170,7 @@ export async function buildScReport(): Promise<string> {
  * `period` labels the run (e.g. "Ранок" / "Вечір"). */
 export async function buildFullReport(period?: string): Promise<string> {
   const n = (sql: string) => pool.query<{ c: number }>(sql).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
-  const notBl = `LOWER(email) NOT IN (SELECT LOWER(email) FROM email_blacklist)`;
+  const notBl = `LOWER(email) NOT IN (${SUPPRESSED_SQL})`;
   const T = "sent_at >= CURRENT_DATE";
   const [
     // found today (emails)

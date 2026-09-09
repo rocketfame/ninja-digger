@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRotatingMailersChecked, senderPool, getSentBySenderToday } from "@/lib/mailer";
 import { rampCap } from "@/lib/sendPacing";
+import { contactableSql } from "@/lib/leadSegments";
 import { buildRadarEmail } from "@/lib/radarOutreachCopy";
 import { isHardBounceError, validateEmailForOutreach } from "@/lib/emailHygiene";
 import { quarantineEmail } from "@/lib/emailScrub";
@@ -56,8 +57,7 @@ export async function GET(request: Request) {
   const pct = parseInt(await getSetting("sc_discount", "25"), 10) || 25;
 
   // See sc-outreach: addresses handed to the marketing side are on hold.
-  const notBad = `email IS NOT NULL AND LOWER(email) NOT IN (SELECT LOWER(email) FROM email_blacklist) AND email !~* '\\.(ru|su|by)$|yandex\\.'
-     AND LOWER(email) NOT IN (SELECT email FROM lead_exports WHERE COALESCE(outcome,'') <> 'cold')`;
+  const notBad = contactableSql();
   type Lead = { id: number; source: string; name: string | null; email: string; touch: number };
   const pick = (sql: string) => pool.query<Lead>(sql, [budget]).then((r) => r.rows).catch(() => [] as Lead[]);
 

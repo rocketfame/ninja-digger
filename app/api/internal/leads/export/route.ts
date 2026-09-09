@@ -22,6 +22,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { isAuthorized, unauthorized } from "@/lib/apiAuth";
+import { HANDED_OVER_SQL, OPENED_SQL, PLATFORMS, REPLIED_SQL, SUPPRESSED_SQL, leadSourcesSql, type Platform } from "@/lib/leadSegments";
 
 /**
  * The marketing side gets its OWN token (LEADGEN_TOKEN), not the dashboard
@@ -36,49 +37,6 @@ function bridgeAuthorized(request: Request): boolean {
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-const PLATFORMS = ["soundcloud", "spotify", "youtube", "beatport"] as const;
-type Platform = (typeof PLATFORMS)[number];
-
-/**
- * One SELECT per source table, normalised to the same shape.
- *
- * Every branch MUST name and type its columns. In a UNION the names come from
- * the first branch only, so unaliased branches worked under `platform=all`
- * (soundcloud leads the union) and broke the moment a platform was requested on
- * its own — the outer query looked for s.platform/s.name against columns called
- * "?column?". Bare NULL needs a cast for the same reason: alone in a branch
- * Postgres cannot infer its type.
- */
-function sourceSql(p: Platform): string {
-  switch (p) {
-    case "soundcloud":
-      return `SELECT LOWER(email) email, 'soundcloud' platform, COALESCE(full_name, username) name,
-                     followers_count::int followers, country_code::text country, permalink_url::text profile_url,
-                     email_found_at found_at, COALESCE(opens,0) opens, email_status
-                FROM sc_artists
-               WHERE email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')`;
-    case "spotify":
-      return `SELECT LOWER(email) email, 'spotify' platform, COALESCE(full_name, ig_username) name,
-                     followers::int followers, NULL::text country, NULL::text profile_url,
-                     enriched_at found_at, COALESCE(opens,0) opens, email_status
-                FROM spotify_leads
-               WHERE email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')`;
-    case "youtube":
-      return `SELECT LOWER(email) email, 'youtube' platform, name,
-                     followers::int followers, NULL::text country, source_url::text profile_url,
-                     email_found_at found_at, 0 opens, email_status
-                FROM radar_leads
-               WHERE email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')`;
-    case "beatport":
-      return `SELECT LOWER(TRIM(ac.value)) email, 'beatport' platform, am.artist_name name,
-                     NULL::int followers, NULL::text country, NULL::text profile_url,
-                     ac.created_at found_at, COALESCE(ac.opens,0) opens, ac.status email_status
-                FROM artist_contacts ac
-                LEFT JOIN artist_metrics am ON am.artist_beatport_id = ac.artist_beatport_id
-               WHERE ac.type='email' AND COALESCE(ac.status,'ok')='ok'`;
-  }
-}
 
 const csvCell = (v: unknown) => {
   const s = v == null ? "" : String(v);
@@ -110,7 +68,7 @@ export async function GET(request: Request) {
   const countries = (q.get("country") ?? "").split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
   const batch = q.get("batch") ?? `${platformParam}-${new Date().toISOString().slice(0, 10)}`;
 
-  const union = platforms.map(sourceSql).join("\n UNION ALL\n");
+  const union = leadSourcesSql(platforms);
   const rows = await pool
     .query<{ email: string; platform: string; name: string | null; followers: number | null; country: string | null; profile_url: string | null; found_at: string | null; verdict: string | null }>(
       `WITH src AS (${union})
@@ -118,11 +76,11 @@ export async function GET(request: Request) {
               s.found_at, v.verdict
          FROM src s
          LEFT JOIN email_verification v ON v.email = s.email
-        WHERE s.email NOT IN (SELECT LOWER(email) FROM email_blacklist)
+        WHERE s.email NOT IN (${SUPPRESSED_SQL})
           AND s.email NOT IN (SELECT email FROM lead_exports)
           ${verifiedOnly ? `AND v.verdict = 'valid'` : `AND COALESCE(v.verdict,'unknown') <> 'invalid'`}
-          ${engagedOnly ? `AND s.email IN (SELECT email FROM email_events WHERE event IN ('opened','uniqueopened','click','clicks'))` : ``}
-          ${repliedOnly ? `AND s.email IN (SELECT LOWER(email) FROM tg_notifications)` : ``}
+          ${engagedOnly ? `AND s.email IN (${OPENED_SQL})` : ``}
+          ${repliedOnly ? `AND s.email IN (${REPLIED_SQL})` : ``}
           ${minFollowers > 0 ? `AND COALESCE(s.followers, 0) >= $2` : ``}
           ${countries.length > 0 ? `AND UPPER(COALESCE(s.country, '')) = ANY($${minFollowers > 0 ? 3 : 2}::text[])` : ``}
         ORDER BY s.email, s.found_at DESC NULLS LAST

@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { getSenders } from "@/lib/outreachSenders";
+import { isOpenEvent } from "@/lib/leadSegments";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -38,7 +39,7 @@ async function apply(email: string, event: string) {
     await pool.query(`UPDATE sc_artists SET delivered_at=COALESCE(delivered_at,now()), email_status=CASE WHEN email_status IN ('engaged','bounced','unsub') THEN email_status ELSE 'delivered' END, updated_at=now() WHERE LOWER(email)=$1`, [email]).catch(() => {});
     await pool.query(`UPDATE spotify_leads SET delivered_at=COALESCE(delivered_at,now()), email_status=CASE WHEN email_status IN ('engaged','bounced','unsub') THEN email_status ELSE 'delivered' END, updated_at=now() WHERE LOWER(email)=$1`, [email]).catch(() => {});
     await pool.query(`UPDATE artist_contacts SET delivered_at=COALESCE(delivered_at,now()) WHERE type='email' AND LOWER(TRIM(value))=$1`, [email]).catch(() => {});
-  } else if (e === "opened" || e === "uniqueopened" || e === "click" || e === "clicks") {
+  } else if (isOpenEvent(e)) {
     const isClick = e.startsWith("click");
     await pool.query(`UPDATE sc_artists SET opens=opens+${isClick ? 0 : 1}, clicks=clicks+${isClick ? 1 : 0}, first_open_at=COALESCE(first_open_at,now()), email_status=CASE WHEN email_status IN ('bounced','unsub') THEN email_status ELSE 'engaged' END, updated_at=now() WHERE LOWER(email)=$1`, [email]).catch(() => {});
     await pool.query(`UPDATE spotify_leads SET opens=opens+${isClick ? 0 : 1}, clicks=clicks+${isClick ? 1 : 0}, first_open_at=COALESCE(first_open_at,now()), email_status=CASE WHEN email_status IN ('bounced','unsub') THEN email_status ELSE 'engaged' END, updated_at=now() WHERE LOWER(email)=$1`, [email]).catch(() => {});

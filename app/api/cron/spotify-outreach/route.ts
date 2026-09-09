@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRotatingMailersChecked, senderPool, getSentBySenderToday } from "@/lib/mailer";
 import { rampCap } from "@/lib/sendPacing";
+import { contactableSql } from "@/lib/leadSegments";
 import { buildSpotifyEmail } from "@/lib/spotifyOutreachCopy";
 import { isHardBounceError, validateEmailForOutreach } from "@/lib/emailHygiene";
 import { quarantineEmail } from "@/lib/emailScrub";
@@ -75,12 +76,7 @@ export async function GET(request: Request) {
   type Lead = { ig_username: string; full_name: string | null; email: string; sp_touch: number };
   const nextTouch = (sql: string): Promise<Lead[]> =>
     pool.query<Lead>(sql, [budget]).then((r) => r.rows).catch(() => [] as Lead[]);
-  // Exclude blacklist AND hostile-country domains (russia .ru/.su, Yandex; Belarus .by).
-  // Handed to the marketing side = they own the conversation now. Sending cold
-  // mail in parallel would mean two different letters from one brand, which is
-  // the fastest way to earn complaints. Released only when they report 'cold'.
-  const notBlacklisted = `LOWER(email) NOT IN (SELECT LOWER(email) FROM email_blacklist) AND email !~* '\\.(ru|su|by)$|yandex\\.'
-     AND LOWER(email) NOT IN (SELECT email FROM lead_exports WHERE COALESCE(outcome,'') <> 'cold')`;
+  const notBlacklisted = contactableSql();
 
   // Follow-ups first (warmer), then fresh openers. Touch 2 waits 3 days after
   // touch 1, touch 3 waits 4 more. A reply/bounce/opt-out flips lead_status and
