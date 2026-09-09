@@ -1,4 +1,6 @@
 /**
+ * How much we may send, and when.
+ *
  * Send-hour weights (UTC) — where our recipients are awake and reading mail:
  * 07-12 Europe morning/lunch (1.0), 13-23 US East morning → West Coast
  * afternoon (1.5), 00-06 nobody (0). The daily cap is spread across the day
@@ -12,3 +14,13 @@ export function hourWeight(utcHour: number): number {
   return 0;
 }
 export const WEIGHT_SUM = Array.from({ length: 24 }, (_, h) => hourWeight(h)).reduce((a, b) => a + b, 0); // 6*1 + 11*1.5 = 22.5
+
+/**
+ * Warm-up ramp: a barrel starts at 20 sends/day and grows ~25% a day
+ * (20, 25, 31, 39, 49, 61, 76, 95, 119, 149, 186, 233, …) until it reaches
+ * `max` — the app_settings 'outreach_ramp_max' ceiling. Every barrel used to
+ * carry its own copy of this formula.
+ */
+export function rampCap(daysSinceStart: number, max: number): number {
+  return Math.min(max, Math.round(20 * Math.pow(1.25, Math.max(0, daysSinceStart))));
+}

@@ -3,6 +3,7 @@
  */
 
 import { pool } from "@/lib/db";
+import { getDailyCapacity } from "@/lib/mailer";
 
 const q = (sql: string) => pool.query(sql).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
 
@@ -213,6 +214,10 @@ export async function buildFullReport(period?: string): Promise<string> {
     n(`SELECT COUNT(*)::int c FROM radar_leads`),
   ]);
 
+  // Real ceiling = the caps of the accounts we can actually send from, not a
+  // constant. Headroom is what the reader needs: am I behind, and by how much.
+  const capacity = await getDailyCapacity().catch(() => null);
+
   const f = (x: number) => x.toLocaleString("uk-UA");
   const dot = (p: string | null) => (p === "1" ? "⏸" : "🟢");
   const date = new Date().toISOString().slice(0, 10);
@@ -226,7 +231,10 @@ export async function buildFullReport(period?: string): Promise<string> {
     ``,
     `<b>📊 ЗА ДОБУ</b>`,
     `Знайдено емейлів: <b>${f(bpFound + scFound + spFound + rdFound)}</b>`,
-    `Надіслано листів: <b>${f(bpSent + scSent + spSent + rdSent)}</b> (домен ${f(domSent)}/280)`,
+    capacity
+      ? `Надіслано листів: <b>${f(domSent)}</b> із ${f(capacity.capacity)} · зазор <b>${f(capacity.remaining)}</b>`
+      : `Надіслано листів: <b>${f(domSent)}</b>`,
+    ...(capacity ? [`   ${capacity.perSender.map((s) => `${s.id} ${f(s.sent)}/${f(s.cap)}`).join(" · ")}`] : []),
     ``,
     row(`${dot(bpPaused)} <b>BEATPORT</b>`, bpFound, bpSent, bpBase, bpLeft, bpRepl),
     row(`${dot(scPaused)} <b>SOUNDCLOUD</b>`, scFound, scSent, scBase, scLeft, scRepl),

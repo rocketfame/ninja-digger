@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRotatingMailersChecked, senderPool, getSentBySenderToday } from "@/lib/mailer";
+import { rampCap } from "@/lib/sendPacing";
 import { buildRadarEmail } from "@/lib/radarOutreachCopy";
 import { isHardBounceError, validateEmailForOutreach } from "@/lib/emailHygiene";
 import { quarantineEmail } from "@/lib/emailScrub";
@@ -20,7 +21,6 @@ const PER_RUN = 15;        // 4 runs/hour: the hourly allowance is spread, not b
 async function getSetting(key: string, fb: string) {
   return pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key=$1`, [key]).then((r) => r.rows[0]?.value ?? fb).catch(() => fb);
 }
-function rampCap(days: number, max: number) { return Math.min(max, Math.round(20 * Math.pow(1.25, days))); }
 
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;

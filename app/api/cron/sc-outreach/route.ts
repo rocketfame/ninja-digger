@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRotatingMailersChecked, senderPool, getSentBySenderToday } from "@/lib/mailer";
+import { rampCap } from "@/lib/sendPacing";
 import { buildScEmail } from "@/lib/scOutreachCopy";
 import { isHardBounceError, validateEmailForOutreach } from "@/lib/emailHygiene";
 import { quarantineEmail } from "@/lib/emailScrub";
@@ -17,7 +18,6 @@ export const maxDuration = 300;
 
 const BASE_URL = "https://ninja-digger.vercel.app";
 const PER_RUN = 15;        // 4 runs/hour: the hourly allowance is spread, not burnt at once
-const DOMAIN_DAILY_MAX = 280; // combined Beatport + SC ceiling (Brevo free ~300/day)
 
 async function getSetting(key: string, fallback: string): Promise<string> {
   return pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key=$1`, [key])
@@ -30,10 +30,8 @@ async function setSetting(key: string, value: string): Promise<void> {
 // Progressive warm-up: 20/day, growing ~25%/day (geometric), so we reach the
 // ceiling in ~10 days instead of weeks. Ceiling is app_settings 'outreach_ramp_max'
 // (default 130, under Brevo free ~300/day combined) — raise it after a Brevo
-// upgrade and the system jumps higher with no redeploy.
-function rampCap(daysSinceStart: number, max: number): number {
-  return Math.min(max, Math.round(20 * Math.pow(1.25, daysSinceStart)));
-}
+// upgrade and the system jumps higher with no redeploy. rampCap lives in
+// lib/sendPacing, next to the hour weights — one place decides how much we send.
 
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;

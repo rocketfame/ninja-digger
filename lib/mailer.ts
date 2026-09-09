@@ -5,7 +5,7 @@
  */
 
 import * as nodemailer from "nodemailer";
-import { getSenders, pickSender, senderTransport, totalRemaining, type Sender } from "@/lib/outreachSenders";
+import { getSenders, senderTransport, type Sender } from "@/lib/outreachSenders";
 import { hourWeight, WEIGHT_SUM } from "@/lib/sendPacing";
 
 export type OutreachMailer = {
@@ -13,20 +13,6 @@ export type OutreachMailer = {
   from: string;
   replyTo?: string;
 };
-
-/**
- * Multi-account rotating mailer. Given how many were already sent per account
- * today, picks the least-used account under its cap and returns a ready mailer
- * tagged with senderId (store it in outreach_events.sender). Returns null when
- * every account is capped. With a single configured account this behaves exactly
- * like getOutreachMailer().
- */
-export function getRotatingMailer(sentToday: Record<string, number>): { mailer: OutreachMailer; senderId: string } | null {
-  const senders = getSenders();
-  const s = pickSender(senders, sentToday);
-  if (!s) return null;
-  return { mailer: mailerFor(s), senderId: s.id };
-}
 
 /**
  * Resilient rotation: pick the least-used account under its cap, EXCLUDING any
@@ -71,6 +57,37 @@ export async function getSendersWithOverrides(): Promise<Sender[]> {
 
 export type CheckedMailer = { mailer: OutreachMailer; senderId: string; remaining: number };
 
+/** Accounts we may send from: every configured sender minus app_settings 'sender_blocklist'. */
+async function usableSenders(): Promise<Sender[]> {
+  const { pool } = await import("@/lib/db");
+  const blocked = new Set(
+    await pool
+      .query<{ value: string }>(`SELECT value FROM app_settings WHERE key = 'sender_blocklist'`)
+      .then((r) => (r.rows[0]?.value ?? "").split(",").map((x) => x.trim()).filter(Boolean))
+      .catch(() => [] as string[])
+  );
+  return (await getSendersWithOverrides()).filter((s) => !blocked.has(s.id));
+}
+
+/**
+ * Today's real sending capacity: the sum of the caps of the accounts we can
+ * actually use, what has gone out against it, and the headroom left right now.
+ *
+ * The daily report used to divide by a hard-coded 280 — one account's cap from
+ * when there was only one account — so it read "345/280", a number above its
+ * own ceiling and useless for deciding whether we are behind.
+ */
+export async function getDailyCapacity(): Promise<{
+  capacity: number; sent: number; remaining: number;
+  perSender: { id: string; cap: number; sent: number }[];
+}> {
+  const [usable, sentToday] = await Promise.all([usableSenders(), getSentBySenderToday()]);
+  const perSender = usable.map((s) => ({ id: s.id, cap: s.cap, sent: sentToday[s.id] ?? 0 }));
+  const capacity = perSender.reduce((n, s) => n + s.cap, 0);
+  const sent = perSender.reduce((n, s) => n + s.sent, 0);
+  return { capacity, sent, remaining: Math.max(0, capacity - sent), perSender };
+}
+
 /**
  * Every usable account with the headroom it has RIGHT NOW, most headroom first.
  *
@@ -88,13 +105,7 @@ export async function getRotatingMailersChecked(
   sentToday: Record<string, number>
 ): Promise<CheckedMailer[]> {
   const { pool } = await import("@/lib/db");
-  const blocked = new Set(
-    await pool
-      .query<{ value: string }>(`SELECT value FROM app_settings WHERE key = 'sender_blocklist'`)
-      .then((r) => (r.rows[0]?.value ?? "").split(",").map((x) => x.trim()).filter(Boolean))
-      .catch(() => [] as string[])
-  );
-  const usable = (await getSendersWithOverrides()).filter((s) => !blocked.has(s.id));
+  const usable = await usableSenders();
   if (usable.length === 0) return [];
   const lastHour = await pool
     .query<{ sid: string; c: number }>(
@@ -158,11 +169,6 @@ function mailerFor(s: Sender): OutreachMailer {
     from: `"${s.name}" <${s.from}>`,
     replyTo: s.replyTo,
   };
-}
-
-/** Sum of remaining daily capacity across all accounts — the true domain budget. */
-export function domainBudgetRemaining(sentToday: Record<string, number>): number {
-  return totalRemaining(getSenders(), sentToday);
 }
 
 export function getOutreachMailer(): OutreachMailer | null {

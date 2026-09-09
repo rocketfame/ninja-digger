@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRotatingMailersChecked, senderPool, getSentBySenderToday } from "@/lib/mailer";
+import { rampCap } from "@/lib/sendPacing";
 import { buildSpotifyEmail } from "@/lib/spotifyOutreachCopy";
 import { isHardBounceError, validateEmailForOutreach } from "@/lib/emailHygiene";
 import { quarantineEmail } from "@/lib/emailScrub";
@@ -16,7 +17,6 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const PER_RUN = 15;        // 4 runs/hour: the hourly allowance is spread, not burnt at once
-const DOMAIN_DAILY_MAX = 280; // combined BP + SC + SP ceiling (Brevo free ~300/day)
 
 async function getSetting(key: string, fallback: string): Promise<string> {
   return pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key=$1`, [key])
@@ -26,10 +26,8 @@ async function setSetting(key: string, value: string): Promise<void> {
   await pool.query(`INSERT INTO app_settings (key,value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=$2`, [key, value]).catch(() => {});
 }
 
-// Progressive warm-up: 20/day, growing ~25%/day, ceiling = 'outreach_ramp_max'.
-function rampCap(daysSinceStart: number, max: number): number {
-  return Math.min(max, Math.round(20 * Math.pow(1.25, daysSinceStart)));
-}
+// Progressive warm-up: 20/day, growing ~25%/day, ceiling = 'outreach_ramp_max'
+// (lib/sendPacing).
 
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;

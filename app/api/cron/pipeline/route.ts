@@ -14,6 +14,7 @@ const PLAIN_SIGNATURE = `\n\n--\nMax\nPromoSound`;
 
 import { JUNK_NAME_SQL, TIER_SQL } from "@/lib/leadQuality";
 import { getRotatingMailersChecked, senderPool, getSentBySenderToday } from "@/lib/mailer";
+import { rampCap } from "@/lib/sendPacing";
 import { buildTouchEmail } from "@/lib/touchCopy";
 import { acquireLease } from "@/lib/cronLock";
 
@@ -169,7 +170,7 @@ export async function GET(request: Request) {
     const bpDays = Math.floor((Date.now() - Date.parse(bpStart)) / 86400000);
     const rampMax = await pool.query<{ value: string }>(`SELECT value FROM app_settings WHERE key='outreach_ramp_max'`)
       .then((r) => parseInt(r.rows[0]?.value ?? "130", 10) || 130).catch(() => 130);
-    const cap = Math.min(rampMax, Math.round(20 * Math.pow(1.25, bpDays)));
+    const cap = rampCap(bpDays, rampMax);
     const sentToday = await pool.query<{ c: number }>(
       `SELECT COUNT(*)::int c FROM outreach_events WHERE channel='email' AND template_id LIKE 'email_touch_%' AND sent_at >= CURRENT_DATE`
     ).then((r) => r.rows[0]?.c ?? 0).catch(() => 0);

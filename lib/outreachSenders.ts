@@ -77,21 +77,4 @@ export function senderTransport(s: Sender): nodemailer.Transporter {
   });
 }
 
-/**
- * Pick the best sender for the next send: among accounts still under their daily
- * cap, choose the least-used today (balances load + protects each reputation).
- * `sentToday` maps sender id → count already sent today. Returns null if every
- * account is capped out.
- */
-export function pickSender(senders: Sender[], sentToday: Record<string, number>): Sender | null {
-  const available = senders
-    .map((s) => ({ s, sent: sentToday[s.id] ?? 0 }))
-    .filter((x) => x.sent < x.s.cap)
-    .sort((a, b) => a.sent - b.sent);
-  return available[0]?.s ?? null;
-}
 
-/** Total remaining domain-wide budget across all accounts today. */
-export function totalRemaining(senders: Sender[], sentToday: Record<string, number>): number {
-  return senders.reduce((sum, s) => sum + Math.max(0, s.cap - (sentToday[s.id] ?? 0)), 0);
-}
