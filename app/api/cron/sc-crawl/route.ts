@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server";
 import { crawlFollowings, seedFromRecentUploads } from "@/lib/soundcloudDiscover";
 import { acquireLease } from "@/lib/cronLock";
+import { getSetting } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -38,7 +39,13 @@ export async function GET(request: Request) {
   const slice = (Math.floor(Date.now() / 540_000) * 2) % GENRES.length;
   const seeded = await seedFromRecentUploads(GENRES.slice(slice, slice + 2)).catch(() => ({ discovered: 0, withEmail: 0 }));
 
-  const crawled = await crawlFollowings({ users: 40, budgetMs: 300_000 - (Date.now() - t0) - 20_000 })
+  // Expansion rate is a runtime knob, not a constant: the base grew 19 MB an
+  // hour on the first afternoon, which reaches the 512 MB tier in a working
+  // day, and a full database halts EVERY engine (it did once). Until the tier
+  // is raised this runs at a fraction; afterwards it goes back up without a
+  // deploy. app_settings.sc_crawl_users_per_run, default 40.
+  const perRun = parseInt(await getSetting("sc_crawl_users_per_run", "40"), 10) || 40;
+  const crawled = await crawlFollowings({ users: perRun, budgetMs: 300_000 - (Date.now() - t0) - 20_000 })
     .catch(() => ({ expanded: 0, discovered: 0, withEmail: 0, exhausted: false }));
 
   return NextResponse.json({
