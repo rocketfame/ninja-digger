@@ -40,15 +40,21 @@ push. Never call it a new release.
 
 OFFER (use when they are interested or ask about packages, reach, pricing or
 next steps). Mention the code as a personal discount from Max. One short line
-plus the link; do not describe packages or invent prices.
+plus the link; do not describe packages or invent prices. Full code table and
+product facts live in PRODUCT-FACTS.md, this is the quick reference:
 
+    Spotify     https://promosoundgroup.net/collections/spotify-promotion
+                code MAXSPOTIFY
+    SoundCloud  https://promosoundgroup.net/collections/s-cloud-promotion
+                code MAXCLOUD
     Beatport    Beatport Daily Push
                 https://promosoundgroup.net/products/beatport-daily-push
-                code BEATPORTOFF
-    SoundCloud  https://promosoundgroup.net/collections/s-cloud-promotion
-                code SOUND20
-    Spotify     https://promosoundgroup.net/collections/spotify-promotion
+                code MAXBEATPORT
     YouTube     https://promosoundgroup.net/collections/youtube-promotion
+                code MAXYOUTUBE
+    Apple Music code MAXAPPLE
+    Social (IG/TikTok/FB/Threads/Twitch)
+                code MAXSOCIAL
 
 INTENT HANDLING
 - interested / question: brief affirm, then the offer link + one qualifier.

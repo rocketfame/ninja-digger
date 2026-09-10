@@ -4,6 +4,11 @@
 `app_settings` (`offer_<канал>_facts`) і можуть змінюватись без деплою — якщо
 щось розійшлося, джерело правди там.
 
+Промокоди: підтверджені активні в Shopify станом на 10.09.2026, 15% на всі
+товари відповідного каналу, без дедлайну. Кожен код прив'язаний до кількості
+товарів у колекції — це не ліміт використань, а розмір колекції на момент
+перевірки.
+
 ## Beatport — Beatport Daily Push
 
 Real Beatport buyers and listeners, delivery 1-7 days depending on the pack. The
@@ -14,7 +19,7 @@ internal reports, screenshots or source lists are not provided. After purchase,
 track details are submitted by replying to this email; no separate form.
 
 Лінк: https://promosoundgroup.net/products/beatport-daily-push
-Код: `BEATPORTOFF`
+Код: `MAXBEATPORT` (7 товарів)
 
 ## SoundCloud
 
@@ -24,7 +29,7 @@ link to start. No fake accounts, no guaranteed chart placement. After purchase,
 track details are submitted by replying to this email; no separate form.
 
 Лінк: https://promosoundgroup.net/collections/s-cloud-promotion
-Код: `SOUND20`
+Код: `MAXCLOUD` (21 товар)
 
 ## Spotify
 
@@ -36,7 +41,7 @@ No guaranteed viral spikes or chart positions. Campaigns are timed to the releas
 date. After purchase, track details are submitted by replying to this email.
 
 Лінк: https://promosoundgroup.net/collections/spotify-promotion
-Код: уточнити перед першим використанням
+Код: `MAXSPOTIFY` (34 товари)
 
 ## YouTube
 
@@ -47,4 +52,20 @@ impact usually takes longer. No guaranteed Trending placement. After purchase,
 track details are submitted by replying to this email; no separate form.
 
 Лінк: https://promosoundgroup.net/collections/youtube-promotion
-Код: уточнити перед першим використанням
+Код: `MAXYOUTUBE` (23 товари)
+
+## Apple Music
+
+Same category as Spotify/SoundCloud: real listeners, delivered gradually, no
+guaranteed chart positions. Only one product live right now, so the pitch stays
+short, no packages/tiers language.
+
+Код: `MAXAPPLE` (1 товар)
+
+## Instagram, TikTok, Facebook, Threads, Twitch (social)
+
+Covers followers/likes/views/engagement across these platforms from real
+accounts, delivered gradually, visible in the artist's own account stats. No
+fake accounts, no guaranteed virality or reach numbers.
+
+Код: `MAXSOCIAL` (69 товарів)

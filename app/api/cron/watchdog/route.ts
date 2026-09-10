@@ -93,6 +93,17 @@ export async function GET(request: Request) {
     alerts.push(`🟠 Re-Ex база вигорає — лишилось ${due} свіжих сідів. Час зібрати нових рекламодавців з repostexchange.com/engage (я зроблю збір браузером).`);
   }
 
+  // 3c. The OUTPUT, not the motion. `due` counts seeds the harvester is allowed
+  // to touch, and an exhausted seed becomes "due" again five days later — so the
+  // counter stayed above its threshold for three days while the harvester walked
+  // the same accounts in circles: 1,400 profiles a day and nine emails. Email is
+  // the only thing this engine exists to produce, so alert on email.
+  const scEmails = await one(`SELECT COUNT(*) c FROM sc_artists WHERE email_found_at > now() - interval '24 hours'`);
+  const emails24 = num((scEmails as { c?: unknown }).c);
+  if (emails24 < 100 && num((scHarvest as { c?: unknown }).c) >= 100) {
+    alerts.push(`🟠 SoundCloud: за добу лише ${emails24} нових email, хоча харвест іде — сіди відпрацьовані, харвестер ходить по колу. Потрібен збір рекламодавців з repostexchange.com/engage (роблю браузером).`);
+  }
+
   // 4. Brevo poll freshness — engagement metrics feed the "gold/diamond" tiers.
   const poll = await one(`SELECT value FROM app_settings WHERE key='brevo_poll_since'`);
   const pollDate = String((poll as { value?: unknown }).value ?? "");
