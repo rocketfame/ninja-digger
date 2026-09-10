@@ -14,6 +14,7 @@ import { isHardBounceError, validateEmailForOutreach } from "@/lib/emailHygiene"
 import { quarantineEmail } from "@/lib/emailScrub";
 import { acquireLease } from "@/lib/cronLock";
 import { getSetting } from "@/lib/settings";
+import { icpMaxFollowers } from "@/lib/emailHygiene";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -55,7 +56,8 @@ export async function GET(request: Request) {
   const pct = parseInt(await getSetting("sc_discount", "25"), 10) || 25;
 
   // See sc-outreach: addresses handed to the marketing side are on hold.
-  const notBad = contactableSql();
+  // Same ICP ceiling as SoundCloud: a YouTube channel with a million subscribers is not a lead.
+  const notBad = `${contactableSql()} AND COALESCE(followers,0) <= ${await icpMaxFollowers()}`;
   type Lead = { id: number; source: string; name: string | null; email: string; touch: number };
   // Fetch twice the budget: a pre-send rejection used to be a lost send, because
   // the list held exactly `budget` leads and a skip had nothing to replace it.

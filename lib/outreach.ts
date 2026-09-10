@@ -60,3 +60,39 @@ export async function setOutreach(
     ]
   );
 }
+
+/**
+ * A Beatport contact whose artist has not charted in 14 days will not get the
+ * chart letter, and the window rule was silently parking 2,451 verified
+ * addresses. They are artists; almost every one has Spotify. So the lead
+ * changes segment: one row appears in spotify_leads keyed bp:<artist id>, and
+ * the Beatport row is retired with status 'moved' so the pipeline never mails
+ * it. Moved, not copied — the person has one active row.
+ *
+ * Only untouched, contactable, mailbox-checked addresses move. Runs daily.
+ */
+export async function moveStaleBeatportToSpotify(): Promise<{ moved: number }> {
+  const { contactableSql } = await import("@/lib/leadPolicy");
+  const ins = await pool.query(
+    `WITH cand AS (
+       SELECT ac.id, 'bp:' || ac.artist_beatport_id AS key, am.artist_name AS name, LOWER(TRIM(ac.value)) AS email
+         FROM artist_contacts ac
+         JOIN artist_metrics am ON am.artist_beatport_id = ac.artist_beatport_id
+         LEFT JOIN lead_profiles lp ON lp.artist_beatport_id = ac.artist_beatport_id
+        WHERE ac.type = 'email' AND COALESCE(ac.status,'ok') = 'ok'
+          AND (lp.status IS NULL OR lp.status = 'New')
+          AND am.last_seen < current_date - 14
+          AND ${contactableSql("TRIM(ac.value)")}
+          AND LOWER(TRIM(ac.value)) NOT IN (SELECT LOWER(contact_value) FROM outreach_events WHERE channel = 'email')
+     ),
+     ins AS (
+       INSERT INTO spotify_leads (ig_username, full_name, email, email_source, source_post, lead_status, created_at, updated_at)
+       SELECT key, name, email, 'beatport', 'beatport-stale', 'New', now(), now() FROM cand
+       ON CONFLICT (ig_username) DO NOTHING
+       RETURNING ig_username
+     )
+     UPDATE artist_contacts SET status = 'moved'
+      WHERE id IN (SELECT id FROM cand WHERE 'bp:' || artist_beatport_id IN (SELECT ig_username FROM ins))`
+  );
+  return { moved: ins.rowCount ?? 0 };
+}

@@ -13,6 +13,7 @@ import { runBptoptrackerDailyUpdate } from "@/lib/bptoptrackerDaily";
 import { syncBptoptrackerToChartEntries } from "@/lib/bptoptrackerSync";
 import { pool } from "@/lib/db";
 import { icpSweep } from "@/lib/emailHygiene";
+import { moveStaleBeatportToSpotify } from "@/lib/outreach";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 min — discovery може тривати
@@ -35,6 +36,7 @@ export async function GET(request: Request) {
     metricsUpdated?: number;
     scoresUpdated?: number;
     icpSuppressed?: number;
+    movedToSpotify?: number;
     cleanup?: { url_cache: number; enrichment_runs: number; old_chart_entries: number; bptoptracker_daily: number };
     error?: string;
   } = { ok: true };
@@ -78,6 +80,9 @@ export async function GET(request: Request) {
     const scoresUpdated = await refreshLeadScoresV2();
     result.metricsUpdated = metricsUpdated;
     result.scoresUpdated = scoresUpdated;
+
+    // --- Stale Beatport → Spotify segment (moved, not copied) ---
+    result.movedToSpotify = (await moveStaleBeatportToSpotify().catch(() => ({ moved: -1 }))).moved;
 
     // --- ICP sweep: stars and representation domains that got in before the write-time gate saw enough ---
     result.icpSuppressed = (await icpSweep().catch(() => ({ suppressed: -1 }))).suppressed;

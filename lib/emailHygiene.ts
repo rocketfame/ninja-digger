@@ -46,10 +46,18 @@ export async function icpSweep(): Promise<{ suppressed: number }> {
      ON CONFLICT (email) DO NOTHING`,
     [maxF, FREEMAIL_LIST]
   );
+  // YouTube/Radar: stars by the same ceiling (its emails come from channel pages, so the domain rule adds little).
+  const rd = await pool.query(
+    `INSERT INTO email_blacklist (email, reason)
+     SELECT DISTINCT LOWER(email), 'not-ICP: star (' || followers || ' followers > ' || $1 || ')'
+       FROM radar_leads WHERE email IS NOT NULL AND followers > $1
+        AND LOWER(email) NOT IN (SELECT LOWER(email) FROM tg_notifications WHERE email IS NOT NULL)
+     ON CONFLICT (email) DO NOTHING`, [maxF]
+  ).catch(() => ({ rowCount: 0 }));
   await pool.query(`UPDATE sc_artists SET email_status='junk', updated_at=now()
      WHERE LOWER(email) IN (SELECT LOWER(email) FROM email_blacklist WHERE reason LIKE 'not-ICP%')
        AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')`).catch(() => {});
-  return { suppressed: res.rowCount ?? 0 };
+  return { suppressed: (res.rowCount ?? 0) + (rd.rowCount ?? 0) };
 }
 
 const domainShareCache = new Map<string, number>();
