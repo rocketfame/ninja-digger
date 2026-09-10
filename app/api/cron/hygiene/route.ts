@@ -6,9 +6,10 @@
  */
 
 import { NextResponse } from "next/server";
-import { scrubJunkEmails } from "@/lib/emailScrub";
+import { scrubJunkEmails, quarantineEmail } from "@/lib/emailScrub";
 import { pool } from "@/lib/db";
-import { validateEmailForOutreach, invalidateContactEmail } from "@/lib/emailHygiene";
+import { validateEmailForOutreach } from "@/lib/emailHygiene";
+import { leadSourcesSql } from "@/lib/leadPolicy";
 import { sendTelegramMessage } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
@@ -23,16 +24,20 @@ export async function GET(request: Request) {
   // 0. Junk scrub across all lead tables (single policy in lib/emailJunk).
   const scrub = await scrubJunkEmails().catch((e) => ({ scanned: 0, junk: -1, byReason: { error: 1 }, samples: [String(e?.message ?? e).slice(0, 80)] }));
 
-  // 1. Re-validate all active emails
+  // 1. Re-validate every stored address on every platform — policy + MX. This
+  //    used to cover Beatport contacts only, so a SoundCloud or Spotify domain
+  //    that went dead stayed in the base until a send bounced on it. Domains
+  //    are cached inside the validator, so the whole base costs a few thousand
+  //    lookups, not one per address.
   const contacts = await pool.query<{ email: string }>(
-    `SELECT DISTINCT LOWER(TRIM(value)) AS email FROM artist_contacts
-     WHERE type = 'email' AND (status IS NULL OR status = 'ok')`
+    `SELECT DISTINCT email FROM (${leadSourcesSql()}) s WHERE email IS NOT NULL`
   );
   let invalidated = 0;
   for (const { email } of contacts.rows) {
     const check = await validateEmailForOutreach(email);
     if (!check.ok) {
-      invalidated += await invalidateContactEmail(email, `weekly revalidation: ${check.reason}`);
+      await quarantineEmail(email, `weekly revalidation: ${check.reason}`);
+      invalidated++;
     }
   }
 

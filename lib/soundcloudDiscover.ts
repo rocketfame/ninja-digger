@@ -14,7 +14,7 @@
  */
 import { pool } from "@/lib/db";
 import { getClientId } from "@/lib/soundcloud";
-import { pickBestEmail } from "@/lib/emailJunk";
+import { emailForStorage } from "@/lib/emailHygiene";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36";
 const TIMEOUT_MS = 12000;
@@ -59,7 +59,9 @@ function tierFor(u: ScUser): "A" | "B" | "C" {
 async function bulkUpsert(users: ScUser[], source: string): Promise<{ inserted: number; withEmail: number }> {
   const rows = users.filter((u) => u.id && u.permalink && u.track_count >= 1);
   if (rows.length === 0) return { inserted: 0, withEmail: 0 };
-  const emails = rows.map((u) => pickBestEmail(u.description ?? "") || null);
+  // MX is cached per domain inside the gate, so a page of 270 users costs a
+  // handful of lookups, not 270.
+  const emails = await Promise.all(rows.map((u) => emailForStorage(u.description ?? "")));
 
   const res = await pool.query(
     `INSERT INTO sc_artists (soundcloud_id, permalink, permalink_url, username, full_name, city, country_code,

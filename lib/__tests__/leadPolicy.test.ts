@@ -57,6 +57,13 @@ describe("contactableSql", () => {
     expect(sql).not.toContain("email IS NOT NULL");
   });
 
+  it("refuses an address the mailbox check has never seen", () => {
+    // checked-and-unknown is allowed (Outlook/Yahoo refuse probes); unchecked is not
+    const sql = contactableSql();
+    expect(sql).toContain("email_verification");
+    expect(sql).toContain("verdict <> 'invalid'");
+  });
+
   it("releases a lead the marketing side reported back as cold", () => {
     expect(contactableSql()).toContain("COALESCE(outcome,'') <> 'cold'");
   });

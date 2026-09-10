@@ -31,6 +31,16 @@ export const REPLIED_SQL = `SELECT LOWER(email) FROM tg_notifications WHERE emai
 /** Addresses we may never mail again: dead mailbox, junk/role, bounce, opt-out. */
 export const SUPPRESSED_SQL = `SELECT LOWER(email) FROM email_blacklist`;
 
+/**
+ * Addresses the SMTP layer has looked at and not found dead. 'unknown' stays in:
+ * it is what Outlook, Yahoo and iCloud return because they refuse probes, and
+ * that is a fifth of the base — unverifiable is not the same as bad. What is
+ * excluded is 'invalid' and, deliberately, NEVER CHECKED: an address is not
+ * usable until the mailbox check has seen it. That check runs off-platform
+ * (port 25 is blocked on Vercel), so a fresh address waits for the next pass.
+ */
+export const MAILBOX_CHECKED_SQL = `SELECT email FROM email_verification WHERE verdict <> 'invalid'`;
+
 /** Addresses the marketing side owns right now — released when it reports 'cold'. */
 export const HANDED_OVER_SQL = `SELECT email FROM lead_exports WHERE COALESCE(outcome,'') <> 'cold'`;
 
@@ -49,7 +59,8 @@ export function contactableSql(col = "email"): string {
   return `${col} IS NOT NULL
      AND ${e} NOT IN (${SUPPRESSED_SQL})
      AND ${col} !~* '\\.(ru|su|by)$|yandex\\.'
-     AND ${e} NOT IN (${HANDED_OVER_SQL})`;
+     AND ${e} NOT IN (${HANDED_OVER_SQL})
+     AND ${e} IN (${MAILBOX_CHECKED_SQL})`;
 }
 
 export const PLATFORMS = ["soundcloud", "spotify", "youtube", "beatport"] as const;

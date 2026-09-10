@@ -5,7 +5,7 @@
  */
 
 import { pool } from "@/lib/db";
-import { pickBestEmail } from "@/lib/emailJunk";
+import { emailForStorage } from "@/lib/emailHygiene";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
@@ -87,7 +87,7 @@ function nz<T>(s: T): T { return typeof s === "string" ? (s.replace(/\u0000/g, "
 
 async function upsertArtist(u: ScUser, seed: string): Promise<boolean> {
   if (u.track_count < 1) return false; // not a musician (listener-only) — skip
-  const email = pickBestEmail(u.description ?? "");
+  const email = await emailForStorage(u.description ?? "");
   const res = await pool.query(
     `INSERT INTO sc_artists (soundcloud_id, permalink, permalink_url, username, full_name, city, country_code,
         description, avatar_url, track_count, followers_count, followings_count, likes_count, reposts_count,
@@ -227,7 +227,7 @@ export async function harvestSeedFollowers(permalink: string, maxPages = 4): Pro
     for (const u of data.collection) {
       const isNew = await upsertArtist(u, permalink);
       if (isNew) { harvested++; count++; }
-      if (pickBestEmail(u.description ?? "")) withEmail++;
+      if (await emailForStorage(u.description ?? "")) withEmail++; // counts what was actually storable; MX is cached per domain
     }
     cursor = data.next_href;
     if (!cursor) { done = true; break; }

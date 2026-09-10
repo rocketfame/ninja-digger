@@ -7,7 +7,7 @@
 
 import { promises as dns } from "dns";
 import { pool } from "@/lib/db";
-import { classifyEmail } from "@/lib/emailJunk";
+import { classifyEmail, pickBestEmail } from "@/lib/emailJunk";
 
 
 /**
@@ -23,7 +23,20 @@ export function isHostileDomain(email: string | null | undefined): boolean {
 
 const mxCache = new Map<string, boolean>();
 
-async function domainAcceptsMail(domain: string): Promise<boolean> {
+/**
+ * The address a profile may be STORED with, or null. Policy (syntax, disposable,
+ * role, hostile) plus a live MX/A check on the domain. Both SoundCloud engines
+ * and the hygiene backfill go through this, so an address that cannot receive
+ * mail never enters the table in the first place — checking only at send time
+ * meant the base carried dead domains for weeks and every report counted them.
+ */
+export async function emailForStorage(text: string | null | undefined, explicit?: string | null): Promise<string | null> {
+  const email = pickBestEmail(text, explicit);
+  if (!email) return null;
+  return (await domainAcceptsMail(email.split("@")[1])) ? email : null;
+}
+
+export async function domainAcceptsMail(domain: string): Promise<boolean> {
   const key = domain.toLowerCase();
   const cached = mxCache.get(key);
   if (cached !== undefined) return cached;
