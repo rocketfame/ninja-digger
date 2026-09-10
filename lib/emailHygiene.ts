@@ -7,7 +7,8 @@
 
 import { promises as dns } from "dns";
 import { pool } from "@/lib/db";
-import { classifyEmail, pickBestEmail } from "@/lib/emailJunk";
+import { classifyEmail, pickBestEmail, isFreemailDomain } from "@/lib/emailJunk";
+import { getSettingOrNull } from "@/lib/settings";
 
 
 /**
@@ -24,16 +25,64 @@ export function isHostileDomain(email: string | null | undefined): boolean {
 const mxCache = new Map<string, boolean>();
 
 /**
- * The address a profile may be STORED with, or null. Policy (syntax, disposable,
- * role, hostile) plus a live MX/A check on the domain. Both SoundCloud engines
- * and the hygiene backfill go through this, so an address that cannot receive
- * mail never enters the table in the first place — checking only at send time
- * meant the base carried dead domains for weeks and every report counted them.
+ * Is this address a lead we sell to, or someone who will mark us as spam?
+ *
+ * Two signals, both from our own data, no list to maintain:
+ *  - a non-freemail domain shared by three or more different artists is not an
+ *    artist's own address, it is their representation (unitedtalent.com holds
+ *    67 of our "leads", caa.com 41, corsonagency.com 36). A booking agency does
+ *    not buy a promo pack; it reports the sender.
+ *  - an account above the follower ceiling is a star. Every positive reply we
+ *    have ever had came from under 20k; Lana Del Rey and Skrillex were in the
+ *    queue. Ceiling is app_settings.icp_max_followers, default 50 000.
+ *
+ * Pure: the caller supplies the two facts. Returns the reason, or null if fine.
  */
-export async function emailForStorage(text: string | null | undefined, explicit?: string | null): Promise<string | null> {
-  const email = pickBestEmail(text, explicit);
+export function icpReject(
+  email: string, facts: { followers?: number | null; sharedBy: number; maxFollowers: number }
+): string | null {
+  const domain = email.split("@")[1]?.toLowerCase() ?? "";
+  if (!isFreemailDomain(domain) && facts.sharedBy >= 3) return `not-ICP: representation domain (${domain} shared by ${facts.sharedBy} artists)`;
+  if ((facts.followers ?? 0) > facts.maxFollowers) return `not-ICP: star (${facts.followers} followers > ${facts.maxFollowers})`;
+  return null;
+}
+
+const domainShareCache = new Map<string, number>();
+/** How many distinct SoundCloud artists carry an address on this domain. Cached per process. */
+export async function domainSharedBy(domain: string): Promise<number> {
+  const d = domain.toLowerCase();
+  if (isFreemailDomain(d)) return 0;
+  const hit = domainShareCache.get(d);
+  if (hit !== undefined) return hit;
+  const n = await pool
+    .query<{ c: number }>(`SELECT COUNT(DISTINCT soundcloud_id)::int c FROM sc_artists WHERE email IS NOT NULL AND split_part(LOWER(email),'@',2) = $1`, [d])
+    .then((r) => r.rows[0]?.c ?? 0).catch(() => 0);
+  domainShareCache.set(d, n);
+  return n;
+}
+
+let maxFollowersCache: { v: number; at: number } | null = null;
+export async function icpMaxFollowers(): Promise<number> {
+  if (maxFollowersCache && Date.now() - maxFollowersCache.at < 300_000) return maxFollowersCache.v;
+  const v = parseInt((await getSettingOrNull("icp_max_followers")) ?? "", 10) || 50_000;
+  maxFollowersCache = { v, at: Date.now() };
+  return v;
+}
+
+/**
+ * The address a profile may be STORED with, or null: policy, live MX, and the
+ * ICP rule above. Both SoundCloud engines and the hygiene backfill go through
+ * this, so an address we must never mail never enters the table.
+ */
+export async function emailForStorage(
+  text: string | null | undefined, opts: { explicit?: string | null; followers?: number | null } = {}
+): Promise<string | null> {
+  const email = pickBestEmail(text, opts.explicit);
   if (!email) return null;
-  return (await domainAcceptsMail(email.split("@")[1])) ? email : null;
+  const domain = email.split("@")[1];
+  if (!(await domainAcceptsMail(domain))) return null;
+  const reason = icpReject(email, { followers: opts.followers, sharedBy: await domainSharedBy(domain), maxFollowers: await icpMaxFollowers() });
+  return reason ? null : email;
 }
 
 export async function domainAcceptsMail(domain: string): Promise<boolean> {

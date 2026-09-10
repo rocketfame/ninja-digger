@@ -77,6 +77,11 @@ const SOFT_ROLE_RE = /^(info|contact|contacts|hello|hi|hey|team|mail|office|book
 const HTML_ESCAPES_RE = /&[a-z#0-9]+;|\\u00[0-9a-f]{2}|u00[0-9a-f]{2}(?=[a-z0-9])|%40/gi;
 
 /** Lowercase, strip mailto:/escapes/trailing punctuation, fix freemail typos. Null if hopeless. */
+/** Personal mail providers. A domain here can never be a label or an agency. */
+export function isFreemailDomain(domain: string): boolean {
+  return FREEMAIL_DOMAINS.has(domain.toLowerCase());
+}
+
 export function normalizeEmail(raw: string | null | undefined): string | null {
   if (!raw) return null;
   let e = String(raw).trim().toLowerCase();

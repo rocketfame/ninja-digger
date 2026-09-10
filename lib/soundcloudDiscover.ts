@@ -67,7 +67,7 @@ async function bulkUpsert(users: ScUser[], source: string): Promise<{ inserted: 
   if (rows.length === 0) return { inserted: 0, withEmail: 0 };
   // MX is cached per domain inside the gate, so a page of 270 users costs a
   // handful of lookups, not 270.
-  const emails = await Promise.all(rows.map((u) => emailForStorage(u.description ?? "")));
+  const emails = await Promise.all(rows.map((u) => emailForStorage(u.description ?? "", { followers: u.followers_count })));
 
   const res = await pool.query(
     `INSERT INTO sc_artists (soundcloud_id, permalink, permalink_url, username, full_name, city, country_code,

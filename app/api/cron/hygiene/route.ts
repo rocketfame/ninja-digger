@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server";
 import { scrubJunkEmails, quarantineEmail } from "@/lib/emailScrub";
 import { pool } from "@/lib/db";
-import { validateEmailForOutreach } from "@/lib/emailHygiene";
+import { validateEmailForOutreach, icpReject, domainSharedBy, icpMaxFollowers } from "@/lib/emailHygiene";
 import { leadSourcesSql } from "@/lib/leadPolicy";
 import { sendTelegramMessage } from "@/lib/telegram";
 
@@ -39,6 +39,16 @@ export async function GET(request: Request) {
       await quarantineEmail(email, `weekly revalidation: ${check.reason}`);
       invalidated++;
     }
+  }
+  // 1a. ICP: stars and representation domains that got in before the rule.
+  const sc = await pool.query<{ email: string; followers: number | null }>(
+    `SELECT LOWER(email) email, followers_count followers FROM sc_artists WHERE email IS NOT NULL`
+  );
+  const maxF = await icpMaxFollowers();
+  let notIcp = 0;
+  for (const { email, followers } of sc.rows) {
+    const reason = icpReject(email, { followers, sharedBy: await domainSharedBy(email.split("@")[1]), maxFollowers: maxF });
+    if (reason) { await quarantineEmail(email, reason); notIcp++; }
   }
 
   // 1b. Weekly space reclaim: the daily DELETEs free rows for reuse but don't
