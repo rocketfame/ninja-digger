@@ -7,7 +7,7 @@
 
 import { promises as dns } from "dns";
 import { pool } from "@/lib/db";
-import { classifyEmail, pickBestEmail, isFreemailDomain } from "@/lib/emailJunk";
+import { classifyEmail, pickBestEmail, icpReject, isFreemailDomain } from "@/lib/emailJunk";
 import { getSettingOrNull } from "@/lib/settings";
 
 
@@ -23,29 +23,6 @@ export function isHostileDomain(email: string | null | undefined): boolean {
 }
 
 const mxCache = new Map<string, boolean>();
-
-/**
- * Is this address a lead we sell to, or someone who will mark us as spam?
- *
- * Two signals, both from our own data, no list to maintain:
- *  - a non-freemail domain shared by three or more different artists is not an
- *    artist's own address, it is their representation (unitedtalent.com holds
- *    67 of our "leads", caa.com 41, corsonagency.com 36). A booking agency does
- *    not buy a promo pack; it reports the sender.
- *  - an account above the follower ceiling is a star. Every positive reply we
- *    have ever had came from under 20k; Lana Del Rey and Skrillex were in the
- *    queue. Ceiling is app_settings.icp_max_followers, default 50 000.
- *
- * Pure: the caller supplies the two facts. Returns the reason, or null if fine.
- */
-export function icpReject(
-  email: string, facts: { followers?: number | null; sharedBy: number; maxFollowers: number }
-): string | null {
-  const domain = email.split("@")[1]?.toLowerCase() ?? "";
-  if (!isFreemailDomain(domain) && facts.sharedBy >= 3) return `not-ICP: representation domain (${domain} shared by ${facts.sharedBy} artists)`;
-  if ((facts.followers ?? 0) > facts.maxFollowers) return `not-ICP: star (${facts.followers} followers > ${facts.maxFollowers})`;
-  return null;
-}
 
 const domainShareCache = new Map<string, number>();
 /** How many distinct SoundCloud artists carry an address on this domain. Cached per process. */

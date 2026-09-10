@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { icpReject } from "../emailHygiene";
+import { icpReject } from "../emailJunk";
 
 describe("icpReject — who we do NOT sell to", () => {
   it("treats a non-freemail domain shared by three or more artists as representation", () => {

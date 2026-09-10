@@ -8,7 +8,8 @@
 import { NextResponse } from "next/server";
 import { scrubJunkEmails, quarantineEmail } from "@/lib/emailScrub";
 import { pool } from "@/lib/db";
-import { validateEmailForOutreach, icpReject, domainSharedBy, icpMaxFollowers } from "@/lib/emailHygiene";
+import { validateEmailForOutreach, domainSharedBy, icpMaxFollowers } from "@/lib/emailHygiene";
+import { icpReject } from "@/lib/emailJunk";
 import { leadSourcesSql } from "@/lib/leadPolicy";
 import { sendTelegramMessage } from "@/lib/telegram";
 
