@@ -54,13 +54,16 @@ export const HANDED_OVER_SQL = `SELECT email FROM lead_exports WHERE COALESCE(ou
  * from one brand, which is the fastest way to earn complaints — hence the
  * handover check. Russian/Belarusian domains are excluded on policy.
  */
-export function contactableSql(col = "email"): string {
+export function contactableSql(col = "email", opts: { requireMailboxCheck?: boolean } = {}): string {
   const e = `LOWER(${col})`;
+  // The mailbox check is a gate for SENDING. The verifier that produces those
+  // verdicts must not be behind it, or it can never see the addresses it is
+  // supposed to check — which is exactly what happened the first hour.
+  const checked = opts.requireMailboxCheck === false ? `` : `\n     AND ${e} IN (${MAILBOX_CHECKED_SQL})`;
   return `${col} IS NOT NULL
      AND ${e} NOT IN (${SUPPRESSED_SQL})
      AND ${col} !~* '\\.(ru|su|by)$|yandex\\.'
-     AND ${e} NOT IN (${HANDED_OVER_SQL})
-     AND ${e} IN (${MAILBOX_CHECKED_SQL})`;
+     AND ${e} NOT IN (${HANDED_OVER_SQL})${checked}`;
 }
 
 export const PLATFORMS = ["soundcloud", "spotify", "youtube", "beatport"] as const;

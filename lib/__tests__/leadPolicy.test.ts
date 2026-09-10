@@ -57,6 +57,10 @@ describe("contactableSql", () => {
     expect(sql).not.toContain("email IS NOT NULL");
   });
 
+  it("lets the verifier itself see unchecked addresses", () => {
+    expect(contactableSql("email", { requireMailboxCheck: false })).not.toContain("email_verification");
+  });
+
   it("refuses an address the mailbox check has never seen", () => {
     // checked-and-unknown is allowed (Outlook/Yahoo refuse probes); unchecked is not
     const sql = contactableSql();

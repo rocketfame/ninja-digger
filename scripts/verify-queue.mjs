@@ -51,7 +51,7 @@ const { rows } = await pool.query(
           AND email NOT IN (SELECT email FROM email_verification WHERE verdict IN ('valid','invalid'))
         ORDER BY ts DESC NULLS LAST LIMIT $1`
     : `SELECT q.email, q.platform src FROM (${leadSourcesSql()}) q
-        WHERE q.touch = 0 AND ${contactableSql("q.email")}
+        WHERE q.touch = 0 AND ${contactableSql("q.email", { requireMailboxCheck: false })}
           AND q.email NOT IN (SELECT email FROM email_verification
                                WHERE verdict IN ('valid','invalid') OR checked_at > now() - interval '30 days')
         ORDER BY q.found_at DESC NULLS LAST LIMIT $1`,
