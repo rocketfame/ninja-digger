@@ -56,7 +56,13 @@ function linksFromDescription(desc: string): string[] {
 }
 
 /** Enrich one SC artist. Returns the found email, or null. */
-export async function enrichScArtist(a: { soundcloud_id: string; username: string; description: string | null; instagram?: string | null }): Promise<string | null> {
+/**
+ * Every address this writes goes through emailForStorage — policy, MX and the
+ * ICP rule — exactly like the two harvest engines. It did not: it wrote the
+ * bio address straight into the row, which is how a 2.7M-follower account
+ * received an email hours after the write-time gate was deployed.
+ */
+export async function enrichScArtist(a: { soundcloud_id: string; username: string; description: string | null; instagram?: string | null; followers_count?: number | null }): Promise<string | null> {
   // 0. If we have no bio yet (Re-Ex promoters), fetch it — booking emails live here
   let description = a.description;
   if (!description) {
@@ -67,7 +73,7 @@ export async function enrichScArtist(a: { soundcloud_id: string; username: strin
   }
   // Direct email in the bio is the highest-yield source
   if (description) {
-    const bioEmail = extractEmail(description);
+    const bioEmail = await emailForStorage(description, { followers: a.followers_count });
     if (bioEmail) {
       await pool.query(`UPDATE sc_artists SET email=$1, email_source='bio', email_found_at=now(), updated_at=now() WHERE soundcloud_id=$2 AND email IS NULL`, [bioEmail, a.soundcloud_id]);
       return bioEmail;
@@ -110,11 +116,12 @@ export async function enrichScArtist(a: { soundcloud_id: string; username: strin
         }
       }
     }
-    if (email) {
+    const stored = email ? await emailForStorage(null, { explicit: email, followers: a.followers_count }) : null;
+    if (stored) {
       const source = /linktr|beacons/i.test(url) ? "linktree" : url.includes("bandcamp") ? "bandcamp" : "enrich";
       await pool.query(`UPDATE sc_artists SET email=$1, email_source=$2, email_found_at=now(), updated_at=now() WHERE soundcloud_id=$3 AND email IS NULL`,
-        [email, source, a.soundcloud_id]);
-      return email;
+        [stored, source, a.soundcloud_id]);
+      return stored;
     }
   }
   return null;
@@ -128,8 +135,8 @@ export async function enrichScArtist(a: { soundcloud_id: string; username: strin
  * cron uses a big batch + concurrency to actually drain the ~25k backlog.
  */
 export async function enrichScBatch(limit = 8, concurrency = 1): Promise<{ processed: number; found: number }> {
-  const rows = (await pool.query<{ soundcloud_id: string; username: string; description: string | null; instagram: string | null }>(
-    `SELECT soundcloud_id, username, description, instagram FROM sc_artists
+  const rows = (await pool.query<{ soundcloud_id: string; username: string; description: string | null; instagram: string | null; followers_count: number | null }>(
+    `SELECT soundcloud_id, username, description, instagram, followers_count FROM sc_artists
      WHERE email IS NULL AND (is_promoter = true OR tier IN ('A','B'))
      ORDER BY enrich_attempted_at ASC NULLS FIRST, is_promoter DESC, tier, followers_count DESC LIMIT $1`, [limit]
   )).rows;
