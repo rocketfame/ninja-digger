@@ -12,6 +12,7 @@ import { refreshLeadScoresV2 } from "@/segment/score";
 import { runBptoptrackerDailyUpdate } from "@/lib/bptoptrackerDaily";
 import { syncBptoptrackerToChartEntries } from "@/lib/bptoptrackerSync";
 import { pool } from "@/lib/db";
+import { icpSweep } from "@/lib/emailHygiene";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 min — discovery може тривати
@@ -33,6 +34,7 @@ export async function GET(request: Request) {
     bptoptracker?: { genres: string[]; inserted: number; skipped: number; errors: string[] };
     metricsUpdated?: number;
     scoresUpdated?: number;
+    icpSuppressed?: number;
     cleanup?: { url_cache: number; enrichment_runs: number; old_chart_entries: number; bptoptracker_daily: number };
     error?: string;
   } = { ok: true };
@@ -76,6 +78,9 @@ export async function GET(request: Request) {
     const scoresUpdated = await refreshLeadScoresV2();
     result.metricsUpdated = metricsUpdated;
     result.scoresUpdated = scoresUpdated;
+
+    // --- ICP sweep: stars and representation domains that got in before the write-time gate saw enough ---
+    result.icpSuppressed = (await icpSweep().catch(() => ({ suppressed: -1 }))).suppressed;
 
     // --- DB Cleanup: видаляємо старі дані щоб не перевищити Neon 512 MB ---
     const cleanup = { url_cache: 0, enrichment_runs: 0, old_chart_entries: 0, bptoptracker_daily: 0 };

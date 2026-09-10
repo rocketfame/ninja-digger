@@ -15,6 +15,7 @@
 import { pool } from "@/lib/db";
 import { getClientId } from "@/lib/soundcloud";
 import { emailForStorage } from "@/lib/emailHygiene";
+import { pickBestEmail } from "@/lib/emailJunk";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36";
 const TIMEOUT_MS = 12000;
@@ -67,7 +68,14 @@ async function bulkUpsert(users: ScUser[], source: string): Promise<{ inserted: 
   if (rows.length === 0) return { inserted: 0, withEmail: 0 };
   // MX is cached per domain inside the gate, so a page of 270 users costs a
   // handful of lookups, not 270.
-  const emails = await Promise.all(rows.map((u) => emailForStorage(u.description ?? "", { followers: u.followers_count })));
+  // Count each domain inside this page first, so a label whose acts all arrive
+  // together is recognised on the spot (see emailForStorage).
+  const inPage = new Map<string, number>();
+  for (const u of rows) { const d = pickBestEmail(u.description ?? "")?.split("@")[1]?.toLowerCase(); if (d) inPage.set(d, (inPage.get(d) ?? 0) + 1); }
+  const emails = await Promise.all(rows.map((u) => {
+    const d = pickBestEmail(u.description ?? "")?.split("@")[1]?.toLowerCase();
+    return emailForStorage(u.description ?? "", { followers: u.followers_count, sharedInBatch: d ? (inPage.get(d) ?? 1) - 1 : 0 });
+  }));
 
   const res = await pool.query(
     `INSERT INTO sc_artists (soundcloud_id, permalink, permalink_url, username, full_name, city, country_code,

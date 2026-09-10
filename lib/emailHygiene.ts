@@ -7,7 +7,7 @@
 
 import { promises as dns } from "dns";
 import { pool } from "@/lib/db";
-import { classifyEmail, pickBestEmail, icpReject, isFreemailDomain } from "@/lib/emailJunk";
+import { classifyEmail, pickBestEmail, icpReject, isFreemailDomain, FREEMAIL_LIST } from "@/lib/emailJunk";
 import { getSettingOrNull } from "@/lib/settings";
 
 
@@ -23,6 +23,34 @@ export function isHostileDomain(email: string | null | undefined): boolean {
 }
 
 const mxCache = new Map<string, boolean>();
+
+/**
+ * The ICP rule over everything already stored, as ONE statement. Runs daily
+ * from /api/cron/daily. The gate at write time counts a domain from what it can
+ * see; acts of one label spread over days still add up to three only here.
+ * Anyone who has ever written back is exempt — a reply is worth more than a
+ * rule, and the reply flow must not lose them.
+ */
+export async function icpSweep(): Promise<{ suppressed: number }> {
+  const maxF = await icpMaxFollowers();
+  const res = await pool.query(
+    `WITH d AS (SELECT split_part(LOWER(email),'@',2) dom, COUNT(DISTINCT soundcloud_id) n FROM sc_artists WHERE email IS NOT NULL GROUP BY 1)
+     INSERT INTO email_blacklist (email, reason)
+     SELECT DISTINCT LOWER(a.email),
+            CASE WHEN a.followers_count > $1 THEN 'not-ICP: star (' || a.followers_count || ' followers > ' || $1 || ')'
+                 ELSE 'not-ICP: representation domain (' || d.dom || ' shared by ' || d.n || ' artists)' END
+       FROM sc_artists a JOIN d ON d.dom = split_part(LOWER(a.email),'@',2)
+      WHERE a.email IS NOT NULL
+        AND (a.followers_count > $1 OR (d.n >= 3 AND NOT (d.dom = ANY($2::text[]))))
+        AND LOWER(a.email) NOT IN (SELECT LOWER(email) FROM tg_notifications WHERE email IS NOT NULL)
+     ON CONFLICT (email) DO NOTHING`,
+    [maxF, FREEMAIL_LIST]
+  );
+  await pool.query(`UPDATE sc_artists SET email_status='junk', updated_at=now()
+     WHERE LOWER(email) IN (SELECT LOWER(email) FROM email_blacklist WHERE reason LIKE 'not-ICP%')
+       AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')`).catch(() => {});
+  return { suppressed: res.rowCount ?? 0 };
+}
 
 const domainShareCache = new Map<string, number>();
 /** How many distinct SoundCloud artists carry an address on this domain. Cached per process. */
@@ -52,13 +80,18 @@ export async function icpMaxFollowers(): Promise<number> {
  * this, so an address we must never mail never enters the table.
  */
 export async function emailForStorage(
-  text: string | null | undefined, opts: { explicit?: string | null; followers?: number | null } = {}
+  text: string | null | undefined,
+  opts: { explicit?: string | null; followers?: number | null; sharedInBatch?: number } = {}
 ): Promise<string | null> {
   const email = pickBestEmail(text, opts.explicit);
   if (!email) return null;
   const domain = email.split("@")[1];
   if (!(await domainAcceptsMail(domain))) return null;
-  const reason = icpReject(email, { followers: opts.followers, sharedBy: await domainSharedBy(domain), maxFollowers: await icpMaxFollowers() });
+  // A label's four acts arrive in ONE page: none is stored yet, so the stored
+  // count says 0 and all four pass. The caller tells us how many other rows
+  // in its batch share the domain, and those count too.
+  const sharedBy = (await domainSharedBy(domain)) + (opts.sharedInBatch ?? 0);
+  const reason = icpReject(email, { followers: opts.followers, sharedBy, maxFollowers: await icpMaxFollowers() });
   return reason ? null : email;
 }
 
