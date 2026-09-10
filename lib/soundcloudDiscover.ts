@@ -57,7 +57,13 @@ function tierFor(u: ScUser): "A" | "B" | "C" {
  * cron gets through.
  */
 async function bulkUpsert(users: ScUser[], source: string): Promise<{ inserted: number; withEmail: number }> {
-  const rows = users.filter((u) => u.id && u.permalink && u.track_count >= 1);
+  // SoundCloud repeats a user across pages of the same list when it shifts
+  // under pagination. Two copies in one INSERT ... ON CONFLICT is a Postgres
+  // error ("cannot affect row a second time"), and it killed every run on its
+  // first expansion for two hours. Last copy wins.
+  const rows = [...new Map(
+    users.filter((u) => u.id && u.permalink && u.track_count >= 1).map((u) => [u.id, u] as const)
+  ).values()];
   if (rows.length === 0) return { inserted: 0, withEmail: 0 };
   // MX is cached per domain inside the gate, so a page of 270 users costs a
   // handful of lookups, not 270.
