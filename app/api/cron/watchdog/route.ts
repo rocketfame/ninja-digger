@@ -25,7 +25,10 @@ export async function GET(request: Request) {
   // 1. DB space — the thing that once killed ingestion. Warn well before the cap.
   const size = await one(`SELECT pg_database_size(current_database())/1024/1024 AS mb`);
   const mb = num((size as { mb?: unknown }).mb);
-  if (mb >= 480) alerts.push(`🔴 БД ${mb}MB / 512 — критично близько до ліміту (прун/вакуум!)`);
+  // Launch plan: no hard cap, a bill instead. Alert on the same line the DB
+  // guard reclaims at (app_settings.db_alert_mb, default 4096).
+  const dbLimit = parseInt((await one(`SELECT value FROM app_settings WHERE key='db_alert_mb'`) as { value?: string } | null)?.value ?? "", 10) || 4096;
+  if (mb >= dbLimit) alerts.push(`🔴 БД ${mb}MB — понад поріг ${dbLimit}MB (db_alert_mb). Це вже рахунок, не ліміт: перевір, що росте.`);
 
   // 2. Sends in the last 24h per channel. Night is fine, but a full day of zero
   //    on a channel with a non-empty queue means the sender is broken.

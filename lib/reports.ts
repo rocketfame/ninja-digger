@@ -150,7 +150,7 @@ export async function buildScReport(): Promise<string> {
     `   ✅ опрацьовано: ${seeds?.completed ?? 0} · ⏳ в черзі: ${pending}\n` +
     `   🔄 спарсено сьогодні: ${seeds?.refreshed_today ?? 0}\n\n` +
     `💎 Промоутери: ${totals?.promoters ?? 0} (з email: ${totals?.promoter_emails ?? 0})\n` +
-    `${dbFlag} База: ${mb} / 512 MB\n\n` +
+    `${dbFlag} База: ${mb} MB\n\n` +
     `— — —\n` +
     `📤 Розсилка SC ${paused ? "⏸ пауза" : "🟢 активна"}\n` +
     `   Надіслано: ${out?.sent_today ?? 0} сьогодні · ${out?.sent_total ?? 0} усього\n` +
@@ -238,6 +238,6 @@ export async function buildFullReport(period?: string): Promise<string> {
     row(`${dot(spPaused)} <b>SPOTIFY</b>`, spFound, spSent, spBase, spLeft, spRepl),
   ];
   if (rdTotal > 0) parts.push(row(`${dot(rdPaused)} <b>RADAR</b> (YouTube+)`, rdFound, rdSent, rdBase, rdLeft, rdRepl));
-  parts.push(``, `💾 База БД: ${dbMb} / 512 MB`);
+  parts.push(``, `💾 База БД: ${dbMb} MB · Neon Launch, без стелі`);
   return parts.join("\n");
 }

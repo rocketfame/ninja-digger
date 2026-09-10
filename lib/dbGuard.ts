@@ -12,8 +12,15 @@ import { pool } from "@/lib/db";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { getSettingOrNull, setSetting } from "@/lib/settings";
 
-const RECLAIM_MB = 440;
-const ALERT_MB = 480;
+// The free tier capped at 512 MB and these were 440/480. On the Launch plan
+// there is no cap, only a bill ($0.35 per GB-month), so the guard's job changes
+// from "keep the engines alive" to "notice runaway growth". The line is a
+// runtime setting so it moves with the plan, not with a deploy.
+const DEFAULT_LIMIT_MB = 4096;
+async function limitMb(): Promise<number> {
+  const v = parseInt((await getSettingOrNull("db_alert_mb")) ?? "", 10);
+  return v > 0 ? v : DEFAULT_LIMIT_MB;
+}
 const ALERT_EVERY_MS = 6 * 3600 * 1000;
 
 async function sizeMB(): Promise<number> {
@@ -29,6 +36,8 @@ export async function defendDbSpace(): Promise<{ before: number; after: number; 
   let reclaimed = false;
   let alerted = false;
 
+  const limit = await limitMb();
+  const RECLAIM_MB = limit, ALERT_MB = Math.round(limit * 1.1);
   if (before >= RECLAIM_MB) {
     // Emergency reclaim — TRUNCATE/DROP free files immediately (unlike DELETE).
     await pool.query(`TRUNCATE url_cache`).catch(() => {});
@@ -56,7 +65,7 @@ export async function defendDbSpace(): Promise<{ before: number; after: number; 
     const lastMs = last ? Date.parse(last) : 0;
     if (!last || Date.now() - lastMs > ALERT_EVERY_MS) {
       await sendTelegramMessage(
-        `🔴 УВАГА: база ${after} MB з 512 (ліміт близько).\n` +
+        `🔴 УВАГА: база ${after} MB, поріг ${ALERT_MB} MB (db_alert_mb).\n` +
         `Авточистка вже спрацювала${reclaimed ? " (звільнено кеш + старі чарти)" : ""}, але місця мало.\n` +
         `Харвест SC зупинено автоматично, щоб не впасти. Треба глянути, що росте.`
       );
