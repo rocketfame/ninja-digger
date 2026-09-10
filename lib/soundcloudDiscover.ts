@@ -64,8 +64,8 @@ async function bulkUpsert(users: ScUser[], source: string): Promise<{ inserted: 
   const res = await pool.query(
     `INSERT INTO sc_artists (soundcloud_id, permalink, permalink_url, username, full_name, city, country_code,
         description, avatar_url, track_count, followers_count, followings_count,
-        email, email_source, tier, is_active, source_seed, email_found_at, created_at, updated_at)
-     SELECT t.*, now(), now() FROM UNNEST(
+        email, email_source, tier, is_active, source_seed, email_found_at, harvested_at, created_at, updated_at)
+     SELECT t.*, now(), now(), now() FROM UNNEST(
         $1::bigint[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[],
         $8::text[], $9::text[], $10::int[], $11::int[], $12::int[],
         $13::text[], $14::text[], $15::text[], $16::bool[], $17::text[], $18::timestamptz[]

@@ -108,7 +108,9 @@ export async function GET(request: Request) {
   const pruned = await pool.query(
     `DELETE FROM sc_artists
      WHERE email IS NULL AND is_promoter = false AND COALESCE(tier,'C') <> 'A'
-       AND harvested_at < now() - interval '24 hours'`
+       AND harvested_at < now() - interval '24 hours'
+       -- an unwalked producer is frontier, not ballast: it opens ~270 more
+       AND NOT (followings_crawled_at IS NULL AND track_count >= 3)`
   ).then((r) => r.rowCount ?? 0).catch(() => 0);
 
   // Silent-death watchdog: if we HAD seeds to harvest but every one errored
