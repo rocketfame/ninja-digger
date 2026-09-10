@@ -11,7 +11,8 @@ type IconCmp = ComponentType<{ className?: string; style?: React.CSSProperties }
 const NAV_ITEMS: { href: string; label: string; icon: IconCmp; brand?: string; exact?: boolean; match?: string }[] = [
   { href: "/", label: "Головна", icon: Home, exact: true },
   { href: "/leads", label: "Beatport", icon: SiBeatport, brand: "#a3ff12" },
-  { href: "/sc-leads", label: "SoundCloud", icon: SiSoundcloud, brand: "#ff5500" },
+  { href: "/sc-leads/reex", label: "Репост SC", icon: SiSoundcloud, brand: "#ff5500" },
+  { href: "/sc-leads/graph", label: "SoundCloud парсер", icon: SiSoundcloud, brand: "#ff5500" },
   { href: "/spotify-leads", label: "Spotify", icon: SiSpotify, brand: "#1db954", match: "/spotify-" },
   { href: "/radar", label: "Radar", icon: Flame, brand: "#ff4d00" },
   { href: "/analytics", label: "Аналітика", icon: BarChart3 },

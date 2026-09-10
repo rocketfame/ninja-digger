@@ -4,7 +4,7 @@
 import { NextResponse } from "next/server";
 import { isAuthorized, unauthorized } from "@/lib/apiAuth";
 import { pool } from "@/lib/db";
-import { SC_ACTIVITY, SC_ACTIVITY_SQL } from "@/lib/scActivity";
+import { SC_ACTIVITY, SC_ACTIVITY_SQL, SC_SOURCE, scSource } from "@/lib/scActivity";
 import { csvCell } from "@/lib/csv";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ export async function GET(request: Request) {
   // Analytics mode: repost/promo channels with no own tracks (kept for future
   // insight into their model, NOT outreach). Default = real artists only.
   const analytics = searchParams.get("analytics") === "1";
-  const conds: string[] = [];
+  const conds: string[] = [SC_SOURCE[scSource(searchParams.get("source"))].sql];
   const params: string[] = [];
   // A lead must have its own tracks — accounts with 0 tracks are repost channels,
   // useless for artist outreach. Analytics mode flips to exactly those.
