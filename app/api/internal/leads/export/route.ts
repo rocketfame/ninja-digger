@@ -17,7 +17,13 @@
  *
  * Params: platform=soundcloud|spotify|youtube|beatport|all, limit (max 5000),
  *         batch=<label>, format=json|csv, verified=only|any|all,
- *         engagement=any|engaged|replied, min_followers=N, country=US,CA, dry=1
+ *         engagement=any|engaged|replied, min_followers=N, country=US,CA, dry=1,
+ *         cursor=<last email of the previous page>
+ *
+ * Paging: the response carries `total_available` (how many match the filters
+ * right now) and `next_cursor`. Feed next_cursor back as ?cursor= to continue.
+ * It is a keyset, not an offset, because a live call records what it hands over
+ * and the result set shrinks between pages - an offset would then skip rows.
  */
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
@@ -34,6 +40,11 @@ function bridgeAuthorized(request: Request): boolean {
   const token = process.env.LEADGEN_TOKEN;
   if (token && request.headers.get("authorization") === `Bearer ${token}`) return true;
   return isAuthorized(request);
+}
+
+/** $-position of the cursor value, after the optional followers/country params. */
+function paramIndex(minFollowers: number, countryCount: number): number {
+  return 2 + (minFollowers > 0 ? 1 : 0) + (countryCount > 0 ? 1 : 0);
 }
 
 export const dynamic = "force-dynamic";
@@ -64,6 +75,11 @@ export async function GET(request: Request) {
   const minFollowers = Math.max(0, parseInt(q.get("min_followers") ?? "0", 10) || 0);
   const countries = (q.get("country") ?? "").split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
   const batch = q.get("batch") ?? `${platformParam}-${new Date().toISOString().slice(0, 10)}`;
+  // Keyset pagination on email. Offset paging would skip or repeat rows here,
+  // because a live (non-dry) call records what it hands over and the result set
+  // shrinks under the reader's feet. A cursor on the sort key cannot: pass back
+  // `next_cursor` and the next page starts exactly after the last row seen.
+  const cursor = (q.get("cursor") ?? q.get("after") ?? "").trim().toLowerCase();
 
   const union = leadSourcesSql(platforms);
   const rows = await pool
@@ -80,9 +96,10 @@ export async function GET(request: Request) {
           ${repliedOnly ? `AND s.email IN (${REPLIED_SQL})` : ``}
           ${minFollowers > 0 ? `AND COALESCE(s.followers, 0) >= $2` : ``}
           ${countries.length > 0 ? `AND UPPER(COALESCE(s.country, '')) = ANY($${minFollowers > 0 ? 3 : 2}::text[])` : ``}
+          ${cursor ? `AND s.email > $${paramIndex(minFollowers, countries.length)}` : ``}
         ORDER BY s.email, s.found_at DESC NULLS LAST
         LIMIT $1`,
-      [limit, ...(minFollowers > 0 ? [minFollowers] : []), ...(countries.length > 0 ? [countries] : [])]
+      [limit, ...(minFollowers > 0 ? [minFollowers] : []), ...(countries.length > 0 ? [countries] : []), ...(cursor ? [cursor] : [])]
     )
     .then((r) => r.rows)
     .catch((e: unknown) => {
@@ -108,8 +125,30 @@ export async function GET(request: Request) {
       headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${batch}.csv"` },
     });
   }
+  // How many are left to hand over under these filters, so the other side can
+  // plan instead of discovering the end by getting a short page.
+  const total = await pool
+    .query<{ c: string }>(
+      `WITH src AS (${union})
+       SELECT COUNT(DISTINCT s.email) c
+         FROM src s LEFT JOIN email_verification v ON v.email = s.email
+        WHERE s.email NOT IN (${SUPPRESSED_SQL})
+          AND s.email NOT IN (SELECT email FROM lead_exports)
+          ${verifiedOnly ? `AND v.verdict = 'valid'` : `AND COALESCE(v.verdict,'unknown') <> 'invalid'`}
+          ${engagedOnly ? `AND s.email IN (${OPENED_SQL})` : ``}
+          ${repliedOnly ? `AND s.email IN (${REPLIED_SQL})` : ``}
+          ${minFollowers > 0 ? `AND COALESCE(s.followers, 0) >= $1` : ``}
+          ${countries.length > 0 ? `AND UPPER(COALESCE(s.country, '')) = ANY($${minFollowers > 0 ? 2 : 1}::text[])` : ``}`,
+      [...(minFollowers > 0 ? [minFollowers] : []), ...(countries.length > 0 ? [countries] : [])]
+    )
+    .then((r) => Number(r.rows[0]?.c ?? 0))
+    .catch(() => null);
+
   return NextResponse.json({
     batch, dry, count: rows.length,
+    total_available: total,
+    // Present only while more rows remain: feed it back as ?cursor= for the next page.
+    next_cursor: rows.length === limit ? rows[rows.length - 1].email : null,
     filters: {
       platform: platformParam,
       verified: verifiedOnly ? "smtp-verified live only" : "not-invalid",
