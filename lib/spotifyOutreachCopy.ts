@@ -18,12 +18,24 @@ function hash(s: string): number { let h = 0; for (let i = 0; i < s.length; i++)
 
 const GREETINGS = ["Hey {name},", "Hi {name},", "Yo {name},"];
 
-// TOUCH 1, genuine, personal, NO offer / no links. Just a real note + a question.
+// TOUCH 1 is now the ONLY cold email we send, so it has to say who we are.
+// It used to be a deliberately offer-free warm-up with touches 2 and 3 carrying
+// the pitch; with those gone, a note that only compliments the music reads as
+// someone wanting to USE it. Two artists replied asking us to pay them for
+// their videos, one asked why we were "pretending to be interested in chatting"
+// instead of writing the proposal. One plain sentence naming what we do fixes
+// that. Still NO links and NO discount here - those are what put a first
+// contact in Gmail's Promotions tab, and they belong in the manual reply.
 const T1_SUBJECTS = ["your music", "quick question", "your tracks", "your sound", "just heard this"];
 const T1_OPENERS = [
   "Came across your music and honestly, it really landed with me, the sound's got something.",
   "Been listening to your tracks and had to reach out, genuinely good stuff.",
   "Found your profile, gave it a proper listen, and the sound really stood out.",
+];
+const T1_WHO = [
+  "I'm Max from PromoSound, we run promotion campaigns for independent artists on Spotify, SoundCloud, Beatport and YouTube.",
+  "I'm Max, I run artist promotion at PromoSound, we work across Spotify, SoundCloud, Beatport and YouTube.",
+  "I'm Max from PromoSound. We handle promotion for independent artists across Spotify, SoundCloud, Beatport and YouTube.",
 ];
 const T1_QUESTIONS = [
   "Quick one, are you already pushing your releases anywhere, or mostly letting them grow on their own so far?",
@@ -60,7 +72,7 @@ export function buildSpotifyEmail(touch: 1 | 2 | 3, opts: { name: string; pct: n
   let subject: string, text: string;
   if (touch === 1) {
     subject = pick(T1_SUBJECTS, seed);
-    text = `${greet}\n\n${pick(T1_OPENERS, seed + 1)}\n\n${pick(T1_QUESTIONS, seed + 2)}\n\n${close}`;
+    text = `${greet}\n\n${pick(T1_OPENERS, seed + 1)}\n\n${pick(T1_WHO, seed + 3)}\n\n${pick(T1_QUESTIONS, seed + 2)}\n\n${close}`;
   } else if (touch === 2) {
     subject = pick(T2_SUBJECTS, seed);
     text = `${greet}\n\n${pick(T2_BODIES, seed + 1)}\n\n${close}`;

@@ -4,9 +4,14 @@
  *   reddit  → playlist/streams pitch
  *   default → generic music-promo
  *
- * ⚠️ DRAFT copy, pending the user's exact offer + language choice. The cron is
- * PAUSED (app_settings radar_outreach_paused='1') so nothing sends until approved.
- * Plain text, 1:1 tone. Touch 1 has NO offer (genuine), 2 = value, 3 = offer.
+ * Plain text, 1:1 tone.
+ *
+ * Touch 1 is the ONLY cold email we send now, so it must say who we are. The
+ * old version complimented the video and offered to "share an idea" without
+ * naming PromoSound or what we sell: two artists read it as us wanting to BUY
+ * their videos and quoted a price, another asked why we were pretending to want
+ * a chat instead of writing the proposal. Touches 2 and 3 are kept for
+ * reference but nothing calls them any more.
  */
 
 export type RadarEmail = { subject: string; text: string };
@@ -17,7 +22,7 @@ function youtube(touch: 1 | 2 | 3, name: string, pct: number): RadarEmail {
   if (touch === 1)
     return {
       subject: `your latest upload`,
-      text: `Hey ${name},\n\nCame across your latest video, the sound genuinely stood out. How's the reach been so far? We've actually got an idea that could get it in front of a lot more people, happy to share if you're up for it.${SIG}`,
+      text: `Hey ${name},\n\nCame across your latest video, the sound genuinely stood out.\n\nI'm Max from PromoSound, we run promotion campaigns for independent artists on YouTube, Spotify, SoundCloud and Beatport. How's the reach been on this one so far?\n\nIf you're pushing it, happy to tell you how we'd approach it.${SIG}`,
     };
   if (touch === 2)
     return {
@@ -34,7 +39,7 @@ function reddit(touch: 1 | 2 | 3, name: string, pct: number): RadarEmail {
   if (touch === 1)
     return {
       subject: `your release`,
-      text: `Hey ${name},\n\nCaught your release, the sound genuinely stood out. How's it doing on the streaming side so far? We've actually got an idea that could get it in front of a lot more listeners, happy to share if you're up for it.${SIG}`,
+      text: `Hey ${name},\n\nCaught your release, the sound genuinely stood out.\n\nI'm Max from PromoSound, we run promotion campaigns for independent artists on Spotify, SoundCloud, Beatport and YouTube. How's it doing on the streaming side so far?\n\nIf you're pushing it, happy to tell you how we'd approach it.${SIG}`,
     };
   if (touch === 2)
     return {
@@ -49,7 +54,7 @@ function reddit(touch: 1 | 2 | 3, name: string, pct: number): RadarEmail {
 
 function generic(touch: 1 | 2 | 3, name: string, pct: number): RadarEmail {
   if (touch === 1)
-    return { subject: `your music`, text: `Hey ${name},\n\nFound your music recently and really dug it. How's the promo side going for you right now?${SIG}` };
+    return { subject: `your music`, text: `Hey ${name},\n\nFound your music recently and really dug it.\n\nI'm Max from PromoSound, we run promotion campaigns for independent artists across Spotify, SoundCloud, Beatport and YouTube. How's the promo side going for you right now?${SIG}` };
   if (touch === 2)
     return { subject: `quick idea`, text: `Hey ${name},\n\nWe help independent artists get real streams + playlist placements (Spotify/Apple/Deezer). Might be useful for your latest. Want the details?${SIG}` };
   return { subject: `spots opening up`, text: `Hey ${name},\n\nOpening a few promo spots this month, ${pct}% off the first campaign for independent artists. Want the details?${SIG}` };

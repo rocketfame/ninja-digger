@@ -53,8 +53,9 @@ SoundCloud, Beatport, YouTube, Apple, TikTok, Instagram. Формулюванн�
 
 ## Коди лідів, фіксовані 15%
 
-`LEADSPOTIFY15` · `LEADSOUND15` · `LEADBEATPORT15` · `LEADYOUTUBE15` ·
-`LEADAPPLE15` · `LEADSOCIAL15`
+`MAXSPOTIFY` · `MAXCLOUD` · `MAXBEATPORT` · `MAXYOUTUBE` ·
+`MAXAPPLE` · `MAXSOCIAL`
 
-Префікс `LEAD` дає атрибуцію продажів reply desk по каналах у Shopify. Код
+Код читається як особиста знижка від Макса, а префікс `MAX` водночас дає
+атрибуцію продажів reply desk по каналах у Shopify. Код
 завжди йде разом із лінком. Кодів, яких немає в Shopify, у листі не називати.

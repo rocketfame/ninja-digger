@@ -79,15 +79,15 @@ about their plans: ask for the link so the campaign can be queued.
 Every offer link carries its channel lead code, a flat 15 percent off.
 
     Spotify     https://promosoundgroup.net/collections/spotify-promotion
-                LEADSPOTIFY15
+                MAXSPOTIFY
     SoundCloud  https://promosoundgroup.net/collections/s-cloud-promotion
-                LEADSOUND15
+                MAXCLOUD
     Beatport    https://promosoundgroup.net/products/beatport-daily-push
-                LEADBEATPORT15
+                MAXBEATPORT
     YouTube     https://promosoundgroup.net/collections/youtube-promotion
-                LEADYOUTUBE15
-    Apple       LEADAPPLE15
-    TikTok / IG LEADSOCIAL15
+                MAXYOUTUBE
+    Apple       MAXAPPLE
+    TikTok / IG MAXSOCIAL
 
-The LEAD prefix is deliberate: it attributes reply-desk sales per channel in
-Shopify. Do not quote a code that has not been created in Shopify yet.
+The MAX prefix is deliberate: the code reads as a personal discount from Max,
+and it still attributes reply-desk sales per channel in Shopify. Do not quote a code that has not been created in Shopify yet.
