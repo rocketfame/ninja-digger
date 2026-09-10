@@ -13,25 +13,41 @@ type Draft = { intent: string; reply: string } | null;
  * ready-to-send draft response in the artist's language. Returns null on no key
  * or any error (so the caller just skips the suggestion).
  */
+export type ChannelOffer = { channel: string; name?: string; url?: string | null; code?: string | null; facts?: string | null };
+
 export async function draftReplyAssist(
   artistReply: string,
-  ctx?: { name?: string | null; channel?: string; offer?: { name?: string; url?: string | null; code?: string | null; facts?: string | null }; facts?: string | null; thread?: string | null; customer?: boolean }
+  ctx?: {
+    name?: string | null;
+    /** Where this lead came from. It is NOT a limit on what we can sell them. */
+    channel?: string;
+    /** EVERY channel we sell, so the reply can follow what the artist asks for. */
+    offers?: ChannelOffer[];
+    facts?: string | null; thread?: string | null; customer?: boolean;
+  }
 ): Promise<Draft> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key || !artistReply?.trim()) return null;
 
-  // Concrete offer to pitch when the lead is warm. Built from app_settings so
-  // the exact product name / link / discount code are editable without a deploy.
-  const o = ctx?.offer;
-  const offerBlock = o?.name
-    ? `\n\nOUR OFFER LINK (use when they are interested or ask about packages/reach/pricing/next steps): point them to "${o.name}" and put the link on ITS OWN LINE so they can browse the real packages and prices themselves: ${o.url ?? ""}.` +
-      (o.code ? ` Mention the code ${o.code} as a personal discount from Max.` : ``) +
-      ` Keep it to ONE short line plus the link - do NOT describe every package or invent prices; the link does the work.`
+  // We sell ALL FOUR channels. The lead's acquisition channel says where we
+  // found them, not what they are allowed to buy: a SoundCloud lead asking for
+  // Spotify must be sent to Spotify, and telling them "we focus on SoundCloud
+  // specifically" is both a lost sale and untrue.
+  const offers = (ctx?.offers ?? []).filter((o) => o.url);
+  const offerBlock = offers.length
+    ? `\n\nWHAT WE SELL - all four, and the artist may buy any of them regardless of where we found them:\n` +
+      offers.map((o) => `  ${o.channel}: ${o.name ?? o.channel}\n    ${o.url}${o.code ? `\n    code ${o.code}` : ``}`).join("\n") +
+      `\n\nPICK THE CHANNEL THE ARTIST ASKED FOR, not the one we contacted them on.` +
+      ` If they name a platform, give that platform's link and code and nothing else.` +
+      ` If they say they need promotion generally, or have nothing running on other platforms, say we cover Beatport, SoundCloud, Spotify and YouTube and give the link for the platform that matters most to them - ask which one if it is genuinely unclear.` +
+      ` NEVER say we focus on one platform "specifically" or imply we do not do the others.` +
+      ` Put the link on ITS OWN LINE. Mention the code as a personal discount from Max.` +
+      ` ONE short line plus the link - do not describe packages or invent prices; the link does the work.`
     : ``;
 
   const system =
     `You are the assistant for Max at PromoSound, a music-promo agency (we promote artists on Beatport, SoundCloud, Spotify and YouTube).\n\n` +
-    `CONTEXT: our outreach opened by pointing at this artist's chart activity. When they ask "which track / am I charting", answer from the VERIFIED FACTS below (exact title, chart, positions, source link). Never call anything a "recent upload" or "new release" unless the facts say it was released recently; a CATALOG/classic track that re-enters the charts is described as exactly that (renewed interest in a classic), and the pitch then shifts to their NEXT release or catalog push.\n\n` +
+    `CONTEXT: our outreach opened by pointing at this artist's chart activity. We promote on Beatport, SoundCloud, Spotify AND YouTube - the channel we reached them on is not a restriction on what they can buy. When they ask "which track / am I charting", answer from the VERIFIED FACTS below (exact title, chart, positions, source link). Never call anything a "recent upload" or "new release" unless the facts say it was released recently; a CATALOG/classic track that re-enters the charts is described as exactly that (renewed interest in a classic), and the pitch then shifts to their NEXT release or catalog push.\n\n` +
     `READ THE REPLY CAREFULLY. If the artist corrects us (the track is old, it isn't theirs, they are a label/manager, they already work with someone, they are annoyed), acknowledge the correction in ONE short sentence, do NOT repeat our original framing, and either adjust the offer to what fits or close politely. Sarcasm or irritation means: apologise briefly, no pitch. Never argue, never explain our tooling.\n\n` +
     (ctx?.thread ? `THREAD SO FAR (chronological, read it before answering — never repeat what we already said, never ask what they already told us):\n${ctx.thread}\n\n` : ``) +
     (ctx?.customer
@@ -40,13 +56,15 @@ export async function draftReplyAssist(
     `An artist just REPLIED to our outreach. Respond as JSON only: {"intent":"interested|question|customer|not_interested|unsubscribe|other","reply":"<the reply text in the SAME language as the artist, plain text, no signature>"}.\n` +
     `STYLE (strict): keep it SHORT, 2 to 3 short sentences, never more. Direct and professional, zero filler and zero hype phrases ("that's exactly the right time", "sound good?", "let's capitalize"). Sound like a busy competent person, not a marketer. Use only plain punctuation: commas, periods, question marks, and a simple hyphen "-" if needed. NEVER use em-dashes or en-dashes ("—" / "–"). No bullet points, no headings, no emoji.\n` +
     `HARD RULE: NEVER propose a call, meeting, Zoom, phone, or "quick chat". All communication stays in email.\n` +
-    `ANSWER WITH THE LINK, not a sales paragraph: when they ask what it looks like, what the reach is, or what packages/prices are available, DO NOT write a long descriptive pitch and NEVER deflect with "I'll send details later" (that brushes off a hot lead). Instead: one short line that it's all real listeners (never bots), then send them straight to our packages via the offer link below so they see the real options and prices, then ask ONE qualifying question (their main platform or their next release date). Let the link do the work - keep the whole reply to 2-3 sentences.\n` +
+    `ANSWER WITH THE LINK, not a sales paragraph: when they ask what it looks like, what the reach is, or what packages/prices are available, DO NOT write a long descriptive pitch and NEVER deflect with "I'll send details later" (that brushes off a hot lead). Instead: one short line that it's all real listeners (never bots), then the offer link so they see the real options and prices. Let the link do the work - keep the whole reply to 2-3 sentences.\n` +
+    `CLOSE ON WHAT IS ACTUALLY MISSING, and only if something is. If they already named the platform and the track, do not ask anything - confirm the next step instead. Ask about a release date ONLY when they mentioned an upcoming release; asking every artist "when is your next release" reads like a script and it is the fastest way to sound automated. Never ask something they already answered.\n` +
     `- interested / question: brief affirm, then the offer link + one qualifier. Short.\n` +
     `- not_interested / unsubscribe: a brief polite acknowledgement, do NOT pitch.\n` +
     `Never invent specific prices, exact numbers, chart positions, or fake guarantees. Be concrete about WHAT we do without fabricating stats.` +
     offerBlock +
-    (o?.facts
-      ? `\n\nPRODUCT FACTS (the ONLY claims you may make about how the service works, delivery, timing, reporting and results — anything not listed here you must not promise or invent):\n${o.facts}\n`
+    (offers.some((o) => o.facts)
+      ? `\n\nPRODUCT FACTS (the ONLY claims you may make about how each service works, delivery, timing, reporting and results - anything not listed here you must not promise or invent):\n` +
+        offers.filter((o) => o.facts).map((o) => `  ${o.channel}: ${o.facts}`).join("\n") + `\n`
       : ``) +
     (ctx?.facts
       ? `\n\nVERIFIED FACTS about this artist from our own chart tracking (the ONLY numbers you may cite):\n${ctx.facts}\n` +

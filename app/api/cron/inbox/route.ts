@@ -13,7 +13,7 @@ import { ImapFlow } from "imapflow";
 import { pool } from "@/lib/db";
 import { invalidateContactEmail } from "@/lib/emailHygiene";
 import { sendTelegramMessage, tgEscape } from "@/lib/telegram";
-import { draftReplyAssist } from "@/lib/llm";
+import { draftReplyAssist, type ChannelOffer } from "@/lib/llm";
 import { classifyEmail } from "@/lib/enrichClassify";
 import { acquireLease } from "@/lib/cronLock";
 import { getBeatportFacts } from "@/lib/leadFacts";
@@ -310,23 +310,31 @@ export async function GET(request: Request) {
         // Concrete offer per channel, read from app_settings (offer_<ch>_name /
         // _url / _code) so the exact product + link + discount code are editable
         // without a deploy. Cached per run.
-        const offerCache = new Map<string, { name: string; url: string | null; code: string | null; facts: string | null } | null>();
-        const getOffer = async (source: string) => {
-          const s = source.toLowerCase();
-          const ch = s.startsWith("beatport") ? "beatport" : s.startsWith("soundcloud") ? "soundcloud"
-            : s.startsWith("spotify") ? "spotify" : s.startsWith("radar") ? "radar" : null;
-          if (!ch) return undefined;
-          if (!offerCache.has(ch)) {
-            const rows = await pool.query<{ key: string; value: string }>(
-              `SELECT key, value FROM app_settings WHERE key IN ($1,$2,$3,$4)`,
-              [`offer_${ch}_name`, `offer_${ch}_url`, `offer_${ch}_code`, `offer_${ch}_facts`]
-            ).then((r) => r.rows).catch(() => [] as { key: string; value: string }[]);
-            const m = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-            offerCache.set(ch, m[`offer_${ch}_name`]
-              ? { name: m[`offer_${ch}_name`], url: m[`offer_${ch}_url`] || null, code: m[`offer_${ch}_code`] || null, facts: m[`offer_${ch}_facts`] || null }
-              : null);
-          }
-          return offerCache.get(ch) ?? undefined;
+        // ALL channels, not just the one the lead came from: an artist we found on
+        // SoundCloud may well want Spotify, and answering "we focus on SoundCloud
+        // specifically" loses the sale and is not even true.
+        const CHANNELS = [
+          { key: "beatport", label: "Beatport" },
+          { key: "soundcloud", label: "SoundCloud" },
+          { key: "spotify", label: "Spotify" },
+          { key: "radar", label: "YouTube" },
+        ] as const;
+        let offersCache: ChannelOffer[] | null = null;
+        const getOffers = async (): Promise<ChannelOffer[]> => {
+          if (offersCache) return offersCache;
+          const keys = CHANNELS.flatMap((c) => [`offer_${c.key}_name`, `offer_${c.key}_url`, `offer_${c.key}_code`, `offer_${c.key}_facts`]);
+          const rows = await pool.query<{ key: string; value: string }>(
+            `SELECT key, value FROM app_settings WHERE key = ANY($1::text[])`, [keys]
+          ).then((r) => r.rows).catch(() => [] as { key: string; value: string }[]);
+          const m = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+          offersCache = CHANNELS.map((c) => ({
+            channel: c.label,
+            name: m[`offer_${c.key}_name`] || undefined,
+            url: m[`offer_${c.key}_url`] || null,
+            code: m[`offer_${c.key}_code`] || null,
+            facts: m[`offer_${c.key}_facts`] || null,
+          })).filter((o) => o.url);
+          return offersCache;
         };
 
         // Opt-out: blacklist the email + set a terminal status so NO barrel ever
@@ -353,7 +361,7 @@ export async function GET(request: Request) {
           const original = dl?.original ?? null;
           const subject = subjectByAddr.get(addr) || null;
           const tc = excerpt ? await getThreadContext(addr, excerpt) : { thread: null, customer: false, turns: 0 };
-          const draft = excerpt ? await draftReplyAssist(excerpt, { name: o.name, channel: o.source, offer: await getOffer(o.source), thread: tc.thread, customer: tc.customer }) : null;
+          const draft = excerpt ? await draftReplyAssist(excerpt, { name: o.name, channel: o.source, offers: await getOffers(), thread: tc.thread, customer: tc.customer }) : null;
           // Not interested / unsubscribe → close + blacklist immediately (still
           // notify so a polite one-line ack can be sent via Approve).
           const optedOut = draft?.intent === "not_interested" || draft?.intent === "unsubscribe" || (!!excerpt && OPT_OUT_RE.test(excerpt)) || optOutByAddr.has(addr);
@@ -530,7 +538,7 @@ export async function GET(request: Request) {
           }
 
           const bpDraft = excerpt
-            ? await (async () => { const tc = await getThreadContext(addrKey, excerpt); return draftReplyAssist(excerpt, { name, channel: "Beatport", offer: await getOffer("Beatport"), facts: await getBeatportFacts(row.artist_beatport_id), thread: tc.thread, customer: tc.customer }); })()
+            ? await (async () => { const tc = await getThreadContext(addrKey, excerpt); return draftReplyAssist(excerpt, { name, channel: "Beatport", offers: await getOffers(), facts: await getBeatportFacts(row.artist_beatport_id), thread: tc.thread, customer: tc.customer }); })()
             : null;
           const bpKb = [
             ...(bpDraft ? [[{ text: "✅ Approve & Send", callback_data: "approve" }, { text: "✏️ Редагувати", callback_data: "edit" }]] : []),
