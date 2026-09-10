@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { sendTelegramMessage } from "@/lib/telegram";
+import { SC_SOURCE } from "@/lib/scActivity";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -23,11 +24,13 @@ export async function GET(request: Request) {
     .query(
       `SELECT
         (SELECT COUNT(*) FROM artist_contacts WHERE type='email' AND created_at > now() - ${H}) bp,
-        (SELECT COUNT(*) FROM sc_artists    WHERE email_found_at > now() - ${H}) sc,
+        (SELECT COUNT(*) FROM sc_artists    WHERE email_found_at > now() - ${H} AND ${SC_SOURCE.reex.sql}) sc,
+        (SELECT COUNT(*) FROM sc_artists    WHERE email_found_at > now() - ${H} AND ${SC_SOURCE.graph.sql}) scg,
         (SELECT COUNT(*) FROM spotify_leads WHERE email_found_at > now() - ${H}) sp,
         (SELECT COUNT(*) FROM radar_leads   WHERE email_found_at > now() - ${H}) rd,
         (SELECT COUNT(DISTINCT LOWER(value)) FROM artist_contacts WHERE type='email') bp_base,
-        (SELECT COUNT(*) FROM sc_artists    WHERE email IS NOT NULL) sc_base,
+        (SELECT COUNT(*) FROM sc_artists    WHERE email IS NOT NULL AND ${SC_SOURCE.reex.sql}) sc_base,
+        (SELECT COUNT(*) FROM sc_artists    WHERE email IS NOT NULL AND ${SC_SOURCE.graph.sql}) scg_base,
         (SELECT COUNT(*) FROM spotify_leads WHERE email IS NOT NULL) sp_base,
         (SELECT COUNT(*) FROM radar_leads   WHERE email IS NOT NULL) rd_base,
         (SELECT COUNT(*) FROM radar_leads) rd_total`
@@ -41,13 +44,15 @@ export async function GET(request: Request) {
     .query(
       `SELECT
         (SELECT COUNT(*) FILTER (WHERE template_id LIKE 'email_touch_%') FROM outreach_events WHERE sent_at > now() - ${H}) bp,
-        (SELECT COUNT(*) FILTER (WHERE template_id LIKE 'sc_touch_%')    FROM outreach_events WHERE sent_at > now() - ${H}) sc,
+        (SELECT COUNT(*) FROM outreach_events o JOIN sc_artists a ON LOWER(a.email)=LOWER(o.contact_value) WHERE o.template_id LIKE 'sc_touch_%' AND o.sent_at > now() - ${H} AND ${SC_SOURCE.reex.sql}) sc,
+        (SELECT COUNT(*) FROM outreach_events o JOIN sc_artists a ON LOWER(a.email)=LOWER(o.contact_value) WHERE o.template_id LIKE 'sc_touch_%' AND o.sent_at > now() - ${H} AND ${SC_SOURCE.graph.sql}) scg,
         (SELECT COUNT(*) FILTER (WHERE template_id LIKE 'sp_touch_%')    FROM outreach_events WHERE sent_at > now() - ${H}) sp,
         (SELECT COUNT(*) FILTER (WHERE template_id LIKE 'radar_touch_%') FROM outreach_events WHERE sent_at > now() - ${H}) rd,
         (SELECT COUNT(DISTINCT ac.artist_beatport_id) FROM artist_contacts ac
            LEFT JOIN lead_profiles lp ON lp.artist_beatport_id = ac.artist_beatport_id
            WHERE ac.type='email' AND (lp.status IS NULL OR lp.status='New')) bp_left,
-        (SELECT COUNT(*) FROM sc_artists    WHERE email IS NOT NULL AND (lead_status IS NULL OR lead_status='New')) sc_left,
+        (SELECT COUNT(*) FROM sc_artists    WHERE email IS NOT NULL AND (lead_status IS NULL OR lead_status='New') AND ${SC_SOURCE.reex.sql}) sc_left,
+        (SELECT COUNT(*) FROM sc_artists    WHERE email IS NOT NULL AND (lead_status IS NULL OR lead_status='New') AND ${SC_SOURCE.graph.sql}) scg_left,
         (SELECT COUNT(*) FROM spotify_leads WHERE email IS NOT NULL AND (lead_status IS NULL OR lead_status='New')) sp_left,
         (SELECT COUNT(*) FROM radar_leads   WHERE email IS NOT NULL AND (status IS NULL OR status='new')) rd_left`
     )
@@ -57,7 +62,8 @@ export async function GET(request: Request) {
   const lines = [
     `📧 <b>Знайдено емейлів за годину</b> <i>(база)</i>`,
     `Beatport — ${n(r.bp)} (${n(r.bp_base)})`,
-    `SoundCloud — ${n(r.sc)} (${n(r.sc_base)})`,
+    `SoundCloud Re-Ex — ${n(r.sc)} (${n(r.sc_base)})`,
+    `SoundCloud парсер — ${n(r.scg)} (${n(r.scg_base)})`,
     `Spotify — ${n(r.sp)} (${n(r.sp_base)})`,
   ];
   if (n(r.rd_total) > 0) lines.push(`Radar — ${n(r.rd)} (${n(r.rd_base)})`);
@@ -66,7 +72,8 @@ export async function GET(request: Request) {
     ``,
     `✉️ <b>Надіслано аутрічів за годину</b> <i>(залишилось)</i>`,
     `Beatport — ${n(s.bp)} (${n(s.bp_left)})`,
-    `SoundCloud — ${n(s.sc)} (${n(s.sc_left)})`,
+    `SoundCloud Re-Ex — ${n(s.sc)} (${n(s.sc_left)})`,
+    `SoundCloud парсер — ${n(s.scg)} (${n(s.scg_left)})`,
     `Spotify — ${n(s.sp)} (${n(s.sp_left)})`,
   );
   if (n(r.rd_total) > 0) lines.push(`Radar — ${n(s.rd)} (${n(s.rd_left)})`);
