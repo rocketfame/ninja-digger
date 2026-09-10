@@ -7,6 +7,7 @@
 import { pool } from "@/lib/db";
 import { classifyEmail } from "@/lib/emailJunk";
 import { fetchScDescription } from "@/lib/soundcloud";
+import { emailForStorage } from "@/lib/emailHygiene";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
