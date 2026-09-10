@@ -73,26 +73,34 @@ export async function setOutreach(
  */
 export async function moveStaleBeatportToSpotify(): Promise<{ moved: number }> {
   const { contactableSql } = await import("@/lib/leadPolicy");
+  // The identity that moves is the ADDRESS, not the artist: one artist can hold
+  // several contacts, and several artists can share one address. Keying the
+  // Spotify row by artist dropped the second address of 446 artists while their
+  // Beatport rows were already retired — unreachable by either barrel.
   const ins = await pool.query(
     `WITH cand AS (
-       SELECT ac.id, 'bp:' || ac.artist_beatport_id AS key, am.artist_name AS name, LOWER(TRIM(ac.value)) AS email
+       SELECT DISTINCT ON (LOWER(TRIM(ac.value)))
+              LOWER(TRIM(ac.value)) AS email, am.artist_name AS name
          FROM artist_contacts ac
          JOIN artist_metrics am ON am.artist_beatport_id = ac.artist_beatport_id
          LEFT JOIN lead_profiles lp ON lp.artist_beatport_id = ac.artist_beatport_id
-        WHERE ac.type = 'email' AND COALESCE(ac.status,'ok') = 'ok'
+        WHERE ac.type = 'email' AND COALESCE(ac.status,'ok') IN ('ok','moved')
           AND (lp.status IS NULL OR lp.status = 'New')
           AND am.last_seen < current_date - 14
           AND ${contactableSql("TRIM(ac.value)")}
           AND LOWER(TRIM(ac.value)) NOT IN (SELECT LOWER(contact_value) FROM outreach_events WHERE channel = 'email')
-     ),
-     ins AS (
-       INSERT INTO spotify_leads (ig_username, full_name, email, email_source, source_post, lead_status, created_at, updated_at)
-       SELECT key, name, email, 'beatport', 'beatport-stale', 'New', now(), now() FROM cand
-       ON CONFLICT (ig_username) DO NOTHING
-       RETURNING ig_username
+        ORDER BY LOWER(TRIM(ac.value)), am.last_seen DESC
      )
-     UPDATE artist_contacts SET status = 'moved'
-      WHERE id IN (SELECT id FROM cand WHERE 'bp:' || artist_beatport_id IN (SELECT ig_username FROM ins))`
+     INSERT INTO spotify_leads (ig_username, full_name, email, email_source, source_post, lead_status, created_at, updated_at)
+     SELECT 'bp:' || email, name, email, 'beatport', 'beatport-stale', 'New', now(), now() FROM cand
+     ON CONFLICT (ig_username) DO NOTHING`
+  );
+  // Retire EVERY Beatport row carrying an address that now lives in Spotify,
+  // whichever artist it hangs on — otherwise the pipeline still sees it.
+  await pool.query(
+    `UPDATE artist_contacts ac SET status = 'moved'
+      WHERE ac.type = 'email' AND COALESCE(ac.status,'ok') = 'ok'
+        AND LOWER(TRIM(ac.value)) IN (SELECT LOWER(email) FROM spotify_leads WHERE source_post = 'beatport-stale')`
   );
   return { moved: ins.rowCount ?? 0 };
 }
