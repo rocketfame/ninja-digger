@@ -6,12 +6,16 @@ import { EnrichButton } from "../EnrichButton";
 import { ReexSync } from "../ReexSync";
 import { SendReadyCard } from "@/app/components/SendReadyCard";
 import { SC_ACTIVITY_SQL, SC_SOURCE, scSource, type ScSourceKey } from "@/lib/scActivity";
+import { contactableSql } from "@/lib/leadPolicy";
 
 export const dynamic = "force-dynamic";
 
 type SP = { tier?: string; withEmail?: string; activity?: string; promoter?: string; gold?: string; diamond?: string };
 
-const ALIVE = `email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub')
+// "Alive" is the predicate the barrels send with — blacklist, handover hold,
+// mailbox verdict — not merely "has an email". The card used to count Lana Del
+// Rey as ready to mail while every barrel had already refused her.
+const ALIVE = `${contactableSql()} AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')
   AND lead_status IS DISTINCT FROM 'Unsubscribed' AND lead_status IS DISTINCT FROM 'Bounced'`;
 // "Gold" = verified alive base (opened, replied, or at least delivered).
 const GOLD_SQL = `${ALIVE} AND (opens > 0 OR lead_status = 'Responded' OR delivered_at IS NOT NULL)`;
@@ -47,7 +51,7 @@ async function getData(sp: SP, source: ScSourceKey) {
   const conds: string[] = [SRC, analytics ? "is_promoter = true AND track_count = 0" : HAS_TRACKS];
   const params: string[] = [];
   if (sp.tier && ["A", "B", "C"].includes(sp.tier)) { params.push(sp.tier); conds.push(`tier=$${params.length}`); }
-  if (sp.withEmail === "1") conds.push("email IS NOT NULL");
+  if (sp.withEmail === "1") conds.push(ALIVE);
   if (sp.gold === "1") conds.push(GOLD_SQL);
   if (sp.diamond === "1") conds.push(DIAMOND_SQL);
   if (sp.activity && ACTIVITY.some((a) => a.key === sp.activity)) conds.push(`${SC_ACTIVITY_SQL}='${sp.activity}'`);
@@ -64,22 +68,22 @@ async function getData(sp: SP, source: ScSourceKey) {
       COUNT(*) FILTER (WHERE is_promoter AND track_count=0)::int promoters,
       COUNT(*) FILTER (WHERE ${HAS_TRACKS} AND ${GOLD_SQL})::int gold,
       COUNT(*) FILTER (WHERE ${HAS_TRACKS} AND ${DIAMOND_SQL})::int diamond,
-      COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND tier='A')::int a,
-      COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND tier='B')::int b,
-      COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND COALESCE(tier,'C')='C')::int c,
-      COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND ${SC_ACTIVITY_SQL}='hot')::int hot,
-      COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND ${SC_ACTIVITY_SQL}='warm')::int warm,
-      COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND ${SC_ACTIVITY_SQL}='cool')::int cool,
-      COUNT(email) FILTER (WHERE ${HAS_TRACKS} AND ${SC_ACTIVITY_SQL}='dormant')::int dormant
+      COUNT(*) FILTER (WHERE ${HAS_TRACKS} AND ${ALIVE} AND tier='A')::int a,
+      COUNT(*) FILTER (WHERE ${HAS_TRACKS} AND ${ALIVE} AND tier='B')::int b,
+      COUNT(*) FILTER (WHERE ${HAS_TRACKS} AND ${ALIVE} AND COALESCE(tier,'C')='C')::int c,
+      COUNT(*) FILTER (WHERE ${HAS_TRACKS} AND ${ALIVE} AND ${SC_ACTIVITY_SQL}='hot')::int hot,
+      COUNT(*) FILTER (WHERE ${HAS_TRACKS} AND ${ALIVE} AND ${SC_ACTIVITY_SQL}='warm')::int warm,
+      COUNT(*) FILTER (WHERE ${HAS_TRACKS} AND ${ALIVE} AND ${SC_ACTIVITY_SQL}='cool')::int cool,
+      COUNT(*) FILTER (WHERE ${HAS_TRACKS} AND ${ALIVE} AND ${SC_ACTIVITY_SQL}='dormant')::int dormant
     FROM sc_artists WHERE ${SRC}`);
 
   const [stats, seg, reexDays, seed, preview, crawl] = await Promise.all([
     statsRow,
     // segment count + email in one query (respects active filters) — retried
-    retryRow<{ c: number; e: number }>(`SELECT COUNT(*)::int c, COUNT(email)::int e FROM sc_artists ${where}`, params),
+    retryRow<{ c: number; e: number }>(`SELECT COUNT(*)::int c, COUNT(*) FILTER (WHERE ${ALIVE})::int e FROM sc_artists ${where}`, params),
     pool.query<{ day: string; active_campaigns: number }>("SELECT day::text, active_campaigns FROM reex_daily ORDER BY day DESC LIMIT 2").then((r) => r.rows).catch(() => []),
     pool.query("SELECT permalink, followers_count FROM sc_seed_accounts WHERE active=true ORDER BY id LIMIT 1").then((r) => r.rows[0]).catch(() => null),
-    q(`SELECT username, full_name, email FROM sc_artists ${where} AND email IS NOT NULL ORDER BY tier, followers_count DESC LIMIT 5`, params) as Promise<{ username: string; full_name: string | null; email: string | null }[]>,
+    q(`SELECT username, full_name, email FROM sc_artists ${where} AND ${ALIVE} ORDER BY tier, followers_count DESC LIMIT 5`, params) as Promise<{ username: string; full_name: string | null; email: string | null }[]>,
     // Graph engine health: how much frontier is left, how much has been walked,
     // and what it produced today. Only the graph tab shows it.
     source === "graph"

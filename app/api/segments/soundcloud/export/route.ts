@@ -6,6 +6,7 @@ import { isAuthorized, unauthorized } from "@/lib/apiAuth";
 import { pool } from "@/lib/db";
 import { SC_ACTIVITY, SC_ACTIVITY_SQL, SC_SOURCE, scSource } from "@/lib/scActivity";
 import { csvCell } from "@/lib/csv";
+import { contactableSql } from "@/lib/leadPolicy";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
   // useless for artist outreach. Analytics mode flips to exactly those.
   conds.push(analytics ? "track_count = 0 AND is_promoter = true" : "track_count >= 1");
   if (tier && ["A", "B", "C"].includes(tier)) { params.push(tier); conds.push(`tier = $${params.length}`); }
-  if (withEmail) conds.push(`email IS NOT NULL`);
+  if (withEmail) conds.push(`${contactableSql()} AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')`);
   // Gold = verified working base (alive/engaged email).
   const alive = `email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub') AND lead_status IS DISTINCT FROM 'Unsubscribed' AND lead_status IS DISTINCT FROM 'Bounced'`;
   if (searchParams.get("gold") === "1") conds.push(`${alive} AND (opens > 0 OR lead_status = 'Responded' OR delivered_at IS NOT NULL)`);
