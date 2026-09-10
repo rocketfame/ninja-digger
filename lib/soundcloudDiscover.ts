@@ -74,7 +74,7 @@ async function bulkUpsert(users: ScUser[], source: string): Promise<{ inserted: 
   for (const u of rows) { const d = pickBestEmail(u.description ?? "")?.split("@")[1]?.toLowerCase(); if (d) inPage.set(d, (inPage.get(d) ?? 0) + 1); }
   const emails = await Promise.all(rows.map((u) => {
     const d = pickBestEmail(u.description ?? "")?.split("@")[1]?.toLowerCase();
-    return emailForStorage(u.description ?? "", { followers: u.followers_count, sharedInBatch: d ? (inPage.get(d) ?? 1) - 1 : 0 });
+    return emailForStorage(u.description ?? "", { followers: u.followers_count, sharedInBatch: d ? (inPage.get(d) ?? 1) - 1 : 0, name: `${u.full_name ?? ""} ${u.username ?? ""}` });
   }));
 
   const res = await pool.query(

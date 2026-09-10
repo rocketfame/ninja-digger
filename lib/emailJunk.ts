@@ -99,12 +99,36 @@ export function isFreemailDomain(domain: string): boolean {
  *
  * Pure: the caller supplies the two facts. Returns the reason, or null if fine.
  */
+/**
+ * A profile that is not a person making music: a label, a repost/promo hub, a
+ * podcast, an agency, a "free download" channel. Measured on our own base
+ * (10.09.2026): every phrase below matched hundreds to thousands of accounts
+ * and ZERO of the artists who ever replied to us. "radio" and "official" were
+ * dropped — each hit a real artist. Patterns are plain enough to run both in
+ * JS and in Postgres (~*), so the write gate and the daily sweep agree.
+ */
+export const NON_ARTIST_NAME_SRC =
+  "(^|[^a-z])(records|recordings|label|collective|podcast|promo|bookings?|demos?|network|entertainment|repost|agency|channel|mixtapes?|premiere|free download|management|blog|hits|playlist|top ?[0-9]|charts?|music that|submit|best of)([^a-z]|$)";
+export const NON_ARTIST_DESC_SRC =
+  "(record label|send (us )?(your )?demos?|demo submissions?|submit (your|a) (track|demo|music)|our (roster|artists)|promotion (channel|service|network)|repost (channel|network|exchange)|playlist curator|we repost|free download)";
+const NON_ARTIST_NAME_RE = new RegExp(NON_ARTIST_NAME_SRC, "i");
+const NON_ARTIST_DESC_RE = new RegExp(NON_ARTIST_DESC_SRC, "i");
+
+export function nonArtistReason(name: string | null | undefined, description: string | null | undefined): string | null {
+  if (name && NON_ARTIST_NAME_RE.test(name)) return "name";
+  if (description && NON_ARTIST_DESC_RE.test(description)) return "bio";
+  return null;
+}
+
 export function icpReject(
-  email: string, facts: { followers?: number | null; sharedBy: number; maxFollowers: number }
+  email: string,
+  facts: { followers?: number | null; sharedBy: number; maxFollowers: number; name?: string | null; description?: string | null }
 ): string | null {
   const domain = email.split("@")[1]?.toLowerCase() ?? "";
   if (!isFreemailDomain(domain) && facts.sharedBy >= 3) return `not-ICP: representation domain (${domain} shared by ${facts.sharedBy} artists)`;
   if ((facts.followers ?? 0) > facts.maxFollowers) return `not-ICP: star (${facts.followers} followers > ${facts.maxFollowers})`;
+  const na = nonArtistReason(facts.name, facts.description);
+  if (na) return `not-ICP: not an artist (${na})`;
   return null;
 }
 

@@ -74,7 +74,7 @@ export async function enrichScArtist(a: { soundcloud_id: string; username: strin
   }
   // Direct email in the bio is the highest-yield source
   if (description) {
-    const bioEmail = await emailForStorage(description, { followers: a.followers_count });
+    const bioEmail = await emailForStorage(description, { followers: a.followers_count, name: a.username });
     if (bioEmail) {
       await pool.query(`UPDATE sc_artists SET email=$1, email_source='bio', email_found_at=now(), updated_at=now() WHERE soundcloud_id=$2 AND email IS NULL`, [bioEmail, a.soundcloud_id]);
       return bioEmail;
@@ -117,7 +117,7 @@ export async function enrichScArtist(a: { soundcloud_id: string; username: strin
         }
       }
     }
-    const stored = email ? await emailForStorage(null, { explicit: email, followers: a.followers_count }) : null;
+    const stored = email ? await emailForStorage(null, { explicit: email, followers: a.followers_count, name: a.username, description }) : null;
     if (stored) {
       const source = /linktr|beacons/i.test(url) ? "linktree" : url.includes("bandcamp") ? "bandcamp" : "enrich";
       await pool.query(`UPDATE sc_artists SET email=$1, email_source=$2, email_found_at=now(), updated_at=now() WHERE soundcloud_id=$3 AND email IS NULL`,

@@ -7,7 +7,7 @@
 
 import { promises as dns } from "dns";
 import { pool } from "@/lib/db";
-import { classifyEmail, pickBestEmail, icpReject, isFreemailDomain, FREEMAIL_LIST } from "@/lib/emailJunk";
+import { classifyEmail, pickBestEmail, icpReject, isFreemailDomain, FREEMAIL_LIST, NON_ARTIST_NAME_SRC, NON_ARTIST_DESC_SRC } from "@/lib/emailJunk";
 import { getSettingOrNull } from "@/lib/settings";
 
 
@@ -46,6 +46,17 @@ export async function icpSweep(): Promise<{ suppressed: number }> {
      ON CONFLICT (email) DO NOTHING`,
     [maxF, FREEMAIL_LIST]
   );
+  // Non-artist profiles by name or bio, same patterns as the write gate.
+  const na = await pool.query(
+    `INSERT INTO email_blacklist (email, reason)
+     SELECT DISTINCT LOWER(email),
+            'not-ICP: not an artist (' || CASE WHEN (COALESCE(full_name,'') || ' ' || COALESCE(username,'')) ~* $1 THEN 'name' ELSE 'bio' END || ')'
+       FROM sc_artists
+      WHERE email IS NOT NULL
+        AND ((COALESCE(full_name,'') || ' ' || COALESCE(username,'')) ~* $1 OR COALESCE(description,'') ~* $2)
+        AND LOWER(email) NOT IN (SELECT LOWER(email) FROM tg_notifications WHERE email IS NOT NULL)
+     ON CONFLICT (email) DO NOTHING`, [NON_ARTIST_NAME_SRC, NON_ARTIST_DESC_SRC]
+  ).catch(() => ({ rowCount: 0 }));
   // YouTube/Radar: stars by the same ceiling (its emails come from channel pages, so the domain rule adds little).
   const rd = await pool.query(
     `INSERT INTO email_blacklist (email, reason)
@@ -57,7 +68,7 @@ export async function icpSweep(): Promise<{ suppressed: number }> {
   await pool.query(`UPDATE sc_artists SET email_status='junk', updated_at=now()
      WHERE LOWER(email) IN (SELECT LOWER(email) FROM email_blacklist WHERE reason LIKE 'not-ICP%')
        AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')`).catch(() => {});
-  return { suppressed: (res.rowCount ?? 0) + (rd.rowCount ?? 0) };
+  return { suppressed: (res.rowCount ?? 0) + (rd.rowCount ?? 0) + (na.rowCount ?? 0) };
 }
 
 const domainShareCache = new Map<string, number>();
@@ -89,7 +100,7 @@ export async function icpMaxFollowers(): Promise<number> {
  */
 export async function emailForStorage(
   text: string | null | undefined,
-  opts: { explicit?: string | null; followers?: number | null; sharedInBatch?: number } = {}
+  opts: { explicit?: string | null; followers?: number | null; sharedInBatch?: number; name?: string | null; description?: string | null } = {}
 ): Promise<string | null> {
   const email = pickBestEmail(text, opts.explicit);
   if (!email) return null;
@@ -99,7 +110,7 @@ export async function emailForStorage(
   // count says 0 and all four pass. The caller tells us how many other rows
   // in its batch share the domain, and those count too.
   const sharedBy = (await domainSharedBy(domain)) + (opts.sharedInBatch ?? 0);
-  const reason = icpReject(email, { followers: opts.followers, sharedBy, maxFollowers: await icpMaxFollowers() });
+  const reason = icpReject(email, { followers: opts.followers, sharedBy, maxFollowers: await icpMaxFollowers(), name: opts.name, description: opts.description ?? text });
   return reason ? null : email;
 }
 

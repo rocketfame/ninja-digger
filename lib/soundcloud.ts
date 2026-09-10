@@ -87,7 +87,7 @@ function nz<T>(s: T): T { return typeof s === "string" ? (s.replace(/\u0000/g, "
 
 async function upsertArtist(u: ScUser, seed: string): Promise<boolean> {
   if (u.track_count < 1) return false; // not a musician (listener-only) — skip
-  const email = await emailForStorage(u.description ?? "", { followers: u.followers_count });
+  const email = await emailForStorage(u.description ?? "", { followers: u.followers_count, name: `${u.full_name ?? ""} ${u.username ?? ""}` });
   const res = await pool.query(
     `INSERT INTO sc_artists (soundcloud_id, permalink, permalink_url, username, full_name, city, country_code,
         description, avatar_url, track_count, followers_count, followings_count, likes_count, reposts_count,
@@ -227,7 +227,7 @@ export async function harvestSeedFollowers(permalink: string, maxPages = 4): Pro
     for (const u of data.collection) {
       const isNew = await upsertArtist(u, permalink);
       if (isNew) { harvested++; count++; }
-      if (await emailForStorage(u.description ?? "", { followers: u.followers_count })) withEmail++; // counts what was actually storable; MX is cached per domain
+      if (await emailForStorage(u.description ?? "", { followers: u.followers_count, name: `${u.full_name ?? ""} ${u.username ?? ""}` })) withEmail++; // counts what was actually storable; MX is cached per domain
     }
     cursor = data.next_href;
     if (!cursor) { done = true; break; }
