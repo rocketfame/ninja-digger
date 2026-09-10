@@ -44,6 +44,18 @@ async function api<T>(path: string, clientId: string): Promise<T | null> {
   }
 }
 
+/**
+ * Postgres text cannot hold a NUL byte, and SoundCloud bios can. One such
+ * profile in a page of 270 made the whole bulk INSERT fail, the node was never
+ * stamped, and the cron picked the same node first every nine minutes — the
+ * engine stood still for two hours over one user. Every text field is cleaned.
+ */
+const clean = (v: string | null | undefined, max = 4000): string | null => {
+  if (v == null) return null;
+  const s = String(v).replace(/\u0000/g, "").slice(0, max);
+  return s || null;
+};
+
 /** A: real catalogue and reach, B: active, C: everyone else. Same ladder the harvester uses. */
 function tierFor(u: ScUser): "A" | "B" | "C" {
   if (u.track_count >= 10 && u.followers_count >= 1000) return "A";
@@ -100,14 +112,14 @@ async function bulkUpsert(users: ScUser[], source: string): Promise<{ inserted: 
         tier = EXCLUDED.tier, updated_at = now()`,
     [
       rows.map((u) => u.id),
-      rows.map((u) => u.permalink),
-      rows.map((u) => u.permalink_url ?? `https://soundcloud.com/${u.permalink}`),
-      rows.map((u) => u.username ?? u.permalink),
-      rows.map((u) => u.full_name || null),
-      rows.map((u) => u.city || null),
-      rows.map((u) => u.country_code || null),
-      rows.map((u) => (u.description ?? "").slice(0, 4000) || null),
-      rows.map((u) => u.avatar_url || null),
+      rows.map((u) => clean(u.permalink, 200) ?? String(u.id)),
+      rows.map((u) => clean(u.permalink_url, 500) ?? `https://soundcloud.com/${u.permalink}`),
+      rows.map((u) => clean(u.username, 200) ?? clean(u.permalink, 200) ?? String(u.id)),
+      rows.map((u) => clean(u.full_name, 200)),
+      rows.map((u) => clean(u.city, 100)),
+      rows.map((u) => clean(u.country_code, 8)),
+      rows.map((u) => clean(u.description)),
+      rows.map((u) => clean(u.avatar_url, 500)),
       rows.map((u) => u.track_count ?? 0),
       rows.map((u) => u.followers_count ?? 0),
       rows.map((u) => u.followings_count ?? 0),
@@ -171,9 +183,16 @@ export async function crawlFollowings(
     if (Date.now() > deadline) break;
     const users = await followingsOf(soundcloud_id, clientId);
     if (users.length > 0) {
-      const r = await bulkUpsert(users, `graph:${soundcloud_id}`);
-      discovered += r.inserted;
-      withEmail += r.withEmail;
+      // A page that cannot be written is logged and skipped. The node is still
+      // stamped below: an unstampable node is picked first on every run and
+      // stalls the whole engine, which is worse than losing one page.
+      try {
+        const r = await bulkUpsert(users, `graph:${soundcloud_id}`);
+        discovered += r.inserted;
+        withEmail += r.withEmail;
+      } catch (e) {
+        console.error(`[sc-crawl] page for ${soundcloud_id} not written:`, e instanceof Error ? e.message : e);
+      }
     }
     await pool
       .query(`UPDATE sc_artists SET followings_crawled_at = now() WHERE soundcloud_id = $1`, [soundcloud_id])
