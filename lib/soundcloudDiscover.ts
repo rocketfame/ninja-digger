@@ -65,13 +65,13 @@ async function bulkUpsert(users: ScUser[], source: string): Promise<{ inserted: 
     `INSERT INTO sc_artists (soundcloud_id, permalink, permalink_url, username, full_name, city, country_code,
         description, avatar_url, track_count, followers_count, followings_count,
         email, email_source, tier, is_active, source_seed, email_found_at, created_at, updated_at)
-     SELECT * FROM UNNEST(
-        $1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[],
+     SELECT t.*, now(), now() FROM UNNEST(
+        $1::bigint[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[],
         $8::text[], $9::text[], $10::int[], $11::int[], $12::int[],
         $13::text[], $14::text[], $15::text[], $16::bool[], $17::text[], $18::timestamptz[]
      ) AS t(soundcloud_id, permalink, permalink_url, username, full_name, city, country_code,
         description, avatar_url, track_count, followers_count, followings_count,
-        email, email_source, tier, is_active, source_seed, email_found_at), now(), now()
+        email, email_source, tier, is_active, source_seed, email_found_at)
      ON CONFLICT (soundcloud_id) DO UPDATE SET
         track_count = EXCLUDED.track_count,
         followers_count = EXCLUDED.followers_count,
@@ -83,7 +83,7 @@ async function bulkUpsert(users: ScUser[], source: string): Promise<{ inserted: 
                               THEN now() ELSE sc_artists.email_found_at END,
         tier = EXCLUDED.tier, updated_at = now()`,
     [
-      rows.map((u) => String(u.id)),
+      rows.map((u) => u.id),
       rows.map((u) => u.permalink),
       rows.map((u) => u.permalink_url ?? `https://soundcloud.com/${u.permalink}`),
       rows.map((u) => u.username ?? u.permalink),
