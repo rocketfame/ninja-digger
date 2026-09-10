@@ -6,6 +6,7 @@ import { pool } from "@/lib/db";
 import { getDailyCapacity } from "@/lib/mailer";
 import { getSettingOrNull } from "@/lib/settings";
 import { SUPPRESSED_SQL } from "@/lib/leadPolicy";
+import { SC_SOURCE } from "@/lib/scActivity";
 
 const q = (sql: string) => pool.query(sql).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
 
@@ -183,23 +184,23 @@ export async function buildFullReport(period?: string): Promise<string> {
     bpPaused, scPaused, spPaused, rdPaused, domSent, dbMb, rdTotal,
   ] = await Promise.all([
     n(`SELECT COUNT(DISTINCT artist_beatport_id)::int c FROM artist_contacts WHERE type='email' AND created_at >= CURRENT_DATE`),
-    n(`SELECT COUNT(*)::int c FROM sc_artists WHERE email_found_at >= CURRENT_DATE`),
+    n(`SELECT COUNT(*)::int c FROM sc_artists WHERE email_found_at >= CURRENT_DATE AND ${SC_SOURCE.reex.sql}`),
     n(`SELECT COUNT(*)::int c FROM spotify_leads WHERE email_found_at >= CURRENT_DATE`),
     n(`SELECT COUNT(*)::int c FROM radar_leads WHERE email_found_at >= CURRENT_DATE`),
     n(`SELECT COUNT(DISTINCT LOWER(value))::int c FROM artist_contacts WHERE type='email'`),
-    n(`SELECT COUNT(email)::int c FROM sc_artists`),
+    n(`SELECT COUNT(email)::int c FROM sc_artists WHERE ${SC_SOURCE.reex.sql}`),
     n(`SELECT COUNT(email)::int c FROM spotify_leads`),
     n(`SELECT COUNT(email)::int c FROM radar_leads`),
     n(`SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'email_touch_%' AND ${T}`),
-    n(`SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sc_touch_%' AND ${T}`),
+    n(`SELECT COUNT(*)::int c FROM outreach_events o JOIN sc_artists a ON LOWER(a.email)=LOWER(o.contact_value) WHERE o.template_id LIKE 'sc_touch_%' AND o.${T} AND ${SC_SOURCE.reex.sql}`),
     n(`SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'sp_touch_%' AND ${T}`),
     n(`SELECT COUNT(*)::int c FROM outreach_events WHERE template_id LIKE 'radar_touch_%' AND ${T}`),
     n(`SELECT COUNT(DISTINCT ac.artist_beatport_id)::int c FROM artist_contacts ac LEFT JOIN lead_profiles lp ON lp.artist_beatport_id=ac.artist_beatport_id WHERE ac.type='email' AND (lp.status IS NULL OR lp.status='New') AND LOWER(ac.value) NOT IN (${SUPPRESSED_SQL})`),
-    n(`SELECT COUNT(*)::int c FROM sc_artists WHERE email IS NOT NULL AND (lead_status IS NULL OR lead_status='New') AND ${notBl}`),
+    n(`SELECT COUNT(*)::int c FROM sc_artists WHERE email IS NOT NULL AND (lead_status IS NULL OR lead_status='New') AND ${notBl} AND ${SC_SOURCE.reex.sql}`),
     n(`SELECT COUNT(*)::int c FROM spotify_leads WHERE email IS NOT NULL AND (lead_status IS NULL OR lead_status='New') AND ${notBl}`),
     n(`SELECT COUNT(*)::int c FROM radar_leads WHERE email IS NOT NULL AND (status IS NULL OR status='new') AND ${notBl}`),
     n(`SELECT COUNT(*)::int c FROM lead_profiles WHERE status IN ('Responded','In Progress','Won')`),
-    n(`SELECT COUNT(*)::int c FROM sc_artists WHERE lead_status='Responded'`),
+    n(`SELECT COUNT(*)::int c FROM sc_artists WHERE lead_status='Responded' AND ${SC_SOURCE.reex.sql}`),
     n(`SELECT COUNT(*)::int c FROM spotify_leads WHERE lead_status='Responded'`),
     n(`SELECT COUNT(*)::int c FROM radar_leads WHERE status='responded'`),
     getSettingOrNull("outreach_paused"),
@@ -210,6 +211,20 @@ export async function buildFullReport(period?: string): Promise<string> {
     pool.query<{ c: number }>("SELECT (pg_database_size(current_database())/1048576.0)::numeric(10,1) c").then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0),
     n(`SELECT COUNT(*)::int c FROM radar_leads`),
   ]);
+
+  // The graph engine is its own channel in the report: it has no seed list,
+  // finds producers through who they follow, and its numbers must never be
+  // blended with the Re-Ex row or neither engine's health is visible.
+  const g = await pool.query<{ found: number; base: number; sent: number; left: number; repl: number; frontier: number; expanded: number }>(`SELECT
+      (SELECT COUNT(*) FROM sc_artists WHERE email_found_at >= CURRENT_DATE AND ${SC_SOURCE.graph.sql})::int found,
+      (SELECT COUNT(email) FROM sc_artists WHERE ${SC_SOURCE.graph.sql})::int base,
+      (SELECT COUNT(*) FROM outreach_events o JOIN sc_artists a ON LOWER(a.email)=LOWER(o.contact_value)
+        WHERE o.template_id LIKE 'sc_touch_%' AND o.${T} AND ${SC_SOURCE.graph.sql})::int sent,
+      (SELECT COUNT(*) FROM sc_artists WHERE email IS NOT NULL AND (lead_status IS NULL OR lead_status='New') AND ${notBl} AND ${SC_SOURCE.graph.sql})::int left,
+      (SELECT COUNT(*) FROM sc_artists WHERE lead_status='Responded' AND ${SC_SOURCE.graph.sql})::int repl,
+      (SELECT COUNT(*) FROM sc_artists WHERE followings_crawled_at IS NULL AND track_count >= 3)::int frontier,
+      (SELECT COUNT(*) FROM sc_artists WHERE followings_crawled_at IS NOT NULL)::int expanded`)
+    .then((r) => r.rows[0]).catch(() => null);
 
   // Real ceiling = the caps of the accounts we can actually send from, not a
   // constant. Headroom is what the reader needs: am I behind, and by how much.
@@ -227,14 +242,16 @@ export async function buildFullReport(period?: string): Promise<string> {
     `<b>${head}</b>`,
     ``,
     `<b>📊 ЗА ДОБУ</b>`,
-    `Знайдено емейлів: <b>${f(bpFound + scFound + spFound + rdFound)}</b>`,
+    `Знайдено емейлів: <b>${f(bpFound + scFound + spFound + rdFound + (g?.found ?? 0))}</b>`,
     capacity
       ? `Надіслано листів: <b>${f(domSent)}</b> із ${f(capacity.capacity)} · зазор <b>${f(capacity.remaining)}</b>`
       : `Надіслано листів: <b>${f(domSent)}</b>`,
     ...(capacity ? [`   ${capacity.perSender.map((s) => `${s.id} ${f(s.sent)}/${f(s.cap)}`).join(" · ")}`] : []),
     ``,
     row(`${dot(bpPaused)} <b>BEATPORT</b>`, bpFound, bpSent, bpBase, bpLeft, bpRepl),
-    row(`${dot(scPaused)} <b>SOUNDCLOUD</b>`, scFound, scSent, scBase, scLeft, scRepl),
+    row(`${dot(scPaused)} <b>SOUNDCLOUD · Re-Ex</b>`, scFound, scSent, scBase, scLeft, scRepl),
+    ...(g ? [row(`${dot(scPaused)} <b>SOUNDCLOUD · парсер графа</b>`, g.found, g.sent, g.base, g.left, g.repl)
+      + `\n   🕸 фронтир ${f(g.frontier)} · розгорнуто ${f(g.expanded)}`] : []),
     row(`${dot(spPaused)} <b>SPOTIFY</b>`, spFound, spSent, spBase, spLeft, spRepl),
   ];
   if (rdTotal > 0) parts.push(row(`${dot(rdPaused)} <b>RADAR</b> (YouTube+)`, rdFound, rdSent, rdBase, rdLeft, rdRepl));
