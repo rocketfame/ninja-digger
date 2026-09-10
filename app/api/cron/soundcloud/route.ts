@@ -47,13 +47,18 @@ export async function GET(request: Request) {
         // Among the rest, prefer never-run seeds, then the best historical yield
         // (emails_found / harvested_count), so the 8 slots per run go to seeds
         // that actually produce contacts.
+        // A finished seed comes back only after 60 DAYS. It used to be 5, and an
+        // account with a couple of thousand followers gains almost nobody in
+        // five days: the harvester spent three days re-walking seeds it had
+        // already stripped, 1,400 profiles a day for nine emails, while every
+        // counter said it was working. Two months is long enough for a real
+        // follower base to have changed.
         `SELECT permalink FROM sc_seed_accounts
          WHERE active = true AND (
            completed_at IS NULL
-           OR (priority >= 2 AND completed_at < now() - interval '5 days')
-           OR (priority < 2 AND completed_at < now() - interval '14 days'))
+           OR completed_at < now() - interval '60 days')
            AND NOT (harvested_count >= 150 AND emails_found * 100.0 / GREATEST(harvested_count, 1) < 2)
-           AND (last_harvested_at IS NULL OR last_harvested_at < now() - interval '5 days')
+           AND (last_harvested_at IS NULL OR last_harvested_at < now() - interval '60 days')
          ORDER BY (completed_at IS NULL) DESC,
                   (emails_found * 100.0 / GREATEST(harvested_count, 1)) DESC,
                   priority DESC, last_harvested_at ASC NULLS FIRST LIMIT 8`)
