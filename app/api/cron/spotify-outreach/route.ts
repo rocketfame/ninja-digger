@@ -70,7 +70,7 @@ export async function GET(request: Request) {
 
   type Lead = { ig_username: string; full_name: string | null; email: string; sp_touch: number };
   const nextTouch = (sql: string): Promise<Lead[]> =>
-    pool.query<Lead>(sql, [budget]).then((r) => r.rows).catch(() => [] as Lead[]);
+    pool.query<Lead>(sql, [budget * 2]).then((r) => r.rows).catch(() => [] as Lead[]);
   const notBlacklisted = contactableSql();
 
   // Follow-ups first (warmer), then fresh openers. Touch 2 waits 3 days after
@@ -84,11 +84,12 @@ export async function GET(request: Request) {
     `SELECT ig_username, full_name, email, sp_touch FROM spotify_leads
      WHERE sp_touch = 0 AND (lead_status IS NULL OR lead_status = 'New')
        AND email IS NOT NULL AND ${notBlacklisted}
-     ORDER BY followers DESC NULLS LAST LIMIT $1`)).slice(0, budget);
+     ORDER BY followers DESC NULLS LAST LIMIT $1`));
 
   let sent = 0, skippedJunk = 0;
   const byTouch: Record<number, number> = { 1: 0, 2: 0, 3: 0 };
   for (const lead of leads) {
+    if (sent >= budget) break;
     const m = senders.next();
     if (!m) break; // every account's hourly headroom is spent
     const { transporter, from, replyTo } = m.mailer;

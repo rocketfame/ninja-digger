@@ -77,8 +77,11 @@ export async function GET(request: Request) {
   // status and drops them out). Touch 2 waits 3 days after touch 1, touch 3
   // waits 4 more. Never re-contacts a blacklisted or already-replied lead.
   type Lead = { soundcloud_id: string; username: string; full_name: string | null; email: string; sc_touch: number };
+  // Fetch twice the budget: a pre-send rejection used to be a lost send, because
+  // the list held exactly `budget` leads and a skip had nothing to replace it.
+  // The loop still stops at `budget` sends.
   const nextTouch = (sql: string): Promise<Lead[]> =>
-    pool.query<Lead>(sql, [budget]).then((r) => r.rows).catch(() => [] as Lead[]);
+    pool.query<Lead>(sql, [budget * 2]).then((r) => r.rows).catch(() => [] as Lead[]);
   const notBlacklisted = contactableSql();
 
   // ONE cold letter per lead, ever. People who are interested answer the first
@@ -89,11 +92,12 @@ export async function GET(request: Request) {
     `SELECT soundcloud_id, username, full_name, email, sc_touch FROM sc_artists
      WHERE sc_touch = 0 AND (lead_status IS NULL OR lead_status = 'New')
        AND track_count >= 1 AND email IS NOT NULL AND ${notBlacklisted}
-     ORDER BY (tier='A') DESC, followers_count DESC LIMIT $1`)).slice(0, budget);
+     ORDER BY (tier='A') DESC, followers_count DESC LIMIT $1`));
 
   let sent = 0, skippedJunk = 0;
   const byTouch: Record<number, number> = { 1: 0, 2: 0, 3: 0 };
   for (const lead of leads) {
+    if (sent >= budget) break;
     const m = senders.next();
     if (!m) break; // every account's hourly headroom is spent
     const { transporter, from, replyTo } = m.mailer;

@@ -57,7 +57,10 @@ export async function GET(request: Request) {
   // See sc-outreach: addresses handed to the marketing side are on hold.
   const notBad = contactableSql();
   type Lead = { id: number; source: string; name: string | null; email: string; touch: number };
-  const pick = (sql: string) => pool.query<Lead>(sql, [budget]).then((r) => r.rows).catch(() => [] as Lead[]);
+  // Fetch twice the budget: a pre-send rejection used to be a lost send, because
+  // the list held exactly `budget` leads and a skip had nothing to replace it.
+  // The loop still stops at `budget` sends.
+  const pick = (sql: string) => pool.query<Lead>(sql, [budget * 2]).then((r) => r.rows).catch(() => [] as Lead[]);
 
   // ONE cold letter per lead, ever. People who are interested answer the first
   // email; the second and third only added volume and complaint risk. A lead who
@@ -66,10 +69,11 @@ export async function GET(request: Request) {
   const leads = (await pick(
     `SELECT id, source, name, email, touch FROM radar_leads
      WHERE COALESCE(touch,0) = 0 AND COALESCE(status,'new') IN ('new','queued') AND ${notBad}
-     ORDER BY heat_score DESC LIMIT $1`)).slice(0, budget);
+     ORDER BY heat_score DESC LIMIT $1`));
 
   let sent = 0, skippedJunk = 0;
   for (const lead of leads) {
+    if (sent >= budget) break;
     const m = senders.next();
     if (!m) break; // every account's hourly headroom is spent
     const { transporter, from, replyTo } = m.mailer;
