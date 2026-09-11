@@ -107,7 +107,25 @@ export async function pushToEsputnik(platform: Platform, limit: number, budgetMs
   return { group, pushed: fresh.length - failed, failed, customers };
 }
 
-type Activity = { email?: string; activityStatus?: string; activityDateTime?: string; messageName?: string; offset?: string; mediaType?: string };
+type Activity = { email?: string; activityStatus?: string; activityDateTime?: string; messageName?: string; mediaType?: string };
+
+const PAGE = 25_000;
+const fmt = (d: Date) => d.toISOString().slice(0, 19);
+
+/**
+ * One window of activity. eSputnik's v2 endpoint ignores start indexes and
+ * its offset cursor is not reliable either (checked by the eSputnik agent),
+ * so paging is done the only way that holds: a window that comes back full
+ * is split in two and each half fetched again, down to windows of a minute.
+ */
+async function activityWindow(from: Date, to: Date, depth = 0): Promise<Activity[]> {
+  const q = new URLSearchParams({ dateFrom: fmt(from), dateTo: fmt(to), maxrows: String(PAGE) });
+  const rows = await api<Activity[]>(`/v2/contacts/activity?${q}`);
+  if (!Array.isArray(rows)) return [];
+  if (rows.length < PAGE || depth >= 12 || to.getTime() - from.getTime() < 60_000) return rows;
+  const mid = new Date((from.getTime() + to.getTime()) / 2);
+  return [...(await activityWindow(from, mid, depth + 1)), ...(await activityWindow(mid, to, depth + 1))];
+}
 
 /**
  * Pull outcomes for a window. Only email activity on our LEADS groups
@@ -116,14 +134,10 @@ type Activity = { email?: string; activityStatus?: string; activityDateTime?: st
  */
 export async function pullEsputnikActivity(from: Date, to: Date, budgetMs = 80_000): Promise<{ seen: number; logged: number; suppressed: number }> {
   const deadline = Date.now() + budgetMs;
-  let offset = "";
   let seen = 0, logged = 0, suppressed = 0;
-  const fmt = (d: Date) => d.toISOString().slice(0, 19);
-  for (let page = 0; page < 200 && Date.now() < deadline; page++) {
-    const q = new URLSearchParams({ dateFrom: fmt(from), dateTo: fmt(to), maxrows: "5000" });
-    if (offset) q.set("offset", offset);
-    const rows = await api<Activity[]>(`/v2/contacts/activity?${q}`);
-    if (!Array.isArray(rows) || rows.length === 0) break;
+  // six-hour slices keep any one request small and the bisection shallow
+  for (let t = from.getTime(); t < to.getTime() && Date.now() < deadline; t += 6 * 3600_000) {
+    const rows = await activityWindow(new Date(t), new Date(Math.min(t + 6 * 3600_000, to.getTime())));
     for (const a of rows) {
       seen++;
       if (a.mediaType && a.mediaType !== "email") continue;
@@ -138,29 +152,35 @@ export async function pullEsputnikActivity(from: Date, to: Date, budgetMs = 80_0
       // ledger wants the outcome vocabulary, the timeline the event one
       if (r.logged) await pool.query(`UPDATE lead_exports SET outcome = $2 WHERE email = $1 AND COALESCE(outcome,'') NOT IN ('bounced','complained','unsubscribed','converted')`, [a.email.toLowerCase(), outcomeForEvent(event)]).catch(() => {});
     }
-    const last = rows[rows.length - 1]?.offset;
-    if (!last || rows.length < 5000) break;
-    offset = last;
   }
   return { seen, logged, suppressed };
 }
 
 /**
- * A cycle is over: contacts WE exported ≥30 days ago that neither bought nor
- * were suppressed are deleted from eSputnik (we pay per stored contact) and
- * marked 'cold' in the ledger. Only addresses in lead_exports are ever
- * candidates — that ledger is the list of what we loaded — and each one is
- * looked up first: any sign of being a customer means it is marked converted
- * and left untouched. massEligibleSql lets the cold ones back in on a later
- * push once the 30 days have passed.
+ * Rotation out of eSputnik — the plan there is 25k contacts, so a lead keeps
+ * its seat only while it earns it (rule set by the user 11.09):
+ *   - a week after the push with no open → out
+ *   - 30 days after the push with no purchase → out, opened or not
+ * "Out" = deleted from eSputnik and 'cold' in our ledger; massEligibleSql
+ * lets the address back in on a later wave once its 30 days have passed.
+ * Only addresses in lead_exports are ever candidates (that ledger is the list
+ * of what we loaded), and each one is looked up first: any sign of being a
+ * customer means it is marked converted and left untouched.
  */
 export async function retireColdFromEsputnik(limit = 500, budgetMs = 60_000): Promise<{ deleted: number; customers: number; failed: number }> {
   const deadline = Date.now() + budgetMs;
   const rows = await pool
     .query<{ email: string }>(
-      `SELECT email FROM lead_exports
-        WHERE platform = ANY($2::text[]) AND exported_at < now() - interval '30 days'
+      `SELECT email FROM lead_exports le
+        WHERE platform = ANY($2::text[])
           AND COALESCE(outcome,'') NOT IN ('cold','converted','bounced','complained','unsubscribed')
+          AND (
+            exported_at < now() - interval '30 days'
+            OR (exported_at < now() - interval '7 days'
+                AND NOT EXISTS (SELECT 1 FROM email_events ev
+                                 WHERE ev.email = le.email AND ev.ts >= le.exported_at
+                                   AND ev.event IN ('opened','click')))
+          )
         ORDER BY exported_at LIMIT $1`,
       [limit, PLATFORMS.filter((p) => p !== "beatport")]
     )
