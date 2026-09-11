@@ -27,9 +27,18 @@ PromoSound продає промо-кампанії артистам (Spotify, S
 
 - **Push раз на день** (~05:35 UTC): створює/наповнює статичну групу з назвою `Leads: SoundCloud 12.09.2026 (auto)` (також Spotify, YouTube). Контакти: `externalCustomerId = email`, `firstName`, країна. Обсяг на платформу — параметр `esputnik_daily_push` у Ninja Digger (старт 500).
 - **Pull щогодини**: забирає активність (`DELIVERED, READ, CLICKED, UNSUBSCRIBED, SPAM, UNDELIVERED`) через `GET /api/v2/contacts/activity` і кладе в свою базу. Негатив → чорний список.
-- **Прибирання**: контакти, яким >30 днів без покупки, видаляє з eSputnik (`DELETE /api/v1/contact?externalCustomerId=`), бо тариф рахує контакти в базі. На наступну хвилю вони повернуться самі, якщо цикл дозволяє.
+- **Прибирання**: ТІЛЬКИ ті адреси, які Ninja Digger сам завантажив (його реєстр `lead_exports`), яким >30 днів без покупки, видаляє з eSputnik, бо тариф рахує контакти в базі. Перед кожним видаленням контакт перевіряється: будь-яка ознака клієнта → не чіпати. На наступну хвилю ліди повернуться самі, якщо цикл дозволяє.
 
-Заборонено: перейменовувати чи видаляти групи `Leads: … (auto)`; додавати в них контакти з інших джерел; додавати лід-контакти у welcome/nurture/abandoned workflow; чіпати групи `Buyers: …` і робочі workflow магазину.
+## 2a. Ліди ≠ клієнти — залізне правило
+
+У eSputnik живуть справжні клієнти магазину (Buyers, Registration, Guests, workflow покупок). Лід і клієнт ніколи не перетинаються, аж поки лід не став клієнтом; тоді він назавжди виходить із лідового світу.
+
+- Ліди живуть ТІЛЬКИ в групах `Leads: … (auto)`. Ninja Digger створює їх без `externalCustomerId` (це поле належить інтеграції магазину) і пише лише `firstName`; існуючому контакту нічого не перезаписує.
+- Перед push і перед видаленням кожна адреса перевіряється в eSputnik: є `externalCustomerId` (Shopify id) або членство в будь-якій групі, що не `Leads: … (auto)` → це клієнт. Його не додають у лідову групу, не видаляють, а в Ninja Digger він позначається `converted`: обидва канали (персональний і масовий) зупиняються для нього назавжди.
+- Твої кампанії на лідові групи завжди з `excluded_groups`: `Buyers: All (auto)`, `Registration`, `Guests: No Account (auto)`, `Guest Activation Sent (auto)`, `Newcomers`. Клієнтські workflow (welcome, nurture, abandoned, postsale) ніколи не отримують лідів.
+- Покупець з лідової групи → повідом Max (email + дата), Ninja Digger позначить `converted`; далі з ним працює лише клієнтський потік магазину.
+
+Заборонено: перейменовувати чи видаляти групи `Leads: … (auto)`; додавати в них контакти з інших джерел; додавати лід-контакти у welcome/nurture/abandoned workflow; чіпати групи `Buyers: …`, `Registration`, `Guests`, `Newcomers` і робочі workflow магазину; видаляти будь-які контакти, крім тих, що лежать лише в `Leads: … (auto)`.
 
 ## 3. Стан акаунта на 11.09.2026 (перевір, перш ніж діяти)
 
@@ -96,7 +105,7 @@ PromoSound продає промо-кампанії артистам (Spotify, S
 
 MCP eSputnik (у тебе є): list_groups, get_group_contacts, bulk_upsert_contacts, attach_group_contacts, delete_contact, list_email_messages, get_email_message_export, get_email_message_preview_png, create_email_message / update_email_message, send_broadcast, list_broadcasts, get_contacts_activity_v2, get_messaging_analytics, get_email_deliverability_setup.
 
-REST (те саме, що використовує Ninja Digger): `POST /api/v1/contacts` (max 3000, dedupeOn email, groupNames), `POST /api/v1/group/{id}/contacts/attach` (max 500), `DELETE /api/v1/contact?externalCustomerId=`, `GET /api/v2/contacts/activity?dateFrom&dateTo&offset&maxrows`, `GET /api/v1/groups`.
+REST (те саме, що використовує Ninja Digger): `POST /api/v1/contacts` (max 3000, dedupeOn email, groupNames), `POST /api/v1/group/{id}/contacts/attach` (max 500), `GET /api/v1/contacts?email=` + `GET /api/v1/contact/{id}` (перевірка на клієнта), `DELETE /api/v1/contact/{id}` (лише лід), `GET /api/v2/contacts/activity?dateFrom&dateTo&offset&maxrows`, `GET /api/v1/groups`.
 
 Ninja Digger для довідки про ліда: `GET https://<ninja-digger>/api/internal/leads/status?email=…` з `Authorization: Bearer <LEADGEN_TOKEN>` (ключ дає Max). Результати кампаній повертати руками НЕ треба, pull робить це сам.
 
