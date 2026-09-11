@@ -3,7 +3,7 @@
 Затверджено 11.09.2026. Повний документ: https://claude.ai/code/artifact/15ba38ba-b3f1-4505-acb4-0c36449178f8
 
 ## Рішення
-- Транспорт: **Amazon SES** (shared IP → managed dedicated IP з ~5k/день). План Б, якщо AWS відмовить у production access: SMTP2GO або Elastic Email — listmonk працює з будь-яким SMTP.
+- Транспорт (рішення 11.09, після зауваження про сіру нішу): **Elastic Email (з dedicated IP) + SMTP2GO паралельно**, listmonk ротує обидва SMTP. Amazon SES відкинуто: AUP проти unsolicited + ніша плей/фоловери = ймовірна відмова або бан прогрітого IP. Обидва провайдери карають лише метриками (bounce <5%, скарги <0.1%).
 - Менеджер кампаній: **listmonk** (Go, AGPL) на Hetzner CX22, за Cloudflare.
 - Домен: **offers.promosound.net** — власні SPF/DKIM/DMARC. Не чіпає promosoundgroup.net і персональний promosound.net.
 - Наша база — джерело правди: сегмент через `contactableSql()` + ICP → listmonk API; події (open/click/unsub/bounce/complaint) назад у `email_events` (meta.src=listmonk) і `email_blacklist`; кожна віддана адреса — у `lead_exports` (один власник на людину).
@@ -40,14 +40,14 @@ SPF+DKIM+DMARC на піддомені (DMARC p=none → p=quarantine за мі�
 - Контактабельних: ~98k, приплив ~60k/день з парсера.
 
 ## Статус / хто що робить
-- [ ] AWS акаунт + SES eu-west-1 + production access — **користувач** (картка). Текст форми нижче.
+- [ ] Акаунти elasticemail.com і smtp2go.com (infopromosoundgroup@gmail.com) + API-ключі обох → Claude — **користувач**. Dedicated IP на Elastic — картка.
 - [ ] Hetzner акаунт + SSH-ключ Claude — **користувач**.
-- [ ] DNS offers.promosound.net (SPF, DMARC, DKIM після SES, MX для bounce) — Claude, Cloudflare API.
-- [ ] VPS + listmonk + SNS вебхуки — Claude.
+- [ ] DNS offers.promosound.net (SPF з include обох, DKIM/CNAME від обох, DMARC p=none, dmarc@ routing) — Claude, Cloudflare UI (JS-міст до API заблоковано політикою браузера).
+- [ ] VPS + listmonk (Postgres — окрема база в тому ж Neon-проєкті) + вебхуки bounce/complaint обох провайдерів — Claude. SSH-ключ: ~/.ssh/ninja-mass.pub.
 - [ ] Міст у коді (push сегментів, pull подій, cycle rules, watchdog) — Claude, 2 дні.
 - [ ] Три шаблони × 2 варіанти — **верстка переноситься з існуючих eSputnik-розсилок** (витягти HTML через eSputnik API, адаптувати під listmonk: {{ UnsubscribeURL }}, UTM, коди MAX*) — Claude, затвердження користувача.
 
-## Текст для форми SES «Request production access»
+## Текст для форми SES «Request production access» (не використовується, лишено на випадок повернення до SES)
 Use case: Marketing. Website: https://promosoundgroup.net.
 Description: PromoSound is a music promotion agency. We email independent artists and producers at the business contact addresses they publish on their public SoundCloud/Spotify/YouTube/Beatport profiles for booking and promotion inquiries, with offers relevant to their platform (e.g. SoundCloud promotion packages to SoundCloud artists). B2B, one relevant offer per recipient per 30 days, expected volume up to 8,000/day after a metric-gated warm-up starting at 500/day.
 How we build the list: only public business contacts from artists' own profiles; every address is syntax/MX/SMTP-verified before it enters our base; no purchased lists.
