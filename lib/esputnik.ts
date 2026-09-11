@@ -132,11 +132,16 @@ async function activityWindow(from: Date, to: Date, depth = 0): Promise<Activity
  * matters, but every email event is cheap to record and the ledger update
  * is a no-op for addresses we never exported.
  */
-export async function pullEsputnikActivity(from: Date, to: Date, budgetMs = 80_000): Promise<{ seen: number; logged: number; suppressed: number }> {
+export async function pullEsputnikActivity(from: Date, to: Date, budgetMs = 80_000): Promise<{ seen: number; logged: number; suppressed: number; complete: boolean }> {
   const deadline = Date.now() + budgetMs;
   let seen = 0, logged = 0, suppressed = 0;
+  // eSputnik answers slowly in the minutes a broadcast is going out (the agent
+  // measured two-minute windows hanging). If the budget runs out mid-way the
+  // caller must NOT advance its cursor, or the unfetched windows are lost.
+  let complete = true;
   // six-hour slices keep any one request small and the bisection shallow
-  for (let t = from.getTime(); t < to.getTime() && Date.now() < deadline; t += 6 * 3600_000) {
+  for (let t = from.getTime(); t < to.getTime(); t += 6 * 3600_000) {
+    if (Date.now() >= deadline) { complete = false; break; }
     const rows = await activityWindow(new Date(t), new Date(Math.min(t + 6 * 3600_000, to.getTime())));
     for (const a of rows) {
       seen++;
@@ -153,7 +158,7 @@ export async function pullEsputnikActivity(from: Date, to: Date, budgetMs = 80_0
       if (r.logged) await pool.query(`UPDATE lead_exports SET outcome = $2 WHERE email = $1 AND COALESCE(outcome,'') NOT IN ('bounced','complained','unsubscribed','converted')`, [a.email.toLowerCase(), outcomeForEvent(event)]).catch(() => {});
     }
   }
-  return { seen, logged, suppressed };
+  return { seen, logged, suppressed, complete };
 }
 
 /**

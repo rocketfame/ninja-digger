@@ -31,8 +31,10 @@ export async function GET(request: Request) {
   // 1. outcomes
   const since = (await getSetting("esputnik_poll_since", "")) || today;
   const from = new Date(Date.parse(since.slice(0, 10)) - 2 * 86400000);
-  const pulled = await pullEsputnikActivity(from, new Date()).catch((e) => ({ seen: 0, logged: 0, suppressed: 0, error: e instanceof Error ? e.message : String(e) }));
-  if (!("error" in pulled)) await setSetting("esputnik_poll_since", today).catch(() => {});
+  const pulled = await pullEsputnikActivity(from, new Date(), 150_000).catch((e) => ({ seen: 0, logged: 0, suppressed: 0, complete: false, error: e instanceof Error ? e.message : String(e) }));
+  // the cursor moves only when the whole window was read; a partial read is
+  // simply repeated next hour (events dedupe on (email, event, ts))
+  if (!("error" in pulled) && pulled.complete) await setSetting("esputnik_poll_since", today).catch(() => {});
 
   // 2. cycle over → out of eSputnik
   const retired = await retireColdFromEsputnik().catch((e) => ({ deleted: 0, customers: 0, failed: 0, error: e instanceof Error ? e.message : String(e) }));
