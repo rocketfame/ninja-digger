@@ -18,16 +18,16 @@ PromoSound продає промо-кампанії артистам (Spotify, S
 Правила циклу (задані Max, вшиті в Ninja Digger, тобі лише знати):
 - масовий лист на адресу не частіше ніж раз на 30 днів;
 - не раніше ніж через 15 днів після холодного персонального листа;
-- 3 листи без відкриття поспіль → пауза 60 днів;
+- 3 листи без відкриття поспіль → пауза 60 днів (відкриття в Gmail/Apple Privacy ненадійні: висновки про офер робити з кліків, не з відкриттів);
 - клік без покупки → нічого, наступний лист через 30 днів;
 - покупка → клієнтський потік на основному сайті, масові листи стоп;
 - відписка/скарга/bounce → чорний список назавжди в обох каналах.
 
 ## 2. Що робить Ninja Digger в eSputnik сам (не дублюй і не ламай)
 
-- **Push раз на день** (~05:35 UTC): створює/наповнює статичну групу з назвою `Leads: SoundCloud 12.09.2026 (auto)` (також Spotify, YouTube). Контакти: `externalCustomerId = email`, `firstName`, країна. Обсяг на платформу — параметр `esputnik_daily_push` у Ninja Digger (старт 500).
-- **Pull щогодини**: забирає активність (`DELIVERED, READ, CLICKED, UNSUBSCRIBED, SPAM, UNDELIVERED`) через `GET /api/v2/contacts/activity` і кладе в свою базу. Негатив → чорний список.
-- **Прибирання**: ТІЛЬКИ ті адреси, які Ninja Digger сам завантажив (його реєстр `lead_exports`), яким >30 днів без покупки, видаляє з eSputnik, бо тариф рахує контакти в базі. Перед кожним видаленням контакт перевіряється: будь-яка ознака клієнта → не чіпати. На наступну хвилю ліди повернуться самі, якщо цикл дозволяє.
+- **Push раз на день** (~05:35 UTC): створює/наповнює статичну групу з назвою `Leads: SoundCloud 12.09.2026 (auto)` (також Spotify, YouTube). Контакти: лише email + `firstName`, БЕЗ `externalCustomerId` (це поле — Shopify id клієнта, його пише магазин). Обсяг на платформу — параметр `esputnik_daily_push` у Ninja Digger (старт 500).
+- **Pull щогодини**: забирає активність (`DELIVERED, READ, CLICKED, UNSUBSCRIBED, SPAM, UNDELIVERED`) через `GET /api/v2/contacts/activity` і кладе в свою базу. Пагінація — часовим бісектом (startindex/offset ненадійні, перевірено агентом). Негатив → чорний список.
+- **Ротація (рішення Max 11.09)**: ТІЛЬКИ адреси, які Ninja Digger сам завантажив (його реєстр `lead_exports`): **тиждень без відкриття → видалення з eSputnik; 30 днів без покупки → видалення**, відкривав чи ні. Тариф 25k контактів, місце під лідів ~3k, тому сидіння в базі треба заслужити. Перед кожним видаленням контакт перевіряється: будь-яка ознака клієнта → не чіпати. На наступну хвилю ліди повернуться самі, якщо цикл дозволяє.
 
 ## 2a. Ліди ≠ клієнти — залізне правило
 
@@ -53,7 +53,7 @@ PromoSound продає промо-кампанії артистам (Spotify, S
 ### 4.1 Домен відправки `offers.promosound.net`
 1. Налаштування → Домени → додати `offers.promosound.net`.
 2. Усі DNS-записи, які попросить eSputnik (SPF include, DKIM CNAME, технічний піддомен для трекінгу/bounce), передай Max текстом «назва → тип → значення». Записи ставить Ninja Digger у Cloudflare. Не проси Max робити це руками.
-3. Після верифікації створи відправника **«Max from PromoSound» `max@offers.promosound.net`**, Reply-To `support@promosoundgroup.net`. З основного домену лідам більше не шлемо.
+3. Після верифікації створи відправника **«Max from Promosound» `max@offers.promosound.net`**, Reply-To `support@promosoundgroup.net`. Бренд у відправнику і в тексті — саме «Promosound». З основного домену лідам більше не шлемо.
 
 ### 4.2 API-ключ для Ninja Digger
 Створи окремий ключ з правами на контакти, групи, активність. Передай Max: він кладе його у Vercel як `ESPUTNIK_API_KEY`. У чат не вставляй повністю, лише перші 6 символів для звірки.
@@ -66,15 +66,17 @@ PromoSound продає промо-кампанії артистам (Spotify, S
 
 | Платформа | Назва повідомлення | Код | Лінк офера |
 |---|---|---|---|
-| SoundCloud | `Offers: SoundCloud (MAXCLOUD)` | MAXCLOUD | `https://promosoundgroup.net/discount/MAXCLOUD?redirect=/collections/s-cloud-promotion` |
-| Spotify | `Offers: Spotify (MAXSPOTIFY)` | MAXSPOTIFY | `https://promosoundgroup.net/discount/MAXSPOTIFY?redirect=/collections/spotify-promotion` |
-| YouTube | `Offers: YouTube (MAXYOUTUBE)` | MAXYOUTUBE | `https://promosoundgroup.net/discount/MAXYOUTUBE?redirect=/collections/youtube-promotion` |
+| SoundCloud | `Offers: SoundCloud (MAXCLOUD)` | MAXCLOUD, 15% | `https://promosoundgroup.net/discount/MAXCLOUD?redirect=/collections/s-cloud-promotion` |
+| Spotify | `Offers: Spotify (MAXSPOTIFY)` | MAXSPOTIFY, 15% | `https://promosoundgroup.net/discount/MAXSPOTIFY?redirect=/collections/spotify-promotion` |
+| YouTube | `Offers: YouTube (MAXYOUTUBE)` | MAXYOUTUBE, 15% | `https://promosoundgroup.net/discount/MAXYOUTUBE?redirect=/collections/youtube-promotion` |
+
+Коди: 15% на товари каналу, без дедлайну, скоуп як у NEWRULES20 без Beatport, Traxsource, iTunes; існують у Shopify, у листі лише називати. Не 20%.
 
 Вимоги до кожного:
-- Відправник `max@offers.promosound.net`, Reply-To support@.
+- Відправник «Max from Promosound» `max@offers.promosound.net`, Reply-To support@.
 - UTM на всіх лінках: `utm_source=offers&utm_medium=email&utm_campaign=<platform>-<yyyymmdd>-<a|b>&utm_content=<блок>`.
 - Тема чесна, без «Your first boost landed» і подібних тверджень про минулі покупки: ці люди в нас нічого не купували. Дві теми на платформу (A/B), переможець визначається не раніше ніж по 1000 доставлених на варіант.
-- Перший рядок: хто ми (Max, PromoSound, промо-кампанії для артистів) і чому пишемо (публічний профіль на платформі).
+- Перший рядок: хто ми (Max, Promosound, промо-кампанії для артистів) і чому пишемо (публічний профіль на платформі).
 - Одна фраза «реальні слухачі, без ботів, поступова доставка», лінк колекції окремим рядком, код поруч із лінком. Лендінгів немає, лише наявні колекції.
 - Підвал: фізична адреса, робоче посилання відписки (одноклікова + в тілі), «you receive this because your music profile lists this contact for promotion inquiries».
 - Ніяких обіцянок чартів, вірусності, гарантій. Факти продуктів: «real listeners, gradual delivery, visible in your own stats».
@@ -106,6 +108,8 @@ PromoSound продає промо-кампанії артистам (Spotify, S
 MCP eSputnik (у тебе є): list_groups, get_group_contacts, bulk_upsert_contacts, attach_group_contacts, delete_contact, list_email_messages, get_email_message_export, get_email_message_preview_png, create_email_message / update_email_message, send_broadcast, list_broadcasts, get_contacts_activity_v2, get_messaging_analytics, get_email_deliverability_setup.
 
 REST (те саме, що використовує Ninja Digger): `POST /api/v1/contacts` (max 3000, dedupeOn email, groupNames), `POST /api/v1/group/{id}/contacts/attach` (max 500), `GET /api/v1/contacts?email=` + `GET /api/v1/contact/{id}` (перевірка на клієнта), `DELETE /api/v1/contact/{id}` (лише лід), `GET /api/v2/contacts/activity?dateFrom&dateTo&offset&maxrows`, `GET /api/v1/groups`.
+
+Пошта на `offers.promosound.net`: MX через Cloudflare Email Routing, `max@offers` пересилається на скриньку Max, тож відповіді на масові листи не губляться.
 
 Ninja Digger для довідки про ліда: `GET https://<ninja-digger>/api/internal/leads/status?email=…` з `Authorization: Bearer <LEADGEN_TOKEN>` (ключ дає Max). Результати кампаній повертати руками НЕ треба, pull робить це сам.
 
