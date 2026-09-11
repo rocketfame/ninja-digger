@@ -45,7 +45,7 @@ SPF+DKIM+DMARC на піддомені (DMARC p=none → p=quarantine за мі�
 - [ ] DNS offers.promosound.net (SPF, DMARC, DKIM після SES, MX для bounce) — Claude, Cloudflare API.
 - [ ] VPS + listmonk + SNS вебхуки — Claude.
 - [ ] Міст у коді (push сегментів, pull подій, cycle rules, watchdog) — Claude, 2 дні.
-- [ ] Три шаблони × 2 варіанти — Claude, затвердження користувача.
+- [ ] Три шаблони × 2 варіанти — **верстка переноситься з існуючих eSputnik-розсилок** (витягти HTML через eSputnik API, адаптувати під listmonk: {{ UnsubscribeURL }}, UTM, коди MAX*) — Claude, затвердження користувача.
 
 ## Текст для форми SES «Request production access»
 Use case: Marketing. Website: https://promosoundgroup.net.
