@@ -92,3 +92,6 @@ tail -f /tmp/ninjadigger-verify.log
 
 ## 4. Cron / crontab
 Порожній. Нічого не використовує.
+
+## esputnik-sync (масовий канал, з 11.09.2026)
+Щогодини о :35 `/api/cron/esputnik-sync`: тягне результати з eSputnik у email_events, видаляє з eSputnik контакти після 30-денного циклу, раз на день пушить сегменти (`esputnik_daily_push` на платформу; 0 = вимкнено, це default). Вимкнути: `esputnik_daily_push=0` (push) або прибрати `ESPUTNIK_API_KEY` (усе). Деталі: MASS-OUTREACH.md.

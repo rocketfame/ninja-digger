@@ -10,7 +10,14 @@
 5. Після циклу (30 днів без реакції) контакт ВИДАЛЯЄТЬСЯ з бази eSputnik — тариф там за контакти, тримаємо 30–50k живих.
 6. eSputnik має обмеження прогріву на поштовик (зараз 1000/день/поштовик, рівень 1) — це і є наш природний ramp.
 
-Потрібно від користувача: тариф/ліміт контактів eSputnik; API-ключ eSputnik у Vercel env `ESPUTNIK_API_KEY` (для крону).
+## Код (11.09, задеплоєно)
+- `lib/leadBridge.ts` — одна реалізація відбору (`selectMassLeads`, правила циклу з `massEligibleSql`), ledger (`recordHandover` пише lead_exports + подію `sent` src=esputnik) і результатів (`recordOutcome`: email_events + lead_exports.outcome + карантин у blacklist для bounce/spam/unsub). HTTP-міст `/api/internal/leads/export` і крон користуються нею.
+- `lib/esputnik.ts` — `pushToEsputnik(platform, limit)`: POST /api/v1/contacts (dedupeOn email, externalCustomerId=email, група `Leads: <Platform> dd.mm.yyyy (auto)`); `pullEsputnikActivity(from,to)`: GET /api/v2/contacts/activity (DELIVERED/READ/CLICKED/UNSUBSCRIBED/SPAM/UNDELIVERED → наш словник, `lib/esputnikStatus.ts`); `retireColdFromEsputnik()`: DELETE /api/v1/contact?externalCustomerId= для тих, кому >30 днів без покупки/негативу → outcome 'cold'.
+- `/api/cron/esputnik-sync` щогодини (35 хв): pull → retire → push раз на день. Ручки в app_settings: `esputnik_daily_push` (на платформу, default 0 = ВИМКНЕНО), `esputnik_push_platforms` (default soundcloud,spotify,youtube), курсори `esputnik_poll_since`, `esputnik_last_push_date`.
+- Env: `ESPUTNIK_API_KEY` (Basic auth, будь-який user + ключ). Без ключа крон мовчки пропускає.
+- Кампанію (лист на групу) запускає користувач в eSputnik або пізніше крон через POST broadcast — після тесту на 500.
+
+Потрібно від користувача: тариф/ліміт контактів eSputnik; додати домен offers.promosound.net в eSputnik і показати DNS-записи; API-ключ eSputnik у Vercel env `ESPUTNIK_API_KEY`.
 
 ---
 (нижче — попередній план із listmonk, лишено для історії)
