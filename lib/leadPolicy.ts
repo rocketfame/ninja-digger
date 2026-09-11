@@ -45,6 +45,54 @@ export const MAILBOX_CHECKED_SQL = `SELECT email FROM email_verification WHERE v
 export const HANDED_OVER_SQL = `SELECT email FROM lead_exports WHERE COALESCE(outcome,'') <> 'cold'`;
 
 /**
+ * The mass channel's cycle — the rules the user set for branded campaigns, in
+ * one place so eSputnik and listmonk both obey them through the same bridge:
+ *   - one mass email per address per 30 days
+ *   - never within 15 days of a cold personal email
+ *   - three mass emails in a row without an open → 60 days of silence
+ *   - a purchase moves the person to the customer flow: no more mass mail
+ * Bounce, complaint and unsubscribe are not listed here because they land in
+ * email_blacklist, which every channel already honours.
+ */
+export const MASS_CYCLE = { resendDays: 30, afterColdDays: 15, fatigueSends: 3, fatiguePauseDays: 60 } as const;
+
+/** Sources that write mass-channel events into email_events (meta.src). */
+export const MASS_SOURCES = ["esputnik", "listmonk"] as const;
+
+/** Mailed by the mass channel inside the current cycle. */
+export const MASS_RECENT_SQL = `SELECT email FROM lead_exports WHERE exported_at > now() - interval '${MASS_CYCLE.resendDays} days'`;
+
+/** Bought something: the customer flow on the main site owns them now. */
+export const CONVERTED_SQL = `SELECT email FROM lead_exports WHERE outcome = 'converted'`;
+
+/**
+ * Fatigued: N mass sends since the last open (or ever, if never opened), the
+ * latest of them inside the pause window. Counted from email_events so a send
+ * reported by either mass source counts.
+ */
+export const MASS_FATIGUED_SQL = `SELECT s.email FROM email_events s
+     WHERE s.event = 'sent' AND s.meta->>'src' IN (${quoted(MASS_SOURCES)})
+       AND s.ts > COALESCE((SELECT MAX(o.ts) FROM email_events o
+                             WHERE o.email = s.email AND o.event IN (${quoted(OPEN_EVENTS)})), '-infinity'::timestamptz)
+     GROUP BY s.email
+    HAVING COUNT(*) >= ${MASS_CYCLE.fatigueSends}
+       AND MAX(s.ts) > now() - interval '${MASS_CYCLE.fatiguePauseDays} days'`;
+
+/**
+ * May the mass channel take this address in this batch? `col` holds the
+ * address, `coldCol` the timestamp of the last cold personal email (NULL if
+ * none). Suppression is not repeated here: the bridge applies SUPPRESSED_SQL
+ * itself, as every channel does.
+ */
+export function massEligibleSql(col = "email", coldCol = "cold_at"): string {
+  const e = `LOWER(${col})`;
+  return `${e} NOT IN (${MASS_RECENT_SQL})
+     AND ${e} NOT IN (${CONVERTED_SQL})
+     AND ${e} NOT IN (${MASS_FATIGUED_SQL})
+     AND (${coldCol} IS NULL OR ${coldCol} < now() - interval '${MASS_CYCLE.afterColdDays} days')`;
+}
+
+/**
  * May we send COLD mail to this address?
  *
  * `col` is the column or expression holding the address, so a barrel can pass
@@ -79,31 +127,33 @@ export type Platform = (typeof PLATFORMS)[number];
  *
  * `touch` is how many cold emails the lead has had (Beatport tracks this in
  * lead_profiles rather than on the contact row, so it reports 0 here).
+ * `cold_at` is when the last cold email went out — the mass channel keeps its
+ * distance from it (see massEligibleSql). Beatport is never mass-mailed.
  */
 function sourceSql(p: Platform): string {
   switch (p) {
     case "soundcloud":
       return `SELECT LOWER(email) email, 'soundcloud' platform, COALESCE(full_name, username) name,
                      followers_count::int followers, country_code::text country, permalink_url::text profile_url,
-                     email_found_at found_at, COALESCE(sc_touch,0)::int touch, email_status
+                     email_found_at found_at, COALESCE(sc_touch,0)::int touch, email_status, contacted_at cold_at
                 FROM sc_artists
                WHERE email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')`;
     case "spotify":
       return `SELECT LOWER(email) email, 'spotify' platform, COALESCE(full_name, ig_username) name,
                      followers::int followers, NULL::text country, NULL::text profile_url,
-                     enriched_at found_at, COALESCE(sp_touch,0)::int touch, email_status
+                     enriched_at found_at, COALESCE(sp_touch,0)::int touch, email_status, contacted_at cold_at
                 FROM spotify_leads
                WHERE email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')`;
     case "youtube":
       return `SELECT LOWER(email) email, 'youtube' platform, name,
                      followers::int followers, NULL::text country, source_url::text profile_url,
-                     email_found_at found_at, COALESCE(touch,0)::int touch, email_status
+                     email_found_at found_at, COALESCE(touch,0)::int touch, email_status, contacted_at cold_at
                 FROM radar_leads
                WHERE email IS NOT NULL AND COALESCE(email_status,'') NOT IN ('bounced','unsub','junk')`;
     case "beatport":
       return `SELECT LOWER(TRIM(ac.value)) email, 'beatport' platform, am.artist_name name,
                      NULL::int followers, NULL::text country, NULL::text profile_url,
-                     ac.created_at found_at, 0::int touch, ac.status email_status
+                     ac.created_at found_at, 0::int touch, ac.status email_status, NULL::timestamptz cold_at
                 FROM artist_contacts ac
                 LEFT JOIN artist_metrics am ON am.artist_beatport_id = ac.artist_beatport_id
                WHERE ac.type='email' AND COALESCE(ac.status,'ok')='ok'`;

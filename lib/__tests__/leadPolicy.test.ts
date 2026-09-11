@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  OPEN_EVENTS, PLATFORMS, contactableSql, isOpenEvent, leadSourcesSql,
+  MASS_CYCLE, OPEN_EVENTS, PLATFORMS, contactableSql, isOpenEvent, leadSourcesSql, massEligibleSql,
 } from "../leadPolicy";
 
-const COLUMNS = ["email", "platform", "name", "followers", "country", "profile_url", "found_at", "touch", "email_status"];
+const COLUMNS = ["email", "platform", "name", "followers", "country", "profile_url", "found_at", "touch", "email_status", "cold_at"];
 
 describe("leadSourcesSql", () => {
   it("names every column in every branch", () => {
@@ -22,7 +22,7 @@ describe("leadSourcesSql", () => {
   it("types every placeholder NULL, which alone in a branch has no type to infer", () => {
     // `NULL country` is untyped and fails on its own; `NULL::text country` works.
     for (const p of PLATFORMS) {
-      const untyped = leadSourcesSql([p]).match(/\bNULL\s+(?:country|profile_url|followers|name)\b/gi) ?? [];
+      const untyped = leadSourcesSql([p]).match(/\bNULL\s+(?:country|profile_url|followers|name|cold_at)\b/gi) ?? [];
       expect(untyped, `${p} has an untyped placeholder`).toHaveLength(0);
     }
   });
@@ -82,5 +82,30 @@ describe("isOpenEvent", () => {
     expect(isOpenEvent("loadedbyproxy")).toBe(false);
     expect(isOpenEvent("delivered")).toBe(false);
     expect(isOpenEvent("hardbounces")).toBe(false);
+  });
+});
+
+describe("massEligibleSql", () => {
+  it("encodes all four cycle rules with the agreed numbers", () => {
+    const sql = massEligibleSql();
+    expect(sql).toContain(`interval '${MASS_CYCLE.resendDays} days'`);
+    expect(sql).toContain(`interval '${MASS_CYCLE.afterColdDays} days'`);
+    expect(sql).toContain(`COUNT(*) >= ${MASS_CYCLE.fatigueSends}`);
+    expect(sql).toContain(`interval '${MASS_CYCLE.fatiguePauseDays} days'`);
+    expect(sql).toContain("outcome = 'converted'");
+    expect(MASS_CYCLE).toEqual({ resendDays: 30, afterColdDays: 15, fatigueSends: 3, fatiguePauseDays: 60 });
+  });
+
+  it("counts fatigue only from mass sources, since the last open", () => {
+    const sql = massEligibleSql();
+    expect(sql).toContain("meta->>'src' IN ('esputnik','listmonk')");
+    expect(sql).toContain("MAX(o.ts)");
+  });
+
+  it("applies to the caller's columns", () => {
+    const sql = massEligibleSql("s.email", "s.cold_at");
+    expect(sql).toContain("LOWER(s.email) NOT IN");
+    expect(sql).toContain("s.cold_at IS NULL OR s.cold_at <");
+    expect(sql).not.toContain("LOWER(email) NOT IN");
   });
 });

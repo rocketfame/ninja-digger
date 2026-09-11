@@ -6,7 +6,9 @@
  *      so what the other side learns lands in our suppression list too.
  *
  * Safety rules baked in, because these addresses go out under the MAIN domain:
- *   - never exported twice (lead_exports is the ledger, email is the dedup key)
+ *   - the mass cycle (massEligibleSql): one mass email per 30 days, never
+ *     within 15 days of a cold personal email, 3 unopened in a row → 60 days
+ *     off, buyers never; lead_exports is the ledger, email is the key
  *   - never anything in email_blacklist (junk, dead mailbox, opt-out, bounce)
  *   - by default only mailboxes SMTP-verified as live (email_verification.valid)
  *   - `engagement=replied` = people who wrote back to us (warmest we have)
@@ -28,7 +30,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { isAuthorized, unauthorized } from "@/lib/apiAuth";
-import { HANDED_OVER_SQL, OPENED_SQL, PLATFORMS, REPLIED_SQL, SUPPRESSED_SQL, leadSourcesSql, type Platform } from "@/lib/leadPolicy";
+import { MASS_SOURCES, OPENED_SQL, PLATFORMS, REPLIED_SQL, SUPPRESSED_SQL, leadSourcesSql, massEligibleSql, type Platform } from "@/lib/leadPolicy";
 import { csvCell } from "@/lib/csv";
 
 /**
@@ -90,7 +92,7 @@ export async function GET(request: Request) {
          FROM src s
          LEFT JOIN email_verification v ON v.email = s.email
         WHERE s.email NOT IN (${SUPPRESSED_SQL})
-          AND s.email NOT IN (SELECT email FROM lead_exports)
+          AND ${massEligibleSql("s.email", "s.cold_at")}
           ${verifiedOnly ? `AND v.verdict = 'valid'` : `AND COALESCE(v.verdict,'unknown') <> 'invalid'`}
           ${engagedOnly ? `AND s.email IN (${OPENED_SQL})` : ``}
           ${repliedOnly ? `AND s.email IN (${REPLIED_SQL})` : ``}
@@ -113,7 +115,9 @@ export async function GET(request: Request) {
   if (!dry && rows.length > 0) {
     await pool.query(
       `INSERT INTO lead_exports (email, platform, batch)
-       SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[]) ON CONFLICT (email) DO NOTHING`,
+       SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[])
+       ON CONFLICT (email) DO UPDATE SET platform = EXCLUDED.platform, batch = EXCLUDED.batch,
+         exported_at = now(), outcome = NULL, outcome_at = NULL`,
       [rows.map((r) => r.email), rows.map((r) => r.platform), rows.map(() => batch)]
     );
   }
@@ -133,7 +137,7 @@ export async function GET(request: Request) {
        SELECT COUNT(DISTINCT s.email) c
          FROM src s LEFT JOIN email_verification v ON v.email = s.email
         WHERE s.email NOT IN (${SUPPRESSED_SQL})
-          AND s.email NOT IN (SELECT email FROM lead_exports)
+          AND ${massEligibleSql("s.email", "s.cold_at")}
           ${verifiedOnly ? `AND v.verdict = 'valid'` : `AND COALESCE(v.verdict,'unknown') <> 'invalid'`}
           ${engagedOnly ? `AND s.email IN (${OPENED_SQL})` : ``}
           ${repliedOnly ? `AND s.email IN (${REPLIED_SQL})` : ``}
@@ -169,7 +173,9 @@ export async function GET(request: Request) {
  * meta.src='esputnik' with the campaign. One timeline per person answers "who
  * was mailed, from where, when" with a single query.
  *
- * Body: { outcomes: [{ email, outcome, at?, campaign? }] }
+ * Body: { src?: esputnik|listmonk, outcomes: [{ email, outcome, at?, campaign? }] }
+ *   src names the mass system reporting (default esputnik); it is stored in
+ *   meta.src so the fatigue rule can count mass sends from either.
  *   outcome: sent | delivered | opened | clicked | bounced | complained |
  *            unsubscribed | converted | cold
  *
@@ -181,8 +187,10 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   if (!bridgeAuthorized(request)) return unauthorized();
   const body = (await request.json().catch(() => ({}))) as {
+    src?: string;
     outcomes?: { email?: string; outcome?: string; at?: string; campaign?: string }[];
   };
+  const src = (MASS_SOURCES as readonly string[]).includes(String(body.src ?? "").toLowerCase()) ? String(body.src).toLowerCase() : "esputnik";
   const items = (body.outcomes ?? []).filter((o) => o.email && o.outcome);
   if (items.length === 0) return NextResponse.json({ error: "outcomes[] required" }, { status: 400 });
 
@@ -196,7 +204,7 @@ export async function POST(request: Request) {
     await pool.query(
       `INSERT INTO email_events (email, event, ts, meta) VALUES ($1,$2,$3,$4)
        ON CONFLICT (email, event, ts) DO NOTHING`,
-      [e, o, ts, JSON.stringify({ src: "esputnik", ...(campaign ? { campaign } : {}) })]
+      [e, o, ts, JSON.stringify({ src, ...(campaign ? { campaign } : {}) })]
     ).then((r) => { logged += r.rowCount ?? 0; }).catch(() => {});
 
     await pool.query(
@@ -204,7 +212,7 @@ export async function POST(request: Request) {
     ).then((r) => { recorded += r.rowCount ?? 0; }).catch(() => {});
 
     if (/bounce|complain|spam|unsub|invalid/.test(o)) {
-      await quarantineEmail(e, `esputnik: ${o}`);
+      await quarantineEmail(e, `${src}: ${o}`);
       suppressed++;
     }
     if (o === "cold") released++;
