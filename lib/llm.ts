@@ -15,6 +15,22 @@ type Draft = { intent: string; reply: string } | null;
  */
 export type ChannelOffer = { channel: string; name?: string; url?: string | null; code?: string | null; facts?: string | null };
 
+/**
+ * What OUR first email was about, per acquisition channel. The reply must
+ * stand on that, not on a generic "chart activity" line: a YouTube lead who
+ * answers "what's the idea?" was written to about their latest video, and a
+ * draft that suddenly talks about "your track moving on the charts" is a lie
+ * that gets us ignored. Exported for tests.
+ */
+export function replyOpener(channel?: string | null): { platform: string; opener: string } {
+  const c = (channel ?? "").toLowerCase();
+  if (c.includes("youtube")) return { platform: "YouTube", opener: "our first email was about their latest YouTube video and its reach; the offer is YouTube promotion (real views and subscribers)" };
+  if (c.includes("spotify")) return { platform: "Spotify", opener: "our first email was about their music on Spotify; the offer is Spotify promotion (real listeners)" };
+  if (c.includes("soundcloud") || c === "sc") return { platform: "SoundCloud", opener: "our first email was about their tracks on SoundCloud; the offer is SoundCloud promotion (real plays, likes, reposts)" };
+  if (c.includes("beatport") || c.includes("pipeline")) return { platform: "Beatport", opener: "our first email pointed at their Beatport chart activity (see VERIFIED FACTS); the offer is Beatport promotion" };
+  return { platform: "", opener: "our first email offered music promotion" };
+}
+
 export async function draftReplyAssist(
   artistReply: string,
   ctx?: {
@@ -39,15 +55,22 @@ export async function draftReplyAssist(
       offers.map((o) => `  ${o.channel}: ${o.name ?? o.channel}\n    ${o.url}${o.code ? `\n    code ${o.code}` : ``}`).join("\n") +
       `\n\nPICK THE CHANNEL THE ARTIST ASKED FOR, not the one we contacted them on.` +
       ` If they name a platform, give that platform's link and code and nothing else.` +
-      ` If they say they need promotion generally, or have nothing running on other platforms, say we cover Beatport, SoundCloud, Spotify and YouTube and give the link for the platform that matters most to them - ask which one if it is genuinely unclear.` +
+      ` If they say they need promotion generally, give the link for the platform our first email was about (see CONTEXT) - that platform is known, do not ask.` +
       ` NEVER say we focus on one platform "specifically" or imply we do not do the others.` +
       ` Put the link on ITS OWN LINE. Mention the code as a personal discount from Max.` +
       ` ONE short line plus the link - do not describe packages or invent prices; the link does the work.`
     : ``;
 
+  const op = replyOpener(ctx?.channel);
   const system =
     `You are the assistant for Max at PromoSound, a music-promo agency (we promote artists on Beatport, SoundCloud, Spotify and YouTube).\n\n` +
-    `CONTEXT: our outreach opened by pointing at this artist's chart activity. We promote on Beatport, SoundCloud, Spotify AND YouTube - the channel we reached them on is not a restriction on what they can buy. When they ask "which track / am I charting", answer from the VERIFIED FACTS below (exact title, chart, positions, source link). Never call anything a "recent upload" or "new release" unless the facts say it was released recently; a CATALOG/classic track that re-enters the charts is described as exactly that (renewed interest in a classic), and the pitch then shifts to their NEXT release or catalog push.\n\n` +
+    `CONTEXT: ${op.opener}. We promote on Beatport, SoundCloud, Spotify AND YouTube - the channel we reached them on is not a restriction on what they can buy.\n` +
+    (op.platform
+      ? `THE PLATFORM IS ALREADY KNOWN: it is ${op.platform}, because that is what our own first email was about. A neutral reply ("what's the idea", "tell me more", "go on") means: answer for ${op.platform} - one line that it is real ${op.platform === "YouTube" ? "views and subscribers" : "listeners"} (never bots), the ${op.platform} link with its code on its own line, then ask for the link to their ${op.platform === "YouTube" ? "video" : "track"}. Do NOT ask which platform they want and do NOT list all our platforms. Only switch platform if the artist names a different one. NEVER mention charts, chart positions or "your track moving" unless VERIFIED FACTS below say so.\n\n`
+      : `If it is genuinely unclear which platform matters to them, ask once.\n\n`) +
+    (op.platform === "Beatport"
+      ? `When they ask "which track / am I charting", answer from the VERIFIED FACTS below (exact title, chart, positions, source link). Never call anything a "recent upload" or "new release" unless the facts say it was released recently; a CATALOG/classic track that re-enters the charts is described as exactly that (renewed interest in a classic), and the pitch then shifts to their NEXT release or catalog push.\n\n`
+      : ``) +
     `READ THE REPLY CAREFULLY. If the artist corrects us (the track is old, it isn't theirs, they are a label/manager, they already work with someone, they are annoyed), acknowledge the correction in ONE short sentence, do NOT repeat our original framing, and either adjust the offer to what fits or close politely. Sarcasm or irritation means: apologise briefly, no pitch. Never argue, never explain our tooling.\n\n` +
     (ctx?.thread ? `THREAD SO FAR (chronological, read it before answering — never repeat what we already said, never ask what they already told us):\n${ctx.thread}\n\n` : ``) +
     (ctx?.customer
