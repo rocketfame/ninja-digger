@@ -1,5 +1,21 @@
 # Масовий канал — рішення і статус
 
+**ЗМІНА 11.09 (вечір): двигун масового каналу — eSputnik, не listmonk.** Причина: за ті самі $130–150/міс самозбірка (Elastic+listmonk+Hetzner) програє готовій платформі, а eSputnik уже є: акаунт прогрітий, автоматичний прогрів на кожного поштовика, one-click відписка, шаблони, і LEADS-кампанії вони вже пропускають (скарг 0). Elastic Email лишається запасним дротом ($19 Starter, домен верифікований). Hetzner/listmonk — скасовано.
+
+## Як це працює на eSputnik
+1. Другий домен відправки `offers.promosound.net` в eSputnik (DNS у Cloudflare: SPF доповнити `include:spf2.esputnik.com`, DKIM CNAME `esputnik._domainkey.offers` → dkim.esputnik.com, tracking-піддомен від eSputnik).
+2. Наш крон щодня пушить сегмент у eSputnik через API (bulk upsert контактів + група «SC|Spotify|YouTube <дата>») з правилами циклу з `massEligibleSql`; обсяг — налаштування `esputnik_daily_push` (старт 500, +по метриках).
+3. Кампанія в eSputnik на групу: шаблон каналу, лінк колекції, код MAX*, UTM.
+4. Крон тягне активність (delivered/open/click/unsub/bounce/complaint) назад у `email_events` (src=esputnik) і в `email_blacklist`.
+5. Після циклу (30 днів без реакції) контакт ВИДАЛЯЄТЬСЯ з бази eSputnik — тариф там за контакти, тримаємо 30–50k живих.
+6. eSputnik має обмеження прогріву на поштовик (зараз 1000/день/поштовик, рівень 1) — це і є наш природний ramp.
+
+Потрібно від користувача: тариф/ліміт контактів eSputnik; API-ключ eSputnik у Vercel env `ESPUTNIK_API_KEY` (для крону).
+
+---
+(нижче — попередній план із listmonk, лишено для історії)
+
+
 Затверджено 11.09.2026. Повний документ: https://claude.ai/code/artifact/15ba38ba-b3f1-4505-acb4-0c36449178f8
 
 ## Рішення
