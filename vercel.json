@@ -85,6 +85,10 @@
     {
       "path": "/api/cron/sc-crawl",
       "schedule": "*/9 * * * *"
+    },
+    {
+      "path": "/api/cron/esputnik-sync",
+      "schedule": "35 * * * *"
     }
   ]
 }
