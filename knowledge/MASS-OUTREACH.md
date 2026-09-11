@@ -42,10 +42,10 @@ SPF+DKIM+DMARC на піддомені (DMARC p=none → p=quarantine за мі�
 ## Статус / хто що робить
 - [ ] Акаунти elasticemail.com і smtp2go.com (infopromosoundgroup@gmail.com) + API-ключі обох → Claude — **користувач**. Dedicated IP на Elastic — картка.
 - [ ] Hetzner акаунт + SSH-ключ Claude — **користувач**.
-- [ ] DNS offers.promosound.net (SPF з include обох, DKIM/CNAME від обох, DMARC p=none, dmarc@ routing) — Claude, Cloudflare UI (JS-міст до API заблоковано політикою браузера).
+- [~] DNS offers.promosound.net — Claude, Cloudflare UI кліками (JS-міст до API заблоковано політикою браузера). ✅ 11.09: TXT `_dmarc.offers` = `v=DMARC1; p=none; rua=mailto:dmarc@promosound.net; fo=1`. Лишилось: SPF з include обох провайдерів, DKIM/CNAME від обох, Email Routing dmarc@ → infopromosoundgroup@gmail.com.
 - [ ] VPS + listmonk (Postgres — окрема база в тому ж Neon-проєкті) + вебхуки bounce/complaint обох провайдерів — Claude. SSH-ключ: ~/.ssh/ninja-mass.pub.
-- [ ] Міст у коді (push сегментів, pull подій, cycle rules, watchdog) — Claude, 2 дні.
-- [ ] Три шаблони × 2 варіанти — **верстка переноситься з існуючих eSputnik-розсилок** (витягти HTML через eSputnik API, адаптувати під listmonk: {{ UnsubscribeURL }}, UTM, коди MAX*) — Claude, затвердження користувача.
+- [~] Міст у коді — Claude. ✅ 11.09: правила циклу в `lib/leadPolicy.ts` (`massEligibleSql`, `MASS_CYCLE`) і в `/api/internal/leads/export` (GET: сегмент за циклом, повторний експорт через 30 днів; POST: `src: listmonk|esputnik`, події в email_events). Лишилось: pull подій із listmonk/провайдерів (вебхуки), стоп-крани у watchdog.
+- [~] Три шаблони × 2 варіанти — **верстка переноситься з існуючих eSputnik-розсилок** (✅ витягнуто HTML: LEADS 080926 SoundCloud #4675184, Spotify #4675297, Digest #3 SC #4678492) (витягти HTML через eSputnik API, адаптувати під listmonk: {{ UnsubscribeURL }}, UTM, коди MAX*) — Claude, затвердження користувача.
 
 ## Текст для форми SES «Request production access» (не використовується, лишено на випадок повернення до SES)
 Use case: Marketing. Website: https://promosoundgroup.net.
