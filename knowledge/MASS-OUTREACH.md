@@ -40,9 +40,9 @@ SPF+DKIM+DMARC на піддомені (DMARC p=none → p=quarantine за мі�
 - Контактабельних: ~98k, приплив ~60k/день з парсера.
 
 ## Статус / хто що робить
-- [ ] Акаунти elasticemail.com і smtp2go.com (infopromosoundgroup@gmail.com) + API-ключі обох → Claude — **користувач**. Dedicated IP на Elastic — картка.
+- [~] Акаунти: ✅ Elastic Email створено 11.09 (Email API), домен offers.promosound.net верифіковано (SPF/DKIM/CNAME/DMARC), default sender max@offers.promosound.net. SMTP2GO — користувач реєструє (Free зараз, Starter $15 з 2-го тижня). Ще треба від користувача: API-ключ Elastic (вставити в listmonk), ключ SMTP2GO, dedicated IP на Elastic (картка).
 - [ ] Hetzner акаунт + SSH-ключ Claude — **користувач**.
-- [~] DNS offers.promosound.net — Claude, Cloudflare UI кліками (JS-міст до API заблоковано політикою браузера). ✅ 11.09: TXT `_dmarc.offers` = `v=DMARC1; p=none; rua=mailto:dmarc@promosound.net; fo=1`. Лишилось: SPF з include обох провайдерів, DKIM/CNAME від обох, Email Routing dmarc@ → infopromosoundgroup@gmail.com.
+- [x] DNS offers.promosound.net — ✅ 11.09: `_dmarc.offers` TXT (p=none, rua dmarc@promosound.net), `offers` TXT SPF `v=spf1 a mx include:_spf.elasticemail.com include:spf.smtp2go.com ~all`, `api._domainkey.offers` TXT (Elastic DKIM), `tracking.offers` CNAME → api.elasticemail.com. Додано через Cloudflare Import (BIND-файл) — надійніше за діалог Add record. Лишилось: DKIM/CNAME від SMTP2GO, Email Routing dmarc@ → infopromosoundgroup@gmail.com.
 - [ ] VPS + listmonk (Postgres — окрема база в тому ж Neon-проєкті) + вебхуки bounce/complaint обох провайдерів — Claude. SSH-ключ: ~/.ssh/ninja-mass.pub.
 - [~] Міст у коді — Claude. ✅ 11.09: правила циклу в `lib/leadPolicy.ts` (`massEligibleSql`, `MASS_CYCLE`) і в `/api/internal/leads/export` (GET: сегмент за циклом, повторний експорт через 30 днів; POST: `src: listmonk|esputnik`, події в email_events). Лишилось: pull подій із listmonk/провайдерів (вебхуки), стоп-крани у watchdog.
 - [~] Три шаблони × 2 варіанти — **верстка переноситься з існуючих eSputnik-розсилок** (✅ витягнуто HTML: LEADS 080926 SoundCloud #4675184, Spotify #4675297, Digest #3 SC #4678492) (витягти HTML через eSputnik API, адаптувати під listmonk: {{ UnsubscribeURL }}, UTM, коди MAX*) — Claude, затвердження користувача.
