@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupNameFor, mapEsputnikStatus, outcomeForEvent } from "../esputnikStatus";
+import { groupNameFor, isCustomerContact, mapEsputnikStatus, outcomeForEvent } from "../esputnikStatus";
 
 describe("eSputnik status mapping", () => {
   it("maps every documented activity status onto our event vocabulary", () => {
@@ -27,5 +27,20 @@ describe("eSputnik status mapping", () => {
   it("names the day's group like the ones already in the account", () => {
     expect(groupNameFor("soundcloud", new Date(Date.UTC(2026, 8, 12)))).toBe("Leads: SoundCloud 12.09.2026 (auto)");
     expect(groupNameFor("youtube", new Date(Date.UTC(2026, 0, 3)))).toBe("Leads: YouTube 03.01.2026 (auto)");
+  });
+});
+
+describe("leads never mix with customers", () => {
+  it("treats a Shopify-stamped contact as a customer", () => {
+    expect(isCustomerContact({ id: 1, externalCustomerId: "9766023725234", groups: [] })).toBe(true);
+  });
+  it("treats membership of any non-lead group as a customer", () => {
+    expect(isCustomerContact({ id: 1, groups: [{ name: "Buyers: SoundCloud (auto)" }] })).toBe(true);
+    expect(isCustomerContact({ id: 1, groups: [{ name: "Registration" }] })).toBe(true);
+    expect(isCustomerContact({ id: 1, groups: [{ name: "Leads: SoundCloud 12.09.2026 (auto)" }, { name: "Newcomers" }] })).toBe(true);
+  });
+  it("leaves a plain lead alone", () => {
+    expect(isCustomerContact({ id: 1, externalCustomerId: null, groups: [{ name: "Leads: Spotify 12.09.2026 (auto)" }] })).toBe(false);
+    expect(isCustomerContact({ id: 1 })).toBe(false);
   });
 });

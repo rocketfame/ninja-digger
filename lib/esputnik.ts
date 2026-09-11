@@ -5,12 +5,19 @@
  * timeline, and after a cycle we delete the contact there again — eSputnik
  * bills per contact stored, so only the live batch lives there.
  *
+ * THE RULE ABOVE ALL OTHERS: eSputnik also holds the shop's real customers.
+ * A lead and a customer never mix. We create leads without externalCustomerId
+ * (the shop integration owns that field), never overwrite an existing
+ * contact's fields, never delete anything that shows a sign of being a
+ * customer, and the moment a lead is found among customers it is marked
+ * 'converted' — out of both our channels, for good, and left alone here.
+ *
  * Auth: HTTP Basic, any user name + the API key (ESPUTNIK_API_KEY).
  */
 import { pool } from "@/lib/db";
 import { PLATFORMS, type Platform } from "@/lib/leadPolicy";
 import { recordHandover, recordOutcome, selectMassLeads } from "@/lib/leadBridge";
-import { groupNameFor, mapEsputnikStatus, outcomeForEvent } from "@/lib/esputnikStatus";
+import { groupNameFor, isCustomerContact, mapEsputnikStatus, outcomeForEvent, type EsputnikContact } from "@/lib/esputnikStatus";
 
 const BASE = "https://esputnik.com/api";
 
@@ -36,37 +43,68 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (text ? JSON.parse(text) : {}) as T;
 }
 
+/** Look a contact up by address: id, shop id, groups. null when unknown to eSputnik. */
+export async function findContact(email: string): Promise<EsputnikContact | null> {
+  const list = await api<EsputnikContact[]>(`/v1/contacts?email=${encodeURIComponent(email)}&maxrows=1`).catch(() => null);
+  const hit = Array.isArray(list) ? list[0] : null;
+  if (!hit?.id) return null;
+  // the search row carries no groups; the full contact does
+  return api<EsputnikContact>(`/v1/contact/${hit.id}`).catch(() => hit);
+}
+
+/** A lead that turned out to be a customer leaves both channels for good. */
+async function markConverted(email: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO lead_exports (email, platform, batch, outcome, outcome_at)
+     VALUES ($1, 'customer', 'esputnik-customer', 'converted', now())
+     ON CONFLICT (email) DO UPDATE SET outcome = 'converted', outcome_at = now()`,
+    [email.toLowerCase()]
+  ).catch(() => {});
+}
+
 /**
- * Push one platform's batch: select under the cycle rules, upsert into a
- * dated static group, write the ledger. externalCustomerId = email so the
- * contact can be deleted by address later.
+ * Push one platform's batch: select under the cycle rules, keep only
+ * addresses eSputnik does not already know as customers, upsert into a dated
+ * static group, write the ledger. New contacts are created without
+ * externalCustomerId and with firstName only; an address that already exists
+ * there as a plain lead is attached to today's group without touching its
+ * fields; an address that exists as a customer is marked converted and
+ * skipped.
  */
-export async function pushToEsputnik(platform: Platform, limit: number): Promise<{ group: string; pushed: number; failed: number }> {
+export async function pushToEsputnik(platform: Platform, limit: number, budgetMs = 200_000): Promise<{ group: string; pushed: number; failed: number; customers: number }> {
   const group = groupNameFor(platform);
+  const deadline = Date.now() + budgetMs;
   const rows = await selectMassLeads({ platforms: [platform], limit });
-  if (rows.length === 0) return { group, pushed: 0, failed: 0 };
+  if (rows.length === 0) return { group, pushed: 0, failed: 0, customers: 0 };
+
+  const fresh: typeof rows = [];
+  let customers = 0;
+  for (const l of rows) {
+    if (Date.now() > deadline) break;
+    const c = await findContact(l.email);
+    if (c && isCustomerContact(c)) { customers++; await markConverted(l.email); continue; }
+    fresh.push(l);
+  }
+  if (fresh.length === 0) return { group, pushed: 0, failed: 0, customers };
+
   let failed = 0;
-  for (let i = 0; i < rows.length; i += 3000) {
-    const chunk = rows.slice(i, i + 3000);
+  for (let i = 0; i < fresh.length; i += 3000) {
+    const chunk = fresh.slice(i, i + 3000);
     const r = await api<{ failedContacts?: unknown[] }>("/v1/contacts", {
       method: "POST",
       body: JSON.stringify({
-        contacts: chunk.map((l) => ({
-          externalCustomerId: l.email,
-          firstName: l.name ?? undefined,
-          channels: [{ type: "email", value: l.email }],
-          ...(l.country ? { address: { countryCode: l.country } } : {}),
-        })),
+        contacts: chunk.map((l) => ({ firstName: l.name ?? undefined, channels: [{ type: "email", value: l.email }] })),
         dedupeOn: "email",
-        contactFields: ["firstName", "address"],
+        // only this field may be written; nothing else on an existing contact changes
+        contactFields: ["firstName"],
         groupNames: [group],
         restoreDeleted: true,
       }),
     });
     failed += r.failedContacts?.length ?? 0;
   }
-  await recordHandover(rows, group, "esputnik");
-  return { group, pushed: rows.length - failed, failed };
+  await recordHandover(fresh, group, "esputnik");
+  return { group, pushed: fresh.length - failed, failed, customers };
 }
 
 type Activity = { email?: string; activityStatus?: string; activityDateTime?: string; messageName?: string; offset?: string; mediaType?: string };
@@ -108,12 +146,16 @@ export async function pullEsputnikActivity(from: Date, to: Date, budgetMs = 80_0
 }
 
 /**
- * A cycle is over: contacts exported ≥30 days ago that neither bought nor
+ * A cycle is over: contacts WE exported ≥30 days ago that neither bought nor
  * were suppressed are deleted from eSputnik (we pay per stored contact) and
- * marked 'cold' in the ledger. massEligibleSql lets them back in on the next
- * push automatically once the 30 days have passed.
+ * marked 'cold' in the ledger. Only addresses in lead_exports are ever
+ * candidates — that ledger is the list of what we loaded — and each one is
+ * looked up first: any sign of being a customer means it is marked converted
+ * and left untouched. massEligibleSql lets the cold ones back in on a later
+ * push once the 30 days have passed.
  */
-export async function retireColdFromEsputnik(limit = 500): Promise<{ deleted: number; failed: number }> {
+export async function retireColdFromEsputnik(limit = 500, budgetMs = 60_000): Promise<{ deleted: number; customers: number; failed: number }> {
+  const deadline = Date.now() + budgetMs;
   const rows = await pool
     .query<{ email: string }>(
       `SELECT email FROM lead_exports
@@ -123,16 +165,20 @@ export async function retireColdFromEsputnik(limit = 500): Promise<{ deleted: nu
       [limit, PLATFORMS.filter((p) => p !== "beatport")]
     )
     .then((r) => r.rows);
-  let deleted = 0, failed = 0;
+  let deleted = 0, customers = 0, failed = 0;
   for (const { email } of rows) {
+    if (Date.now() > deadline) break;
     try {
-      await api(`/v1/contact?externalCustomerId=${encodeURIComponent(email)}`, { method: "DELETE" });
+      const c = await findContact(email);
+      if (!c) { await recordOutcome({ email, outcome: "cold", src: "esputnik" }); continue; }
+      if (isCustomerContact(c)) { customers++; await markConverted(email); continue; }
+      await api(`/v1/contact/${c.id}`, { method: "DELETE" });
       await recordOutcome({ email, outcome: "cold", src: "esputnik" });
       deleted++;
     } catch (e) {
       failed++;
-      console.error("[esputnik] delete failed:", email, e instanceof Error ? e.message : e);
+      console.error("[esputnik] retire failed:", email, e instanceof Error ? e.message : e);
     }
   }
-  return { deleted, failed };
+  return { deleted, customers, failed };
 }

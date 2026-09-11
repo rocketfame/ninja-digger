@@ -35,3 +35,20 @@ export function groupNameFor(platform: string, date = new Date()): string {
   const d = `${String(date.getUTCDate()).padStart(2, "0")}.${String(date.getUTCMonth() + 1).padStart(2, "0")}.${date.getUTCFullYear()}`;
   return `Leads: ${label[platform] ?? platform} ${d} (auto)`;
 }
+
+/** Our own groups: the only place a lead may live in eSputnik. */
+export const LEAD_GROUP_RE = /^Leads: .* \(auto\)$/;
+
+export type EsputnikContact = { id?: number; externalCustomerId?: string | null; groups?: { id?: number; name?: string }[] };
+
+/**
+ * Is this eSputnik contact a real customer rather than one of our leads?
+ * Two independent signs, either is enough: the shop integration stamped it
+ * with a Shopify customer id (our pushes never set externalCustomerId), or it
+ * sits in any group that is not one of our `Leads: … (auto)` groups
+ * (Buyers, Registration, Guests, Newcomers …). Customers are never touched.
+ */
+export function isCustomerContact(c: EsputnikContact): boolean {
+  if (c.externalCustomerId && String(c.externalCustomerId).trim() !== "") return true;
+  return (c.groups ?? []).some((g) => g.name && !LEAD_GROUP_RE.test(g.name));
+}
