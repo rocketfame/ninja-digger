@@ -48,7 +48,8 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`eSputnik ${init.method ?? "GET"} ${path} → ${res.status}: ${text.slice(0, 300)}`);
-  return (text ? JSON.parse(text) : {}) as T;
+  // attach/detach answer with a plain sentence ("Contacts were detached"), not JSON
+  try { return (text ? JSON.parse(text) : {}) as T; } catch { return { message: text } as T; }
 }
 
 /**
