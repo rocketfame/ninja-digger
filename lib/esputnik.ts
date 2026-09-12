@@ -92,6 +92,19 @@ export async function groupMembers(groupName: string): Promise<Set<string>> {
   return out;
 }
 
+/** Force given addresses out of a lead group (by exact contact lookup). Returns the ones actually detached. */
+export async function detachFromGroup(groupName: string, emails: string[]): Promise<string[]> {
+  const gid = await groupIdByName(groupName);
+  if (!gid) return [];
+  const ids: number[] = []; const done: string[] = [];
+  for (const e of emails) {
+    const c = await findContact(e).catch(() => null);
+    if (c?.id) { ids.push(c.id); done.push(e); await markConverted(e); }
+  }
+  if (ids.length) await api(`/v1/group/${gid}/contacts/detach`, { method: "POST", body: JSON.stringify({ contactIds: ids }) });
+  return done;
+}
+
 /**
  * Second line of defence, run after every push and available on demand:
  * read the lead group back, look at every member in full, and detach anyone
