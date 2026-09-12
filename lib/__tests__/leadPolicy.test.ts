@@ -43,6 +43,7 @@ describe("contactableSql", () => {
   it("checks suppression, hostile domains and the marketing handover", () => {
     const sql = contactableSql();
     expect(sql).toContain("email_blacklist");
+    expect(sql).toContain("shop_customers"); // a shop customer is never cold-mailed, on any channel
     expect(sql).toContain("lead_exports");
     expect(sql).toMatch(/ru\|su\|by/);
   });
@@ -91,6 +92,7 @@ describe("massEligibleSql", () => {
     expect(sql).toContain("SELECT email FROM lead_exports");
     expect(sql).not.toMatch(/exported_at >/);
     expect(sql).toContain("outcome = 'converted'");
+    expect(sql).toContain("shop_customers");
     expect(sql).toContain(`interval '${MASS_CYCLE.afterColdDays} days'`);
     expect(MASS_CYCLE).toEqual({ afterColdDays: 15 });
   });

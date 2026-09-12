@@ -63,8 +63,13 @@ export const MASS_SOURCES = ["esputnik", "listmonk"] as const;
 /** Ever handed over to the mass channel — once is the limit. */
 export const MASS_TOUCHED_SQL = `SELECT email FROM lead_exports`;
 
-/** Bought something: the customer flow on the main site owns them now. */
-export const CONVERTED_SQL = `SELECT email FROM lead_exports WHERE outcome = 'converted'`;
+/**
+ * Bought or registered: the customer flow on the main site owns them now.
+ * Two sources, either is enough: what the mass channel learned (ledger) and
+ * the shop's own customer list, mirrored daily from Shopify.
+ */
+export const CONVERTED_SQL = `SELECT email FROM lead_exports WHERE outcome = 'converted'
+     UNION SELECT email FROM shop_customers`;
 
 
 /**
@@ -98,6 +103,7 @@ export function contactableSql(col = "email", opts: { requireMailboxCheck?: bool
   const checked = opts.requireMailboxCheck === false ? `` : `\n     AND ${e} IN (${MAILBOX_CHECKED_SQL})`;
   return `${col} IS NOT NULL
      AND ${e} NOT IN (${SUPPRESSED_SQL})
+     AND ${e} NOT IN (SELECT email FROM shop_customers)
      AND ${col} !~* '\\.(ru|su|by)$|yandex\\.'
      AND ${e} NOT IN (${HANDED_OVER_SQL})${checked}`;
 }

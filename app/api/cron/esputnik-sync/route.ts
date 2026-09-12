@@ -13,6 +13,7 @@ import { getSetting, setSetting } from "@/lib/settings";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { PLATFORMS, type Platform } from "@/lib/leadPolicy";
 import { esputnikConfigured, pullEsputnikActivity, pushToEsputnik, retireColdFromEsputnik } from "@/lib/esputnik";
+import { shopConfigured, syncShopCustomers } from "@/lib/shopCustomers";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -39,13 +40,28 @@ export async function GET(request: Request) {
   // 2. cycle over → out of eSputnik
   const retired = await retireColdFromEsputnik().catch((e) => ({ deleted: 0, customers: 0, failed: 0, error: e instanceof Error ? e.message : String(e) }));
 
+  // 2b. the shop's customer list, refreshed before any push (fourth line of
+  //     "leads ≠ customers"): a missing/failed sync blocks the push today.
+  let shop: { seen: number; upserted: number; complete: boolean; error?: string } = { seen: 0, upserted: 0, complete: false };
+  if (shopConfigured()) {
+    const lastShop = await getSetting("shop_customers_synced", "");
+    if (lastShop !== today) {
+      shop = await syncShopCustomers().catch((e) => ({ seen: 0, upserted: 0, complete: false, error: e instanceof Error ? e.message : String(e) }));
+      if (shop.complete) await setSetting("shop_customers_synced", today).catch(() => {});
+    } else shop.complete = true;
+  }
+  const shopOk = !shopConfigured() || shop.complete;
+
   // 3. the day's push
   const perPlatform = parseInt(await getSetting("esputnik_daily_push", "0"), 10) || 0;
   const lastPush = await getSetting("esputnik_last_push_date", "");
   const platforms = (await getSetting("esputnik_push_platforms", "soundcloud,spotify,youtube"))
     .split(",").map((s) => s.trim().toLowerCase()).filter((p): p is Platform => (PLATFORMS as readonly string[]).includes(p) && p !== "beatport");
   const pushes: { group: string; pushed: number; failed: number; customers: number; purged: number; error?: string }[] = [];
-  if (perPlatform > 0 && lastPush !== today) {
+  if (perPlatform > 0 && lastPush !== today && !shopOk) {
+    await sendTelegramMessage(`⛔ eSputnik push відкладено: список клієнтів Shopify не синхронізувався${shop.error ? ` (${shop.error.slice(0, 100)})` : ""}. Спробую наступної години.`).catch(() => {});
+  }
+  if (perPlatform > 0 && lastPush !== today && shopOk) {
     for (const p of platforms) {
       if (Date.now() - t0 > 240_000) break;
       pushes.push(await pushToEsputnik(p, perPlatform).catch((e) => ({ group: p, pushed: 0, failed: 0, customers: 0, purged: 0, error: e instanceof Error ? e.message : String(e) })));
@@ -55,5 +71,5 @@ export async function GET(request: Request) {
     await sendTelegramMessage(`📤 eSputnik: сегменти на сьогодні\n${lines.join("\n")}`).catch(() => {});
   }
 
-  return NextResponse.json({ ok: true, pulled, retired, pushes, perPlatform, tookMs: Date.now() - t0, ts: new Date().toISOString() });
+  return NextResponse.json({ ok: true, pulled, retired, shop, pushes, perPlatform, tookMs: Date.now() - t0, ts: new Date().toISOString() });
 }
