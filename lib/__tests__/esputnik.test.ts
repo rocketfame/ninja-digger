@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupNameFor, isCustomerContact, mapEsputnikStatus, outcomeForEvent } from "../esputnikStatus";
+import { cleanFirstName, contactEmail, groupNameFor, isCustomerContact, mapEsputnikStatus, outcomeForEvent } from "../esputnikStatus";
 
 describe("eSputnik status mapping", () => {
   it("maps every documented activity status onto our event vocabulary", () => {
@@ -42,5 +42,26 @@ describe("leads never mix with customers", () => {
   it("leaves a plain lead alone", () => {
     expect(isCustomerContact({ id: 1, externalCustomerId: null, groups: [{ name: "Leads: Spotify 12.09.2026 (auto)" }] })).toBe(false);
     expect(isCustomerContact({ id: 1 })).toBe(false);
+  });
+});
+
+describe("first names eSputnik will accept", () => {
+  it("keeps letters in any script, digits, space, dot, apostrophe, hyphen", () => {
+    expect(cleanFirstName("Jean-Luc O'Neil Jr.")).toBe("Jean-Luc O'Neil Jr.");
+    expect(cleanFirstName("Олексій")).toBe("Олексій");
+    expect(cleanFirstName("DJ 2Face")).toBe("DJ 2Face");
+  });
+  it("strips emoji, symbols and brackets, collapses spaces, drops empties", () => {
+    expect(cleanFirstName("🔥 MAX (official) 🔥")).toBe("MAX official");
+    expect(cleanFirstName("beheaded | producer")).toBe("beheaded producer");
+    expect(cleanFirstName("★★★")).toBeUndefined();
+    expect(cleanFirstName(null)).toBeUndefined();
+  });
+});
+
+describe("exact email match on a contact", () => {
+  it("reads the email channel, lower-cased", () => {
+    expect(contactEmail({ id: 1, channels: [{ type: "sms", value: "+1" }, { type: "email", value: "Max@Example.com" }] })).toBe("max@example.com");
+    expect(contactEmail({ id: 1 })).toBeNull();
   });
 });

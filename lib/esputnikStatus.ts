@@ -39,7 +39,29 @@ export function groupNameFor(platform: string, date = new Date()): string {
 /** Our own groups: the only place a lead may live in eSputnik. */
 export const LEAD_GROUP_RE = /^Leads: .* \(auto\)$/;
 
-export type EsputnikContact = { id?: number; externalCustomerId?: string | null; groups?: { id?: number; name?: string }[] };
+export type EsputnikContact = {
+  id?: number; externalCustomerId?: string | null;
+  channels?: { type?: string; value?: string }[];
+  groups?: { id?: number; name?: string }[];
+};
+
+/** The contact's email as eSputnik holds it, lower-cased; null if none. */
+export function contactEmail(c: EsputnikContact): string | null {
+  const ch = (c.channels ?? []).find((x) => (x.type ?? "").toLowerCase() === "email" && x.value);
+  return ch?.value ? ch.value.trim().toLowerCase() : null;
+}
+
+/**
+ * eSputnik rejects a contact silently (it just drops out of the batch) when
+ * firstName carries characters it dislikes — 188 of 1 497 vanished that way
+ * on the first push. Letters, digits, space, dot, apostrophe, hyphen only;
+ * empty after cleaning means "send no name at all".
+ */
+export function cleanFirstName(name: string | null | undefined): string | undefined {
+  if (!name) return undefined;
+  const s = name.normalize("NFC").replace(/[^\p{L}\p{N} .'\-]/gu, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+  return s || undefined;
+}
 
 /**
  * Is this eSputnik contact a real customer rather than one of our leads?

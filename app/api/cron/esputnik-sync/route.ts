@@ -44,14 +44,14 @@ export async function GET(request: Request) {
   const lastPush = await getSetting("esputnik_last_push_date", "");
   const platforms = (await getSetting("esputnik_push_platforms", "soundcloud,spotify,youtube"))
     .split(",").map((s) => s.trim().toLowerCase()).filter((p): p is Platform => (PLATFORMS as readonly string[]).includes(p) && p !== "beatport");
-  const pushes: { group: string; pushed: number; failed: number; customers: number; error?: string }[] = [];
+  const pushes: { group: string; pushed: number; failed: number; customers: number; purged: number; error?: string }[] = [];
   if (perPlatform > 0 && lastPush !== today) {
     for (const p of platforms) {
       if (Date.now() - t0 > 240_000) break;
-      pushes.push(await pushToEsputnik(p, perPlatform).catch((e) => ({ group: p, pushed: 0, failed: 0, customers: 0, error: e instanceof Error ? e.message : String(e) })));
+      pushes.push(await pushToEsputnik(p, perPlatform).catch((e) => ({ group: p, pushed: 0, failed: 0, customers: 0, purged: 0, error: e instanceof Error ? e.message : String(e) })));
     }
     if (pushes.some((x) => x.pushed > 0)) await setSetting("esputnik_last_push_date", today).catch(() => {});
-    const lines = pushes.map((x) => `• ${x.group}: ${x.pushed}${x.customers ? ` · клієнтів пропущено ${x.customers}` : ""}${x.failed ? ` (помилок ${x.failed})` : ""}${x.error ? ` ✗ ${x.error.slice(0, 80)}` : ""}`);
+    const lines = pushes.map((x) => `• ${x.group}: ${x.pushed}${x.customers ? ` · клієнтів пропущено ${x.customers}` : ""}${x.purged ? ` · клієнтів ВИЛУЧЕНО з групи ${x.purged}` : ""}${x.failed ? ` (не долетіло ${x.failed})` : ""}${x.error ? ` ✗ ${x.error.slice(0, 80)}` : ""}`);
     await sendTelegramMessage(`📤 eSputnik: сегменти на сьогодні\n${lines.join("\n")}`).catch(() => {});
   }
 
