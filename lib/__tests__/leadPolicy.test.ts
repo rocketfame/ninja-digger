@@ -86,20 +86,13 @@ describe("isOpenEvent", () => {
 });
 
 describe("massEligibleSql", () => {
-  it("encodes all four cycle rules with the agreed numbers", () => {
+  it("hands an address to the mass channel once, ever", () => {
     const sql = massEligibleSql();
-    expect(sql).toContain(`interval '${MASS_CYCLE.resendDays} days'`);
-    expect(sql).toContain(`interval '${MASS_CYCLE.afterColdDays} days'`);
-    expect(sql).toContain(`COUNT(*) >= ${MASS_CYCLE.fatigueSends}`);
-    expect(sql).toContain(`interval '${MASS_CYCLE.fatiguePauseDays} days'`);
+    expect(sql).toContain("SELECT email FROM lead_exports");
+    expect(sql).not.toMatch(/exported_at >/);
     expect(sql).toContain("outcome = 'converted'");
-    expect(MASS_CYCLE).toEqual({ resendDays: 30, afterColdDays: 15, fatigueSends: 3, fatiguePauseDays: 60 });
-  });
-
-  it("counts fatigue only from mass sources, since the last open", () => {
-    const sql = massEligibleSql();
-    expect(sql).toContain("meta->>'src' IN ('esputnik','listmonk')");
-    expect(sql).toContain("MAX(o.ts)");
+    expect(sql).toContain(`interval '${MASS_CYCLE.afterColdDays} days'`);
+    expect(MASS_CYCLE).toEqual({ afterColdDays: 15 });
   });
 
   it("applies to the caller's columns", () => {

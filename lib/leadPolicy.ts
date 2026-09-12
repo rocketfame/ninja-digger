@@ -45,38 +45,27 @@ export const MAILBOX_CHECKED_SQL = `SELECT email FROM email_verification WHERE v
 export const HANDED_OVER_SQL = `SELECT email FROM lead_exports WHERE COALESCE(outcome,'') <> 'cold'`;
 
 /**
- * The mass channel's cycle — the rules the user set for branded campaigns, in
- * one place so eSputnik and listmonk both obey them through the same bridge:
- *   - one mass email per address per 30 days
+ * The mass channel's rules, in one place so eSputnik and listmonk both obey
+ * them through the same bridge:
+ *   - ONE mass email per address, ever (user, 12.09: "повертати не треба").
+ *     An address handed over once is never handed over again, whatever the
+ *     outcome; the ledger row is the proof of the touch.
  *   - never within 15 days of a cold personal email
- *   - three mass emails in a row without an open → 60 days of silence
  *   - a purchase moves the person to the customer flow: no more mass mail
  * Bounce, complaint and unsubscribe are not listed here because they land in
  * email_blacklist, which every channel already honours.
  */
-export const MASS_CYCLE = { resendDays: 30, afterColdDays: 15, fatigueSends: 3, fatiguePauseDays: 60 } as const;
+export const MASS_CYCLE = { afterColdDays: 15 } as const;
 
 /** Sources that write mass-channel events into email_events (meta.src). */
 export const MASS_SOURCES = ["esputnik", "listmonk"] as const;
 
-/** Mailed by the mass channel inside the current cycle. */
-export const MASS_RECENT_SQL = `SELECT email FROM lead_exports WHERE exported_at > now() - interval '${MASS_CYCLE.resendDays} days'`;
+/** Ever handed over to the mass channel — once is the limit. */
+export const MASS_TOUCHED_SQL = `SELECT email FROM lead_exports`;
 
 /** Bought something: the customer flow on the main site owns them now. */
 export const CONVERTED_SQL = `SELECT email FROM lead_exports WHERE outcome = 'converted'`;
 
-/**
- * Fatigued: N mass sends since the last open (or ever, if never opened), the
- * latest of them inside the pause window. Counted from email_events so a send
- * reported by either mass source counts.
- */
-export const MASS_FATIGUED_SQL = `SELECT s.email FROM email_events s
-     WHERE s.event = 'sent' AND s.meta->>'src' IN (${quoted(MASS_SOURCES)})
-       AND s.ts > COALESCE((SELECT MAX(o.ts) FROM email_events o
-                             WHERE o.email = s.email AND o.event IN (${quoted(OPEN_EVENTS)})), '-infinity'::timestamptz)
-     GROUP BY s.email
-    HAVING COUNT(*) >= ${MASS_CYCLE.fatigueSends}
-       AND MAX(s.ts) > now() - interval '${MASS_CYCLE.fatiguePauseDays} days'`;
 
 /**
  * May the mass channel take this address in this batch? `col` holds the
@@ -86,9 +75,8 @@ export const MASS_FATIGUED_SQL = `SELECT s.email FROM email_events s
  */
 export function massEligibleSql(col = "email", coldCol = "cold_at"): string {
   const e = `LOWER(${col})`;
-  return `${e} NOT IN (${MASS_RECENT_SQL})
+  return `${e} NOT IN (${MASS_TOUCHED_SQL})
      AND ${e} NOT IN (${CONVERTED_SQL})
-     AND ${e} NOT IN (${MASS_FATIGUED_SQL})
      AND (${coldCol} IS NULL OR ${coldCol} < now() - interval '${MASS_CYCLE.afterColdDays} days')`;
 }
 

@@ -21,6 +21,14 @@ import { groupNameFor, isCustomerContact, mapEsputnikStatus, outcomeForEvent, ty
 
 const BASE = "https://esputnik.com/api";
 
+/** Send-time zone by country: we only know the country of a lead, never the state. */
+const TZ: Record<string, string> = {
+  US: "America/New_York", CA: "America/Toronto", MX: "America/Mexico_City", BR: "America/Sao_Paulo", AR: "America/Argentina/Buenos_Aires",
+  GB: "Europe/London", IE: "Europe/Dublin", PT: "Europe/Lisbon", ES: "Europe/Madrid", FR: "Europe/Paris", DE: "Europe/Berlin", NL: "Europe/Amsterdam",
+  BE: "Europe/Brussels", IT: "Europe/Rome", PL: "Europe/Warsaw", SE: "Europe/Stockholm", NO: "Europe/Oslo", DK: "Europe/Copenhagen", FI: "Europe/Helsinki",
+  UA: "Europe/Kyiv", TR: "Europe/Istanbul", IL: "Asia/Jerusalem", IN: "Asia/Kolkata", JP: "Asia/Tokyo", KR: "Asia/Seoul", AU: "Australia/Sydney", NZ: "Pacific/Auckland", ZA: "Africa/Johannesburg",
+};
+
 export function esputnikConfigured(): boolean {
   return Boolean(process.env.ESPUTNIK_API_KEY);
 }
@@ -93,10 +101,14 @@ export async function pushToEsputnik(platform: Platform, limit: number, budgetMs
     const r = await api<{ failedContacts?: unknown[] }>("/v1/contacts", {
       method: "POST",
       body: JSON.stringify({
-        contacts: chunk.map((l) => ({ firstName: l.name ?? undefined, channels: [{ type: "email", value: l.email }] })),
+        contacts: chunk.map((l) => ({
+          firstName: l.name ?? undefined,
+          channels: [{ type: "email", value: l.email }],
+          ...(l.country && TZ[l.country.toUpperCase()] ? { timeZone: TZ[l.country.toUpperCase()], address: { countryCode: l.country.toUpperCase() } } : {}),
+        })),
         dedupeOn: "email",
         // only this field may be written; nothing else on an existing contact changes
-        contactFields: ["firstName"],
+        contactFields: ["firstName", "timeZone", "address"],
         groupNames: [group],
         restoreDeleted: true,
       }),
@@ -109,7 +121,8 @@ export async function pushToEsputnik(platform: Platform, limit: number, budgetMs
 
 type Activity = { email?: string; activityStatus?: string; activityDateTime?: string; messageName?: string; mediaType?: string };
 
-const PAGE = 25_000;
+// eSputnik's agent measured: maxrows above 1000 and windows above a day misbehave.
+const PAGE = 1000;
 const fmt = (d: Date) => d.toISOString().slice(0, 19);
 
 /**
@@ -139,10 +152,10 @@ export async function pullEsputnikActivity(from: Date, to: Date, budgetMs = 80_0
   // measured two-minute windows hanging). If the budget runs out mid-way the
   // caller must NOT advance its cursor, or the unfetched windows are lost.
   let complete = true;
-  // six-hour slices keep any one request small and the bisection shallow
-  for (let t = from.getTime(); t < to.getTime(); t += 6 * 3600_000) {
+  // two-hour slices keep any one request small and the bisection shallow
+  for (let t = from.getTime(); t < to.getTime(); t += 2 * 3600_000) {
     if (Date.now() >= deadline) { complete = false; break; }
-    const rows = await activityWindow(new Date(t), new Date(Math.min(t + 6 * 3600_000, to.getTime())));
+    const rows = await activityWindow(new Date(t), new Date(Math.min(t + 2 * 3600_000, to.getTime())));
     for (const a of rows) {
       seen++;
       if (a.mediaType && a.mediaType !== "email") continue;
@@ -166,8 +179,9 @@ export async function pullEsputnikActivity(from: Date, to: Date, budgetMs = 80_0
  * its seat only while it earns it (rule set by the user 11.09):
  *   - a week after the push with no open → out
  *   - 30 days after the push with no purchase → out, opened or not
- * "Out" = deleted from eSputnik and 'cold' in our ledger; massEligibleSql
- * lets the address back in on a later wave once its 30 days have passed.
+ * "Out" = deleted from eSputnik and 'retired' in our ledger. Retired is
+ * final (user, 12.09): the address is never pushed again and, because the
+ * ledger row stays and is not 'cold', the personal channel leaves it alone too.
  * Only addresses in lead_exports are ever candidates (that ledger is the list
  * of what we loaded), and each one is looked up first: any sign of being a
  * customer means it is marked converted and left untouched.
@@ -178,7 +192,7 @@ export async function retireColdFromEsputnik(limit = 500, budgetMs = 60_000): Pr
     .query<{ email: string }>(
       `SELECT email FROM lead_exports le
         WHERE platform = ANY($2::text[])
-          AND COALESCE(outcome,'') NOT IN ('cold','converted','bounced','complained','unsubscribed')
+          AND COALESCE(outcome,'') NOT IN ('retired','cold','converted','bounced','complained','unsubscribed')
           AND (
             exported_at < now() - interval '30 days'
             OR (exported_at < now() - interval '7 days'
@@ -195,10 +209,10 @@ export async function retireColdFromEsputnik(limit = 500, budgetMs = 60_000): Pr
     if (Date.now() > deadline) break;
     try {
       const c = await findContact(email);
-      if (!c) { await recordOutcome({ email, outcome: "cold", src: "esputnik" }); continue; }
+      if (!c) { await recordOutcome({ email, outcome: "retired", src: "esputnik" }); continue; }
       if (isCustomerContact(c)) { customers++; await markConverted(email); continue; }
       await api(`/v1/contact/${c.id}`, { method: "DELETE" });
-      await recordOutcome({ email, outcome: "cold", src: "esputnik" });
+      await recordOutcome({ email, outcome: "retired", src: "esputnik" });
       deleted++;
     } catch (e) {
       failed++;
