@@ -39,6 +39,10 @@ describe("leads never mix with customers", () => {
     expect(isCustomerContact({ id: 1, groups: [{ name: "Registration" }] })).toBe(true);
     expect(isCustomerContact({ id: 1, groups: [{ name: "Leads: SoundCloud 12.09.2026 (auto)" }, { name: "Newcomers" }] })).toBe(true);
   });
+  it("treats the agent's A/B split groups as lead groups, not customer groups", () => {
+    // 14.09: 1 825 live leads were mis-marked converted because of "… (auto) A"
+    expect(isCustomerContact({ id: 1, groups: [{ name: "Leads: Spotify 12.09.2026 (auto)" }, { name: "Leads: Spotify 12.09.2026 (auto) A" }] })).toBe(false);
+  });
   it("leaves a plain lead alone", () => {
     expect(isCustomerContact({ id: 1, externalCustomerId: null, groups: [{ name: "Leads: Spotify 12.09.2026 (auto)" }] })).toBe(false);
     expect(isCustomerContact({ id: 1 })).toBe(false);

@@ -37,7 +37,8 @@ export function groupNameFor(platform: string, date = new Date()): string {
 }
 
 /** Our own groups: the only place a lead may live in eSputnik. */
-export const LEAD_GROUP_RE = /^Leads: .* \(auto\)$/;
+// Anything the agent derives from our groups (A/B splits: "… (auto) A") is still a lead group.
+export const LEAD_GROUP_RE = /^Leads: /;
 
 export type EsputnikContact = {
   id?: number; externalCustomerId?: string | null;
