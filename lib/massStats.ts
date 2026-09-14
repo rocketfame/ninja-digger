@@ -20,7 +20,12 @@ export type MassRow = {
   ordered: number; revenue: number; retired: number; live: number;
 };
 
+export type ChannelMoney = { channel: string; buyers: number; orders: number; revenue: number; withCode: number };
+export type BuyerRow = { email: string; channel: string; first_touch: string; orders: number; revenue: number; codes: string[]; last_order: string };
+
 export type MassSummary = {
+  money: ChannelMoney[];
+  buyers: BuyerRow[];
   rows: MassRow[];
   totals: Omit<MassRow, "day" | "platform">;
   unattributed: { orders: number; revenue: number; byCode: { code: string; orders: number }[] };
@@ -31,7 +36,7 @@ export async function massStats(days = 30): Promise<MassSummary> {
   const rows = await pool.query<MassRow>(
     `WITH led AS (
        SELECT le.email, le.platform, le.exported_at::date AS day, le.exported_at, le.outcome
-         FROM lead_exports le WHERE le.batch LIKE 'Leads: %' AND le.exported_at > now() - ($1 || ' days')::interval
+         FROM lead_exports le WHERE (le.batch LIKE 'Leads: %' OR le.batch LIKE 'd3-%' OR le.batch LIKE 'warm-%') AND le.exported_at > now() - ($1 || ' days')::interval
      ),
      ev AS (
        SELECT l.email, l.platform, l.day,
@@ -95,8 +100,40 @@ export async function massStats(days = 30): Promise<MassSummary> {
   const m = (s.esputnik_base_size ?? "").match(/^(\d+)@(\d+)$/);
   const liveAll = await pool.query<{ c: string }>(`SELECT COUNT(*) c FROM lead_exports WHERE batch LIKE 'Leads: %' AND COALESCE(outcome,'') NOT IN ('retired','converted','bounced','complained','unsubscribed')`).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
 
+  // THE HEADLINE — money from leads, per channel. A lead is any address we
+  // ever touched (personal cold email or mass push); an order counts when it
+  // came AFTER the first touch, code or no code. Repeat orders count: that is
+  // the lead's lifetime value.
+  const TOUCHED = `
+    SELECT LOWER(email) email, 'personal' ch, contacted_at t FROM sc_artists WHERE contacted_at IS NOT NULL AND email IS NOT NULL
+    UNION ALL SELECT LOWER(email), 'personal', contacted_at FROM spotify_leads WHERE contacted_at IS NOT NULL AND email IS NOT NULL
+    UNION ALL SELECT LOWER(email), 'personal', contacted_at FROM radar_leads WHERE contacted_at IS NOT NULL AND email IS NOT NULL
+    UNION ALL SELECT e.email, 'personal', MIN(e.ts) FROM email_events e WHERE e.event='sent' AND COALESCE(e.meta->>'src','') NOT IN ('esputnik','listmonk') GROUP BY 1
+    UNION ALL SELECT email, 'mass', exported_at FROM lead_exports WHERE batch LIKE 'Leads: %' OR batch LIKE 'd3-%' OR batch LIKE 'warm-%'`;
+  const money = await pool.query<{ channel: string; buyers: string; orders: string; revenue: string; with_code: string }>(
+    `WITH touched AS (${TOUCHED}),
+     ft AS (SELECT email, ch AS channel, MIN(t) first_t FROM touched GROUP BY 1,2)
+     SELECT ft.channel, COUNT(DISTINCT o.email) buyers, COUNT(*) orders, COALESCE(SUM(o.total),0) revenue,
+            COUNT(*) FILTER (WHERE o.codes && $2::text[]) with_code
+       FROM shop_orders o JOIN ft ON ft.email = o.email AND o.created_at >= ft.first_t
+      WHERE o.created_at > now() - ($1 || ' days')::interval
+      GROUP BY 1 ORDER BY 1`,
+    [String(days), MASS_CODES]
+  ).then((r) => r.rows.map((x) => ({ channel: x.channel, buyers: Number(x.buyers), orders: Number(x.orders), revenue: Number(x.revenue), withCode: Number(x.with_code) }))).catch(() => [] as ChannelMoney[]);
+  const buyers = await pool.query<BuyerRow>(
+    `WITH touched AS (${TOUCHED}),
+     ft AS (SELECT email, MIN(t) first_t, (array_agg(ch ORDER BY t))[1] channel FROM touched GROUP BY 1)
+     SELECT o.email, ft.channel, ft.first_t::date::text first_touch, COUNT(*)::int orders, COALESCE(SUM(o.total),0)::float revenue,
+            ARRAY(SELECT DISTINCT c FROM shop_orders o2, UNNEST(o2.codes) c WHERE o2.email = o.email AND o2.created_at >= ft.first_t) codes,
+            MAX(o.created_at)::date::text last_order
+       FROM shop_orders o JOIN ft ON ft.email = o.email AND o.created_at >= ft.first_t
+      WHERE o.created_at > now() - ($1 || ' days')::interval
+      GROUP BY o.email, ft.channel, ft.first_t ORDER BY MAX(o.created_at) DESC LIMIT 50`,
+    [String(days)]
+  ).then((r) => r.rows).catch(() => [] as BuyerRow[]);
+
   return {
-    rows, totals,
+    money, buyers, rows, totals,
     unattributed: { orders: Number(un.orders), revenue: Number(un.revenue), byCode },
     base: {
       size: m ? Number(m[1]) : null, at: m ? new Date(Number(m[2])).toISOString() : null,

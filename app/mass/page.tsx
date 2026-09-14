@@ -65,6 +65,32 @@ export default async function MassPage() {
           </div>
         </div>
 
+        {/* THE HEADLINE: money from leads */}
+        {(() => {
+          const personal = s.money.find((m) => m.channel === "personal") ?? { buyers: 0, orders: 0, revenue: 0, withCode: 0 };
+          const mass = s.money.find((m) => m.channel === "mass") ?? { buyers: 0, orders: 0, revenue: 0, withCode: 0 };
+          const all = { buyers: personal.buyers + mass.buyers, orders: personal.orders + mass.orders, revenue: personal.revenue + mass.revenue };
+          return (
+            <div className="mb-6 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+              <div className="rounded-xl border-2 px-4 py-4" style={{ borderColor: "#22c55e", background: "#22c55e12" }}>
+                <div className="text-3xl font-bold tabular-nums" style={{ color: "#22c55e" }}>${all.revenue.toFixed(2)}</div>
+                <div className="mt-0.5 text-sm">Гроші від лідів · 30 днів</div>
+                <div className="text-xs text-[var(--text-muted)]">{all.buyers} покупц. · {all.orders} замовл.</div>
+              </div>
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-4">
+                <div className="text-2xl font-bold tabular-nums">${personal.revenue.toFixed(2)}</div>
+                <div className="mt-0.5 text-sm">Персональний канал (Max, Brevo)</div>
+                <div className="text-xs text-[var(--text-muted)]">{personal.buyers} покупц. · {personal.orders} замовл. · з кодом MAX {personal.withCode}</div>
+              </div>
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-4">
+                <div className="text-2xl font-bold tabular-nums">${mass.revenue.toFixed(2)}</div>
+                <div className="mt-0.5 text-sm">Масовий канал (eSputnik)</div>
+                <div className="text-xs text-[var(--text-muted)]">{mass.buyers} покупц. · {mass.orders} замовл. · з кодом MAX {mass.withCode}</div>
+              </div>
+            </div>
+          );
+        })()}
+
         <div className="mb-6 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
           <Kpi value={fmt(t.pushed)} label="Відправлено" sub={t.planned ? `план ${fmt(t.planned)}` : undefined} />
           <Kpi value={pct(t.delivered, t.pushed)} label="Доставлено" sub={fmt(t.delivered)} />
@@ -99,13 +125,36 @@ export default async function MassPage() {
           </table>
         </div>
 
+        {s.buyers.length > 0 ? (
+          <div className="mt-6 overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--bg-card)]">
+            <table className="w-full text-sm">
+              <thead className="bg-[var(--bg-table-header)] text-left text-xs uppercase tracking-wide text-[var(--text-muted)]">
+                <tr><th className="px-3 py-2">Покупець-лід</th><th className="px-3 py-2">Канал</th><th className="px-3 py-2">Перший дотик</th><th className="px-3 py-2 text-right">Замовл.</th><th className="px-3 py-2 text-right">Сума</th><th className="px-3 py-2">Коди</th><th className="px-3 py-2">Останнє</th></tr>
+              </thead>
+              <tbody>
+                {s.buyers.map((b) => (
+                  <tr key={b.email} className="border-t border-[var(--border)] tabular-nums">
+                    <td className="px-3 py-2">{b.email}</td>
+                    <td className="px-3 py-2">{b.channel === "mass" ? "масовий" : "персональний"}</td>
+                    <td className="px-3 py-2 text-[var(--text-muted)]">{day(b.first_touch)}</td>
+                    <td className="px-3 py-2 text-right">{b.orders}</td>
+                    <td className="px-3 py-2 text-right font-semibold" style={{ color: "#22c55e" }}>${b.revenue.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-[var(--text-muted)]">{b.codes.length ? b.codes.join(", ") : "без коду"}</td>
+                    <td className="px-3 py-2 text-[var(--text-muted)]">{day(b.last_order)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+
         {s.unattributed.byCode.length > 0 ? (
           <p className="mt-3 text-xs text-[var(--text-muted)]">
             Коди за 30 днів: {s.unattributed.byCode.map((c) => `${c.code} ${c.orders}`).join(" · ")}
           </p>
         ) : null}
         <p className="mt-2 text-xs text-[var(--text-muted)]">
-          Замовлення рахуються трьома шляхами: код MAX*, email покупця в реєстрі лідів, або utm_source=offers на лендінгу. Події з eSputnik і замовлення з Shopify підтягуються щогодини.
+          Лід = будь-яка адреса, яку ми торкали (персональний лист Max або масовий пуш). Замовлення зараховується, якщо покупець це такий лід і покупка сталась ПІСЛЯ дотику, з кодом чи без. Повторні покупки рахуються всі. Код MAX і UTM показують, як саме прийшов. Замовлення з Shopify і події з eSputnik підтягуються щогодини.
         </p>
       </main>
     </div>
