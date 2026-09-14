@@ -57,7 +57,7 @@ const MASS_EXTRA_WHERE: Record<string, string> = {
 export async function selectMassLeads(o: MassSelect): Promise<MassLead[]> {
   const w = whereSql(o, 2);
   const single = o.platforms.length === 1 ? o.platforms[0] : null;
-  const order = single && MASS_ORDER[single] ? MASS_ORDER[single] : `s.found_at DESC NULLS LAST`;
+  const order = single && MASS_ORDER[single] ? MASS_ORDER[single] : `p.found_at DESC NULLS LAST`;
   const extra = single && MASS_EXTRA_WHERE[single] ? MASS_EXTRA_WHERE[single] : ``;
   const join = single === "soundcloud" ? `JOIN sc_artists a ON LOWER(a.email) = s.email` : ``;
   const r = await pool.query<MassLead>(
@@ -67,8 +67,8 @@ export async function selectMassLeads(o: MassSelect): Promise<MassLead[]> {
          FROM src s LEFT JOIN email_verification v ON v.email = s.email ${join}
         WHERE ${w.sql} ${extra}
         ORDER BY s.email, s.found_at DESC NULLS LAST)
-     SELECT p.* FROM picked p ${single === "soundcloud" ? `JOIN sc_artists a ON LOWER(a.email) = p.email` : ``}
-      ORDER BY ${order}, p.email
+     SELECT DISTINCT ON (p.email) p.* FROM picked p ${single === "soundcloud" ? `JOIN sc_artists a ON LOWER(a.email) = p.email` : ``}
+      ORDER BY p.email, ${order}
       LIMIT $1`,
     [o.limit, ...w.params]
   );
