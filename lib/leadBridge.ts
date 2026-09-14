@@ -125,8 +125,12 @@ export async function recordOutcome(o: Outcome): Promise<{ logged: boolean; reco
     .query(`INSERT INTO email_events (email, event, ts, meta) VALUES ($1,$2,$3,$4) ON CONFLICT (email, event, ts) DO NOTHING`,
       [e, out, ts, JSON.stringify({ src: o.src, ...(o.campaign ? { campaign: o.campaign } : {}) })])
     .then((r) => (r.rowCount ?? 0) > 0).catch(() => false);
+  // Final states are never overwritten by a later, weaker event: a retired or
+  // converted lead stays so even when an old 'delivered' arrives from the pull.
+  const FINAL = ["retired", "converted", "bounced", "complained", "unsubscribed"];
   const recorded = await pool
-    .query(`UPDATE lead_exports SET outcome = $2, outcome_at = now() WHERE email = $1`, [e, out])
+    .query(`UPDATE lead_exports SET outcome = $2, outcome_at = now()
+             WHERE email = $1 AND (COALESCE(outcome,'') <> ALL($3::text[]) OR $2 = ANY($3::text[]))`, [e, out, FINAL])
     .then((r) => (r.rowCount ?? 0) > 0).catch(() => false);
   let suppressed = false;
   if (/bounce|complain|spam|unsub|invalid/.test(out)) { await quarantineEmail(e, `${o.src}: ${out}`); suppressed = true; }

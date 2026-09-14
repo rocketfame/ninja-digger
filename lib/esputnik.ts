@@ -296,12 +296,16 @@ export async function retireColdFromEsputnik(limit = 2000, budgetMs = 120_000): 
   const deadline = Date.now() + budgetMs;
   // 0 is allowed: an emergency sweep of everything unopened, whatever its age
   const unopenedDays = Math.max(0, parseInt(await getSetting("esputnik_retire_unopened_days", "3"), 10));
+  // Claim the batch: mark it 'retiring' in one statement so that parallel
+  // sweeps (the emergency run used eight) never pick the same addresses.
   const rows = await pool
     .query<{ email: string }>(
-      `SELECT email FROM lead_exports le
+      `UPDATE lead_exports SET outcome = 'retiring', outcome_at = now()
+        WHERE email IN (
+      SELECT email FROM lead_exports le
         WHERE platform = ANY($2::text[])
           AND batch <> 'esputnik-customer'
-          AND COALESCE(outcome,'') NOT IN ('retired','cold','converted','bounced','complained','unsubscribed')
+          AND COALESCE(outcome,'') NOT IN ('retiring','retired','cold','converted','bounced','complained','unsubscribed')
           AND (
             exported_at < now() - interval '30 days'
             OR (exported_at < now() - ($3 || ' days')::interval
@@ -309,13 +313,17 @@ export async function retireColdFromEsputnik(limit = 2000, budgetMs = 120_000): 
                                  WHERE ev.email = le.email AND ev.ts >= le.exported_at
                                    AND ev.event IN ('opened','click')))
           )
-        ORDER BY exported_at LIMIT $1`,
+        ORDER BY exported_at LIMIT $1
+        FOR UPDATE SKIP LOCKED)
+        RETURNING email`,
       [limit, PLATFORMS.filter((p) => p !== "beatport"), String(unopenedDays)]
     )
     .then((r) => r.rows);
   let deleted = 0, customers = 0, failed = 0;
+  const pending = new Set(rows.map((r) => r.email));
   for (const { email } of rows) {
     if (Date.now() > deadline) break;
+    pending.delete(email);
     try {
       const c = await findContact(email);
       if (!c) { await recordOutcome({ email, outcome: "retired", src: "esputnik" }); continue; }
@@ -325,8 +333,10 @@ export async function retireColdFromEsputnik(limit = 2000, budgetMs = 120_000): 
       deleted++;
     } catch (e) {
       failed++;
+      await pool.query(`UPDATE lead_exports SET outcome = NULL, outcome_at = NULL WHERE email = $1 AND outcome = 'retiring'`, [email]).catch(() => {});
       console.error("[esputnik] retire failed:", email, e instanceof Error ? e.message : e);
     }
   }
+  if (pending.size) await pool.query(`UPDATE lead_exports SET outcome = NULL, outcome_at = NULL WHERE outcome = 'retiring' AND email = ANY($1::text[])`, [[...pending]]).catch(() => {});
   return { deleted, customers, failed };
 }
