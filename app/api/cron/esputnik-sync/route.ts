@@ -15,6 +15,7 @@ import { sendTelegramMessage } from "@/lib/telegram";
 import { PLATFORMS, type Platform } from "@/lib/leadPolicy";
 import { esputnikBaseSize, esputnikConfigured, pullEsputnikActivity, pushToEsputnik, retireColdFromEsputnik } from "@/lib/esputnik";
 import { shopConfigured, syncShopCustomers } from "@/lib/shopCustomers";
+import { syncShopOrders } from "@/lib/shopOrders";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -52,6 +53,12 @@ export async function GET(request: Request) {
     } else shop.complete = true;
   }
   const shopOk = !shopConfigured() || shop.complete;
+  // 2c. orders: a rolling 3 days every hour, the full 60 days once a day
+  const fullOrdersDone = (await getSetting("shop_orders_full", "")) === today;
+  const orders = shopConfigured()
+    ? await syncShopOrders(fullOrdersDone ? 3 : 60, 60_000).catch((e) => ({ seen: 0, upserted: 0, complete: false, error: e instanceof Error ? e.message : String(e) }))
+    : { seen: 0, upserted: 0, complete: false };
+  if (shopConfigured() && !fullOrdersDone && orders.complete) await setSetting("shop_orders_full", today).catch(() => {});
 
   // 3. the day's push
   const perPlatformRaw = parseInt(await getSetting("esputnik_daily_push", "0"), 10) || 0;
@@ -85,15 +92,24 @@ export async function GET(request: Request) {
     for (const p of platforms) {
       if (Date.now() - t0 > 240_000) break;
       const take = Math.min(perPlatform, budget);
-      if (take <= 0) { pushes.push({ group: p, pushed: 0, failed: 0, customers: 0, purged: 0, error: `місць нема: база ${baseNow} з ${planLimit}, резерв ${reserve}, лідів ${live} з ${windowSize}` }); continue; }
+      if (take <= 0) {
+        pushes.push({ group: p, pushed: 0, failed: 0, customers: 0, purged: 0, error: `місць нема: база ${baseNow} з ${planLimit}, резерв ${reserve}, лідів ${live} з ${windowSize}` });
+        await pool.query(`INSERT INTO mass_pushes (day, platform, planned, budget, pushed) VALUES ($1,$2,$3,0,0) ON CONFLICT (day, platform) DO UPDATE SET planned = EXCLUDED.planned`, [today, p, perPlatform]).catch(() => {});
+        continue;
+      }
       const res = await pushToEsputnik(p, take).catch((e) => ({ group: p, pushed: 0, failed: 0, customers: 0, purged: 0, error: e instanceof Error ? e.message : String(e) }));
       budget -= res.pushed;
       pushes.push(res);
+      await pool.query(
+        `INSERT INTO mass_pushes (day, platform, planned, budget, pushed) VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (day, platform) DO UPDATE SET planned = EXCLUDED.planned, budget = EXCLUDED.budget, pushed = mass_pushes.pushed + EXCLUDED.pushed`,
+        [today, p, perPlatform, take, res.pushed]
+      ).catch(() => {});
     }
     if (pushes.some((x) => x.pushed > 0)) await setSetting("esputnik_last_push_date", today).catch(() => {});
     const lines = pushes.map((x) => `• ${x.group}: ${x.pushed}${x.customers ? ` · клієнтів пропущено ${x.customers}` : ""}${x.purged ? ` · клієнтів ВИЛУЧЕНО з групи ${x.purged}` : ""}${x.failed ? ` (не долетіло ${x.failed})` : ""}${x.error ? ` ✗ ${x.error.slice(0, 80)}` : ""}`);
     await sendTelegramMessage(`📤 eSputnik: сегменти на сьогодні\n${lines.join("\n")}\nБаза eSputnik: ${baseNow ?? "?"} з ${planLimit} (резерв ${reserve}) · лідів ${live} з ${windowSize} · видалено за годину ${retired.deleted}`).catch(() => {});
   }
 
-  return NextResponse.json({ ok: true, pulled, retired, shop, pushes, perPlatform, planLimit, reserve, baseNow, windowSize, live, seatsFree, tookMs: Date.now() - t0, ts: new Date().toISOString() });
+  return NextResponse.json({ ok: true, pulled, retired, shop, orders, pushes, perPlatform, planLimit, reserve, baseNow, windowSize, live, seatsFree, tookMs: Date.now() - t0, ts: new Date().toISOString() });
 }

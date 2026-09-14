@@ -1,0 +1,106 @@
+/**
+ * The mass channel measured — one row per day and platform, from our own
+ * tables (ledger, hourly-pulled eSputnik events, mirrored Shopify orders).
+ *
+ * "Ordered" is attributed three ways, any one is enough:
+ *   code   – the order used a MAX* code
+ *   email  – the buyer's address is in the lead ledger (bought without a code)
+ *   utm    – the landing page carried utm_source=offers
+ * An order counts for the day/platform of the lead's push; orders whose
+ * buyer we never pushed but who used a MAX code or came via utm=offers land
+ * in a separate "unattributed" line so nothing is lost.
+ */
+import { pool } from "@/lib/db";
+import { MASS_CODES } from "@/lib/shopOrders";
+
+export type MassRow = {
+  day: string; platform: string;
+  planned: number; budget: number; pushed: number;
+  delivered: number; opened: number; clicked: number; unsub: number; bounced: number;
+  ordered: number; revenue: number; retired: number; live: number;
+};
+
+export type MassSummary = {
+  rows: MassRow[];
+  totals: Omit<MassRow, "day" | "platform">;
+  unattributed: { orders: number; revenue: number; byCode: { code: string; orders: number }[] };
+  base: { size: number | null; at: string | null; planLimit: number; reserve: number; live: number; window: number };
+};
+
+export async function massStats(days = 30): Promise<MassSummary> {
+  const rows = await pool.query<MassRow>(
+    `WITH led AS (
+       SELECT le.email, le.platform, le.exported_at::date AS day, le.exported_at, le.outcome
+         FROM lead_exports le WHERE le.batch LIKE 'Leads: %' AND le.exported_at > now() - ($1 || ' days')::interval
+     ),
+     ev AS (
+       SELECT l.email, l.platform, l.day,
+              bool_or(e.event = 'delivered') delivered,
+              bool_or(e.event = 'opened') opened,
+              bool_or(e.event = 'click') clicked,
+              bool_or(e.event = 'unsubscribed') unsub,
+              bool_or(e.event = 'hard_bounce') bounced
+         FROM led l LEFT JOIN email_events e ON e.email = l.email AND e.ts >= l.exported_at AND e.ts < l.exported_at + interval '30 days'
+        GROUP BY 1,2,3
+     ),
+     ord AS (
+       SELECT l.email, l.platform, l.day, COUNT(DISTINCT o.order_id) n, COALESCE(SUM(o.total),0) rev
+         FROM led l JOIN shop_orders o ON o.email = l.email AND o.created_at >= l.exported_at
+        GROUP BY 1,2,3
+     ),
+     push AS (SELECT day, platform, planned, budget, pushed FROM mass_pushes WHERE day > now()::date - $1::int)
+     SELECT d.day::text AS day, d.platform,
+            COALESCE(p.planned,0)::int planned, COALESCE(p.budget,0)::int budget,
+            COUNT(DISTINCT d.email)::int pushed,
+            COUNT(DISTINCT d.email) FILTER (WHERE ev.delivered)::int delivered,
+            COUNT(DISTINCT d.email) FILTER (WHERE ev.opened)::int opened,
+            COUNT(DISTINCT d.email) FILTER (WHERE ev.clicked)::int clicked,
+            COUNT(DISTINCT d.email) FILTER (WHERE ev.unsub)::int unsub,
+            COUNT(DISTINCT d.email) FILTER (WHERE ev.bounced)::int bounced,
+            COALESCE(SUM(ord.n),0)::int ordered, COALESCE(SUM(ord.rev),0)::float revenue,
+            COUNT(DISTINCT d.email) FILTER (WHERE d.outcome = 'retired')::int retired,
+            COUNT(DISTINCT d.email) FILTER (WHERE COALESCE(d.outcome,'') NOT IN ('retired','converted','bounced','complained','unsubscribed'))::int live
+       FROM led d
+       LEFT JOIN ev ON ev.email = d.email AND ev.platform = d.platform AND ev.day = d.day
+       LEFT JOIN ord ON ord.email = d.email AND ord.platform = d.platform AND ord.day = d.day
+       LEFT JOIN push p ON p.day = d.day AND p.platform = d.platform
+      GROUP BY d.day, d.platform, p.planned, p.budget
+      ORDER BY d.day DESC, d.platform`,
+    [String(days)]
+  ).then((r) => r.rows).catch(() => [] as MassRow[]);
+
+  const totals = rows.reduce((t, r) => ({
+    planned: t.planned + r.planned, budget: t.budget + r.budget, pushed: t.pushed + r.pushed,
+    delivered: t.delivered + r.delivered, opened: t.opened + r.opened, clicked: t.clicked + r.clicked,
+    unsub: t.unsub + r.unsub, bounced: t.bounced + r.bounced, ordered: t.ordered + r.ordered, revenue: t.revenue + r.revenue,
+    retired: t.retired + r.retired, live: t.live + r.live,
+  }), { planned: 0, budget: 0, pushed: 0, delivered: 0, opened: 0, clicked: 0, unsub: 0, bounced: 0, ordered: 0, revenue: 0, retired: 0, live: 0 });
+
+  // Orders that carry our fingerprints but whose buyer is not in the ledger.
+  const un = await pool.query<{ orders: string; revenue: string }>(
+    `SELECT COUNT(*) AS orders, COALESCE(SUM(total),0) AS revenue FROM shop_orders
+      WHERE created_at > now() - ($1 || ' days')::interval
+        AND (codes && $2::text[] OR utm_source = 'offers')
+        AND (email IS NULL OR email NOT IN (SELECT email FROM lead_exports))`,
+    [String(days), MASS_CODES]
+  ).then((r) => r.rows[0]).catch(() => ({ orders: "0", revenue: "0" }));
+  const byCode = await pool.query<{ code: string; orders: string }>(
+    `SELECT c AS code, COUNT(*) AS orders FROM shop_orders, UNNEST(codes) AS c
+      WHERE created_at > now() - ($1 || ' days')::interval AND c = ANY($2::text[]) GROUP BY 1 ORDER BY 2 DESC`,
+    [String(days), MASS_CODES]
+  ).then((r) => r.rows.map((x) => ({ code: x.code, orders: Number(x.orders) }))).catch(() => []);
+
+  const s = await pool.query<{ key: string; value: string }>(`SELECT key, value FROM app_settings WHERE key IN ('esputnik_base_size','esputnik_plan_limit','esputnik_reserve','esputnik_window')`)
+    .then((r) => Object.fromEntries(r.rows.map((x) => [x.key, x.value]))).catch(() => ({} as Record<string, string>));
+  const m = (s.esputnik_base_size ?? "").match(/^(\d+)@(\d+)$/);
+  const liveAll = await pool.query<{ c: string }>(`SELECT COUNT(*) c FROM lead_exports WHERE batch LIKE 'Leads: %' AND COALESCE(outcome,'') NOT IN ('retired','converted','bounced','complained','unsubscribed')`).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
+
+  return {
+    rows, totals,
+    unattributed: { orders: Number(un.orders), revenue: Number(un.revenue), byCode },
+    base: {
+      size: m ? Number(m[1]) : null, at: m ? new Date(Number(m[2])).toISOString() : null,
+      planLimit: Number(s.esputnik_plan_limit ?? 25000), reserve: Number(s.esputnik_reserve ?? 1500), live: liveAll, window: Number(s.esputnik_window ?? 4500),
+    },
+  };
+}
