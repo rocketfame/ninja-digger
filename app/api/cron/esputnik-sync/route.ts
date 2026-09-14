@@ -8,6 +8,7 @@
  *      the user sets the knob.
  */
 import { NextResponse } from "next/server";
+import { pool } from "@/lib/db";
 import { acquireLease } from "@/lib/cronLock";
 import { getSetting, setSetting } from "@/lib/settings";
 import { sendTelegramMessage } from "@/lib/telegram";
@@ -53,7 +54,14 @@ export async function GET(request: Request) {
   const shopOk = !shopConfigured() || shop.complete;
 
   // 3. the day's push
-  const perPlatform = parseInt(await getSetting("esputnik_daily_push", "0"), 10) || 0;
+  const perPlatformRaw = parseInt(await getSetting("esputnik_daily_push", "0"), 10) || 0;
+  // The lead window in eSputnik (user, 14.09: ~5 000 seats; plan is 25k with
+  // ~20k customers). Today's push is capped so that live leads never exceed it:
+  // seats free = window − leads currently there (ledger rows still 'live').
+  const windowSize = parseInt(await getSetting("esputnik_window", "5000"), 10) || 5000;
+  const live = await pool.query<{ c: string }>(`SELECT COUNT(*) c FROM lead_exports WHERE batch LIKE 'Leads: %(auto)' AND COALESCE(outcome,'') NOT IN ('retired','converted','bounced','complained','unsubscribed')`).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
+  const seatsFree = Math.max(0, windowSize - live);
+  const perPlatform = perPlatformRaw;
   const lastPush = await getSetting("esputnik_last_push_date", "");
   const platforms = (await getSetting("esputnik_push_platforms", "soundcloud,spotify,youtube"))
     .split(",").map((s) => s.trim().toLowerCase()).filter((p): p is Platform => (PLATFORMS as readonly string[]).includes(p) && p !== "beatport");
@@ -62,14 +70,19 @@ export async function GET(request: Request) {
     await sendTelegramMessage(`⛔ eSputnik push відкладено: список клієнтів Shopify не синхронізувався${shop.error ? ` (${shop.error.slice(0, 100)})` : ""}. Спробую наступної години.`).catch(() => {});
   }
   if (perPlatform > 0 && lastPush !== today && shopOk) {
+    let budget = seatsFree;
     for (const p of platforms) {
       if (Date.now() - t0 > 240_000) break;
-      pushes.push(await pushToEsputnik(p, perPlatform).catch((e) => ({ group: p, pushed: 0, failed: 0, customers: 0, purged: 0, error: e instanceof Error ? e.message : String(e) })));
+      const take = Math.min(perPlatform, budget);
+      if (take <= 0) { pushes.push({ group: p, pushed: 0, failed: 0, customers: 0, purged: 0, error: `вікно ${windowSize} заповнене (${live} живих)` }); continue; }
+      const res = await pushToEsputnik(p, take).catch((e) => ({ group: p, pushed: 0, failed: 0, customers: 0, purged: 0, error: e instanceof Error ? e.message : String(e) }));
+      budget -= res.pushed;
+      pushes.push(res);
     }
     if (pushes.some((x) => x.pushed > 0)) await setSetting("esputnik_last_push_date", today).catch(() => {});
     const lines = pushes.map((x) => `• ${x.group}: ${x.pushed}${x.customers ? ` · клієнтів пропущено ${x.customers}` : ""}${x.purged ? ` · клієнтів ВИЛУЧЕНО з групи ${x.purged}` : ""}${x.failed ? ` (не долетіло ${x.failed})` : ""}${x.error ? ` ✗ ${x.error.slice(0, 80)}` : ""}`);
-    await sendTelegramMessage(`📤 eSputnik: сегменти на сьогодні\n${lines.join("\n")}`).catch(() => {});
+    await sendTelegramMessage(`📤 eSputnik: сегменти на сьогодні\n${lines.join("\n")}\nВікно: ${live} живих із ${windowSize}, видалено за годину ${retired.deleted}`).catch(() => {});
   }
 
-  return NextResponse.json({ ok: true, pulled, retired, shop, pushes, perPlatform, tookMs: Date.now() - t0, ts: new Date().toISOString() });
+  return NextResponse.json({ ok: true, pulled, retired, shop, pushes, perPlatform, windowSize, live, seatsFree, tookMs: Date.now() - t0, ts: new Date().toISOString() });
 }

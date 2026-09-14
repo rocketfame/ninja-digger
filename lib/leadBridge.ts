@@ -40,15 +40,35 @@ function whereSql(o: MassSelect, firstParam: number): { sql: string; params: unk
   return { sql: parts.join("\n          AND "), params };
 }
 
+/**
+ * Who goes first (user, 14.09): SoundCloud's Re-Ex advertisers before the
+ * graph — they paid for promotion once, so they are the warmest we have.
+ * Inside a source the bigger catalogue first. Tier C (one track) never
+ * goes to the mass channel. Other platforms keep newest-found first.
+ */
+const MASS_ORDER: Record<string, string> = {
+  soundcloud: `(CASE WHEN a.source_seed LIKE 'graph:%' OR a.source_seed LIKE 'upload:%' THEN 1 ELSE 0 END), a.tier, a.followers_count DESC NULLS LAST`,
+};
+const MASS_EXTRA_WHERE: Record<string, string> = {
+  soundcloud: `AND a.tier IN ('A','B') AND COALESCE(a.followers_count,0) >= 100`,
+};
+
 /** One page of leads the mass channel may take right now. */
 export async function selectMassLeads(o: MassSelect): Promise<MassLead[]> {
   const w = whereSql(o, 2);
+  const single = o.platforms.length === 1 ? o.platforms[0] : null;
+  const order = single && MASS_ORDER[single] ? MASS_ORDER[single] : `s.found_at DESC NULLS LAST`;
+  const extra = single && MASS_EXTRA_WHERE[single] ? MASS_EXTRA_WHERE[single] : ``;
+  const join = single === "soundcloud" ? `JOIN sc_artists a ON LOWER(a.email) = s.email` : ``;
   const r = await pool.query<MassLead>(
-    `WITH src AS (${leadSourcesSql(o.platforms)})
-     SELECT DISTINCT ON (s.email) s.email, s.platform, s.name, s.followers, s.country, s.profile_url, s.found_at, v.verdict
-       FROM src s LEFT JOIN email_verification v ON v.email = s.email
-      WHERE ${w.sql}
-      ORDER BY s.email, s.found_at DESC NULLS LAST
+    `WITH src AS (${leadSourcesSql(o.platforms)}),
+     picked AS (
+       SELECT DISTINCT ON (s.email) s.email, s.platform, s.name, s.followers, s.country, s.profile_url, s.found_at, v.verdict
+         FROM src s LEFT JOIN email_verification v ON v.email = s.email ${join}
+        WHERE ${w.sql} ${extra}
+        ORDER BY s.email, s.found_at DESC NULLS LAST)
+     SELECT p.* FROM picked p ${single === "soundcloud" ? `JOIN sc_artists a ON LOWER(a.email) = p.email` : ``}
+      ORDER BY ${order}, p.email
       LIMIT $1`,
     [o.limit, ...w.params]
   );

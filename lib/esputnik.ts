@@ -15,6 +15,7 @@
  * Auth: HTTP Basic, any user name + the API key (ESPUTNIK_API_KEY).
  */
 import { pool } from "@/lib/db";
+import { getSetting } from "@/lib/settings";
 import { PLATFORMS, type Platform } from "@/lib/leadPolicy";
 import { recordHandover, recordOutcome, selectMassLeads } from "@/lib/leadBridge";
 import { LEAD_GROUP_RE, cleanFirstName, contactEmail, groupNameFor, isCustomerContact, mapEsputnikStatus, outcomeForEvent, type EsputnikContact } from "@/lib/esputnikStatus";
@@ -258,10 +259,13 @@ export async function pullEsputnikActivity(from: Date, to: Date, budgetMs = 80_0
 }
 
 /**
- * Rotation out of eSputnik — the plan there is 25k contacts, so a lead keeps
- * its seat only while it earns it (rule set by the user 11.09):
- *   - a week after the push with no open → out
+ * Rotation out of eSputnik — the plan there is 25k contacts and the lead
+ * window is ~5k, so a lead keeps its seat only while it earns it (user,
+ * 14.09: "три дні достатньо"):
+ *   - 3 days after the push with no open → out
  *   - 30 days after the push with no purchase → out, opened or not
+ * The knobs live in app_settings (esputnik_retire_unopened_days, default 3)
+ * so the rhythm is tuned without a deploy.
  * "Out" = deleted from eSputnik and 'retired' in our ledger. Retired is
  * final (user, 12.09): the address is never pushed again and, because the
  * ledger row stays and is not 'cold', the personal channel leaves it alone too.
@@ -269,8 +273,9 @@ export async function pullEsputnikActivity(from: Date, to: Date, budgetMs = 80_0
  * of what we loaded), and each one is looked up first: any sign of being a
  * customer means it is marked converted and left untouched.
  */
-export async function retireColdFromEsputnik(limit = 500, budgetMs = 60_000): Promise<{ deleted: number; customers: number; failed: number }> {
+export async function retireColdFromEsputnik(limit = 2000, budgetMs = 120_000): Promise<{ deleted: number; customers: number; failed: number }> {
   const deadline = Date.now() + budgetMs;
+  const unopenedDays = Math.max(1, parseInt(await getSetting("esputnik_retire_unopened_days", "3"), 10) || 3);
   const rows = await pool
     .query<{ email: string }>(
       `SELECT email FROM lead_exports le
@@ -278,13 +283,13 @@ export async function retireColdFromEsputnik(limit = 500, budgetMs = 60_000): Pr
           AND COALESCE(outcome,'') NOT IN ('retired','cold','converted','bounced','complained','unsubscribed')
           AND (
             exported_at < now() - interval '30 days'
-            OR (exported_at < now() - interval '7 days'
+            OR (exported_at < now() - ($3 || ' days')::interval
                 AND NOT EXISTS (SELECT 1 FROM email_events ev
                                  WHERE ev.email = le.email AND ev.ts >= le.exported_at
                                    AND ev.event IN ('opened','click')))
           )
         ORDER BY exported_at LIMIT $1`,
-      [limit, PLATFORMS.filter((p) => p !== "beatport")]
+      [limit, PLATFORMS.filter((p) => p !== "beatport"), String(unopenedDays)]
     )
     .then((r) => r.rows);
   let deleted = 0, customers = 0, failed = 0;
