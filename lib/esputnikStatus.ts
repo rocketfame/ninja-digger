@@ -30,10 +30,13 @@ export function outcomeForEvent(event: string): string {
 }
 
 /** Group (static segment) name for one day's push, e.g. "Leads: SoundCloud 12.09.2026 (auto)". */
-export function groupNameFor(platform: string, date = new Date()): string {
+export function groupNameFor(platform: string, date = new Date(), batch?: number): string {
   const label: Record<string, string> = { soundcloud: "SoundCloud", spotify: "Spotify", youtube: "YouTube", beatport: "Beatport" };
   const d = `${String(date.getUTCDate()).padStart(2, "0")}.${String(date.getUTCMonth() + 1).padStart(2, "0")}.${date.getUTCFullYear()}`;
-  return `Leads: ${label[platform] ?? platform} ${d} (auto)`;
+  // A fresh group per batch: eSputnik's upsert only attaches to a group it
+  // creates in the same call, so a second push into an existing group lands
+  // nothing. "(auto)" stays the marker the whole system keys on.
+  return batch && batch > 1 ? `Leads: ${label[platform] ?? platform} ${d} #${batch} (auto)` : `Leads: ${label[platform] ?? platform} ${d} (auto)`;
 }
 
 /** Our own groups: the only place a lead may live in eSputnik. */

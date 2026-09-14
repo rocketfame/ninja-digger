@@ -90,7 +90,7 @@ export async function GET(request: Request) {
   // Per-call slice: one Vercel invocation cannot verify 1 700 addresses in
   // 300 s, so each call takes up to esputnik_push_batch per platform and the
   // day's total is capped by mass_pushes (what already landed today).
-  const batchCap = parseInt(await getSetting("esputnik_push_batch", "400"), 10) || 400;
+  const batchCap = parseInt(await getSetting("esputnik_push_batch", "1700"), 10) || 1700;
   const doneToday = await pool.query<{ platform: string; pushed: string }>(`SELECT platform, pushed FROM mass_pushes WHERE day = $1`, [today]).then((r) => Object.fromEntries(r.rows.map((x) => [x.platform, Number(x.pushed)]))).catch(() => ({} as Record<string, number>));
   const remainingToday = platforms.reduce((n, p) => n + Math.max(0, perPlatform - (doneToday[p] ?? 0)), 0);
   if (perPlatform > 0 && shopOk && remainingToday > 0 && seatsFree > 0) {

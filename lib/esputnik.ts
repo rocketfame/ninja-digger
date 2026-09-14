@@ -145,17 +145,20 @@ export async function detachFromGroup(groupName: string, emails: string[]): Prom
  * AND what the upsert may have merged (dedupeOn email has no "new only"
  * mode). Customers found here are marked converted in our ledger.
  */
-export async function purgeCustomersFromGroup(groupName: string): Promise<{ checked: number; detached: string[] }> {
+export async function purgeCustomersFromGroup(groupName: string, budgetMs = 60_000): Promise<{ checked: number; detached: string[] }> {
   const gid = await groupIdByName(groupName);
   if (!gid) return { checked: 0, detached: [] };
   const detached: string[] = [];
   let checked = 0;
+  const deadline = Date.now() + budgetMs;
   for (let start = 1; ; start += 500) {
     const page = await api<EsputnikContact[]>(`/v1/group/${gid}/contacts?startindex=${start}&maxrows=500`);
     if (!Array.isArray(page) || page.length === 0) break;
     const bad: number[] = [];
     for (const row of page) {
-      if (!row.id) continue;
+      if (!row.id || Date.now() > deadline) continue;
+      // cheap first: the search row already carries externalCustomerId
+      if (row.externalCustomerId) { checked++; bad.push(row.id); const e0 = contactEmail(row); if (e0) { detached.push(e0); await markConverted(e0); } continue; }
       checked++;
       const full = await api<EsputnikContact>(`/v1/contact/${row.id}`);
       if (isCustomerContact(full)) {
@@ -181,31 +184,24 @@ async function markConverted(email: string): Promise<void> {
 }
 
 /**
- * Push one platform's batch: select under the rules, look every address up in
- * eSputnik (unknown → new lead; known lead → attach; known customer → skip
- * and mark converted; lookup error → STOP the whole push), upsert with clean
- * names, then read the group back and purge anything that still looks like a
- * customer. Only what is really in the group is written to the ledger.
+ * Push one platform's batch — FAST PATH (14.09, "це капець як довго"):
+ * no per-address round-trips to eSputnik. Customers are excluded from our
+ * own Shopify mirror (shop_customers, synced daily) and from the ledger;
+ * the batch goes up in ONE bulk request into a group created for this very
+ * call; the group is read back once so the ledger records only what landed.
+ * The post-push purge stays as the safety net.
  */
 export async function pushToEsputnik(platform: Platform, limit: number, budgetMs = 200_000): Promise<{ group: string; pushed: number; failed: number; customers: number; purged: number }> {
-  const group = groupNameFor(platform);
   const deadline = Date.now() + budgetMs;
-  const rows = await selectMassLeads({ platforms: [platform], limit });
+  const rows = await selectMassLeads({ platforms: [platform], limit }); // already excludes shop_customers + converted
+  // group name unique for this call: #2, #3 … if today's base name is taken
+  let group = groupNameFor(platform);
+  for (let n = 2; n < 50 && (await groupIdByName(group)); n++) group = groupNameFor(platform, new Date(), n);
   if (rows.length === 0) return { group, pushed: 0, failed: 0, customers: 0, purged: 0 };
 
-  const fresh: typeof rows = [];
-  let customers = 0;
-  for (const l of rows) {
-    if (Date.now() > deadline) break;
-    const c = await findContact(l.email); // throws on API failure → push aborts, nothing written
-    if (c && isCustomerContact(c)) { customers++; await markConverted(l.email); continue; }
-    fresh.push(l);
-  }
-  if (fresh.length === 0) return { group, pushed: 0, failed: 0, customers, purged: 0 };
-
   let failed = 0;
-  for (let i = 0; i < fresh.length; i += 3000) {
-    const chunk = fresh.slice(i, i + 3000);
+  for (let i = 0; i < rows.length; i += 3000) {
+    const chunk = rows.slice(i, i + 3000);
     const r = await api<{ failedContacts?: unknown[] }>("/v1/contacts", {
       method: "POST",
       body: JSON.stringify({
@@ -215,7 +211,6 @@ export async function pushToEsputnik(platform: Platform, limit: number, budgetMs
           ...(l.country && TZ[l.country.toUpperCase()] ? { timeZone: TZ[l.country.toUpperCase()], address: { countryCode: l.country.toUpperCase() } } : {}),
         })),
         dedupeOn: "email",
-        // only these fields may be written; nothing else on an existing contact changes
         contactFields: ["firstName", "timeZone", "address"],
         groupNames: [group],
         restoreDeleted: true,
@@ -224,30 +219,22 @@ export async function pushToEsputnik(platform: Platform, limit: number, budgetMs
     failed += r.failedContacts?.length ?? 0;
   }
 
-  // The upsert's groupNames does not reliably attach to a group that already
-  // exists (14.09: 1 698 upserted, 0 in the group). Attach explicitly, by
-  // contact id, in pages of 500 — then read the group back.
-  const gidAfter = await groupIdByName(group);
-  if (gidAfter) {
-    const ids: number[] = [];
-    for (const l of fresh) {
-      if (Date.now() > deadline) break;
-      const c = await findContact(l.email).catch(() => null);
-      if (c?.id && !isCustomerContact(c)) ids.push(c.id);
-    }
-    for (let i = 0; i < ids.length; i += 500) {
-      await api(`/v1/group/${gidAfter}/contacts/attach`, { method: "POST", body: JSON.stringify({ contactIds: ids.slice(i, i + 500) }) }).catch((e) => console.error("[esputnik] attach failed:", e instanceof Error ? e.message : e));
-    }
+  // eSputnik fills the group asynchronously for big batches: poll until the
+  // count stops growing (or the budget ends), then take what is there.
+  let inGroup = new Set<string>();
+  for (let tries = 0; tries < 20 && Date.now() < deadline; tries++) {
+    await new Promise((r) => setTimeout(r, 3000));
+    const now = await groupMembers(group);
+    if (now.size >= rows.length - failed || (now.size > 0 && now.size === inGroup.size)) { inGroup = now; break; }
+    inGroup = now;
   }
-
-  // What is REALLY in the group now, minus anyone who is a customer.
-  const purge = await purgeCustomersFromGroup(group);
-  const inGroup = await groupMembers(group);
-  const landed = fresh.filter((l) => inGroup.has(l.email.toLowerCase()));
-  const missing = fresh.length - landed.length;
-  if (missing > 0) console.error(`[esputnik] ${group}: ${missing} of ${fresh.length} did not land in the group`);
+  const purge = await purgeCustomersFromGroup(group).catch(() => ({ checked: 0, detached: [] as string[] }));
+  for (const e of purge.detached) inGroup.delete(e);
+  const landed = rows.filter((l) => inGroup.has(l.email.toLowerCase()));
+  const missing = rows.length - landed.length;
+  if (missing > 0) console.error(`[esputnik] ${group}: ${missing} of ${rows.length} did not land`);
   await recordHandover(landed, group, "esputnik");
-  return { group, pushed: landed.length, failed: Math.max(failed, missing), customers, purged: purge.detached.length };
+  return { group, pushed: landed.length, failed: Math.max(failed, missing), customers: 0, purged: purge.detached.length };
 }
 
 type Activity = { email?: string; activityStatus?: string; activityDateTime?: string; messageName?: string; mediaType?: string };
