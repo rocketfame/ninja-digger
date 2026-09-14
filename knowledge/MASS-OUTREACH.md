@@ -23,7 +23,9 @@
 
 **Архів:** `lead_exports` — на кого, коли, з якої групи, результат (`retired`/`converted`/негатив); email_events — кожна подія; нічого не видаляється з нашої бази, лише з eSputnik.
 
-**Ручки:** `esputnik_daily_push` (1 700), `esputnik_window` (5 000), `esputnik_retire_unopened_days` (3), `esputnik_push_platforms`.
+**Postmaster (14.09):** offers.promosound.net верифіковано в Google Postmaster Tools (TXT google-site-verification у Cloudflare), compliance зелений по всіх пунктах; «Not enough outgoing email» — Gmail ще не набрав вибірки. Порада Google: рівний темп, без різких стрибків → 15.09 пуш 1 000/платформа (~3k), з 16.09 повне вікно.
+
+**Ручки:** `esputnik_daily_push` (1 000 на 15.09, далі 1 700), `esputnik_window` (5 000), `esputnik_retire_unopened_days` (3), `esputnik_push_platforms`.
 
 ## Код (11.09, задеплоєно)
 - `lib/leadBridge.ts` — одна реалізація відбору (`selectMassLeads`, правила циклу з `massEligibleSql`), ledger (`recordHandover` пише lead_exports + подію `sent` src=esputnik) і результатів (`recordOutcome`: email_events + lead_exports.outcome + карантин у blacklist для bounce/spam/unsub). HTTP-міст `/api/internal/leads/export` і крон користуються нею.
