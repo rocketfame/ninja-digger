@@ -84,6 +84,7 @@ export async function GET(request: Request) {
   const platforms = (await getSetting("esputnik_push_platforms", "soundcloud,spotify,youtube"))
     .split(",").map((s) => s.trim().toLowerCase()).filter((p): p is Platform => (PLATFORMS as readonly string[]).includes(p) && p !== "beatport");
   const pushes: { group: string; pushed: number; failed: number; customers: number; purged: number; error?: string }[] = [];
+  if (perPlatform > 0 && !shopOk) {
     await sendTelegramMessage(`⛔ eSputnik push відкладено: список клієнтів Shopify не синхронізувався${shop.error ? ` (${shop.error.slice(0, 100)})` : ""}. Спробую наступної години.`).catch(() => {});
   }
   // Per-call slice: one Vercel invocation cannot verify 1 700 addresses in
