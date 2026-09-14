@@ -187,7 +187,7 @@ async function markConverted(email: string): Promise<void> {
  * names, then read the group back and purge anything that still looks like a
  * customer. Only what is really in the group is written to the ledger.
  */
-export async function pushToEsputnik(platform: Platform, limit: number, budgetMs = 270_000): Promise<{ group: string; pushed: number; failed: number; customers: number; purged: number }> {
+export async function pushToEsputnik(platform: Platform, limit: number, budgetMs = 200_000): Promise<{ group: string; pushed: number; failed: number; customers: number; purged: number }> {
   const group = groupNameFor(platform);
   const deadline = Date.now() + budgetMs;
   const rows = await selectMassLeads({ platforms: [platform], limit });

@@ -13,6 +13,7 @@ import { acquireLease } from "@/lib/cronLock";
 import { getSetting, setSetting } from "@/lib/settings";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { PLATFORMS, type Platform } from "@/lib/leadPolicy";
+import { groupNameFor } from "@/lib/esputnikStatus";
 import { esputnikBaseSize, esputnikConfigured, pullEsputnikActivity, pushToEsputnik, retireColdFromEsputnik } from "@/lib/esputnik";
 import { shopConfigured, syncShopCustomers } from "@/lib/shopCustomers";
 import { syncShopOrders } from "@/lib/shopOrders";
@@ -80,18 +81,23 @@ export async function GET(request: Request) {
   const perPlatform = perPlatformRaw;
   if (baseNow === null) await sendTelegramMessage(`⛔ eSputnik: не зміг прочитати розмір бази — пуш сьогодні не йде.`).catch(() => {});
   if (baseNow !== null && baseNow > planLimit - reserve) await sendTelegramMessage(`⚠️ eSputnik: у базі ${baseNow} з ${planLimit}, резерв ${reserve} для клієнтів порушено — пуш не йде, ротація видаляє.`).catch(() => {});
-  const lastPush = await getSetting("esputnik_last_push_date", "");
   const platforms = (await getSetting("esputnik_push_platforms", "soundcloud,spotify,youtube"))
     .split(",").map((s) => s.trim().toLowerCase()).filter((p): p is Platform => (PLATFORMS as readonly string[]).includes(p) && p !== "beatport");
   const pushes: { group: string; pushed: number; failed: number; customers: number; purged: number; error?: string }[] = [];
   if (perPlatform > 0 && lastPush !== today && !shopOk) {
     await sendTelegramMessage(`⛔ eSputnik push відкладено: список клієнтів Shopify не синхронізувався${shop.error ? ` (${shop.error.slice(0, 100)})` : ""}. Спробую наступної години.`).catch(() => {});
   }
-  if (perPlatform > 0 && lastPush !== today && shopOk) {
+  // Per-call slice: one Vercel invocation cannot verify 1 700 addresses in
+  // 300 s, so each call takes up to esputnik_push_batch per platform and the
+  // day's total is capped by mass_pushes (what already landed today).
+  const batchCap = parseInt(await getSetting("esputnik_push_batch", "400"), 10) || 400;
+  const doneToday = await pool.query<{ platform: string; pushed: string }>(`SELECT platform, pushed FROM mass_pushes WHERE day = $1`, [today]).then((r) => Object.fromEntries(r.rows.map((x) => [x.platform, Number(x.pushed)]))).catch(() => ({} as Record<string, number>));
+  const remainingToday = platforms.reduce((n, p) => n + Math.max(0, perPlatform - (doneToday[p] ?? 0)), 0);
+  if (perPlatform > 0 && shopOk && remainingToday > 0 && seatsFree > 0) {
     let budget = seatsFree;
     for (const p of platforms) {
       if (Date.now() - t0 > 240_000) break;
-      const take = Math.min(perPlatform, budget);
+      const take = Math.min(perPlatform - (doneToday[p] ?? 0), batchCap, budget);
       if (take <= 0) {
         pushes.push({ group: p, pushed: 0, failed: 0, customers: 0, purged: 0, error: `місць нема: база ${baseNow} з ${planLimit}, резерв ${reserve}, лідів ${live} з ${windowSize}` });
         await pool.query(`INSERT INTO mass_pushes (day, platform, planned, budget, pushed) VALUES ($1,$2,$3,0,0) ON CONFLICT (day, platform) DO UPDATE SET planned = EXCLUDED.planned`, [today, p, perPlatform]).catch(() => {});
@@ -107,6 +113,12 @@ export async function GET(request: Request) {
       ).catch(() => {});
     }
     if (pushes.some((x) => x.pushed > 0)) await setSetting("esputnik_last_push_date", today).catch(() => {});
+    // still budget and still quota → come back right away instead of next hour
+    const stillTodo = platforms.reduce((n, p) => n + Math.max(0, perPlatform - (doneToday[p] ?? 0) - (pushes.find((x) => x.group === groupNameFor(p))?.pushed ?? 0)), 0);
+    if (stillTodo > 0 && budget > 0) {
+      const url = new URL(request.url); url.searchParams.set("again", "1");
+      fetch(url.toString(), { headers: { authorization: request.headers.get("authorization") ?? "" } }).catch(() => {});
+    }
     const lines = pushes.map((x) => `• ${x.group}: ${x.pushed}${x.customers ? ` · клієнтів пропущено ${x.customers}` : ""}${x.purged ? ` · клієнтів ВИЛУЧЕНО з групи ${x.purged}` : ""}${x.failed ? ` (не долетіло ${x.failed})` : ""}${x.error ? ` ✗ ${x.error.slice(0, 80)}` : ""}`);
     await sendTelegramMessage(`📤 eSputnik: сегменти на сьогодні\n${lines.join("\n")}\nБаза eSputnik: ${baseNow ?? "?"} з ${planLimit} (резерв ${reserve}) · лідів ${live} з ${windowSize} · видалено за годину ${retired.deleted}`).catch(() => {});
   }
