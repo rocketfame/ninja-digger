@@ -76,21 +76,33 @@ export async function findContact(email: string): Promise<EsputnikContact | null
 
 /**
  * How many contacts the eSputnik base holds RIGHT NOW — the number the plan
- * bills and caps. Read from the TotalCount header of the contacts search,
- * never estimated from our ledger: on 14.09 the ledger said 3 035 leads while
- * the base stood at 25 412 of 25 000, and new shop customers were locked out.
+ * bills and caps. Read from eSputnik itself, never estimated from our ledger:
+ * on 14.09 the ledger said 3 035 leads while the base stood at 25 412 of
+ * 25 000 and new shop customers were locked out.
+ *
+ * The TotalCount header of an unfiltered search is NOT trustworthy (it
+ * returned 2 on a 22k base). So the base is counted the slow, honest way —
+ * paging the search 500 at a time — and cached in app_settings for an hour.
+ * A count that fails or looks absurd (below the leads we know are there)
+ * throws, and the caller must refuse to push.
  */
-export async function esputnikBaseSize(): Promise<number> {
-  const key = process.env.ESPUTNIK_API_KEY;
-  if (!key) throw new Error("ESPUTNIK_API_KEY missing");
-  const res = await fetch(`${BASE}/v1/contacts?maxrows=1`, {
-    headers: { Authorization: `Basic ${Buffer.from(`ninja:${key}`).toString("base64")}`, Accept: "application/json" },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!res.ok) throw new Error(`eSputnik contacts count → ${res.status}`);
-  const n = parseInt(res.headers.get("TotalCount") ?? res.headers.get("totalcount") ?? "", 10);
-  if (!Number.isFinite(n)) throw new Error("eSputnik: no TotalCount header");
-  return n;
+export async function esputnikBaseSize(opts: { maxAgeMin?: number } = {}): Promise<number> {
+  const maxAge = (opts.maxAgeMin ?? 60) * 60_000;
+  const cached = await getSetting("esputnik_base_size", "");
+  const m = cached.match(/^(\d+)@(\d+)$/);
+  if (m && Date.now() - Number(m[2]) < maxAge) return Number(m[1]);
+
+  let total = 0;
+  for (let start = 1; start < 200_000; start += 500) {
+    const page = await api<unknown[]>(`/v1/contacts?startindex=${start}&maxrows=500`);
+    if (!Array.isArray(page)) throw new Error("eSputnik contacts page is not an array");
+    total += page.length;
+    if (page.length < 500) break;
+  }
+  const live = await pool.query<{ c: string }>(`SELECT COUNT(*) c FROM lead_exports WHERE batch LIKE 'Leads: %' AND COALESCE(outcome,'') NOT IN ('retired','converted','bounced','complained','unsubscribed')`).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
+  if (total < live || total < 1000) throw new Error(`eSputnik base count looks wrong: ${total} (ledger says ${live} leads live)`);
+  await pool.query(`INSERT INTO app_settings (key, value, updated_at) VALUES ('esputnik_base_size', $1, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, [`${total}@${Date.now()}`]).catch(() => {});
+  return total;
 }
 
 /** Group id by exact name, or null. */
