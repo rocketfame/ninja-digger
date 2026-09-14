@@ -275,11 +275,13 @@ export async function pullEsputnikActivity(from: Date, to: Date, budgetMs = 80_0
  */
 export async function retireColdFromEsputnik(limit = 2000, budgetMs = 120_000): Promise<{ deleted: number; customers: number; failed: number }> {
   const deadline = Date.now() + budgetMs;
-  const unopenedDays = Math.max(1, parseInt(await getSetting("esputnik_retire_unopened_days", "3"), 10) || 3);
+  // 0 is allowed: an emergency sweep of everything unopened, whatever its age
+  const unopenedDays = Math.max(0, parseInt(await getSetting("esputnik_retire_unopened_days", "3"), 10));
   const rows = await pool
     .query<{ email: string }>(
       `SELECT email FROM lead_exports le
         WHERE platform = ANY($2::text[])
+          AND batch <> 'esputnik-customer'
           AND COALESCE(outcome,'') NOT IN ('retired','cold','converted','bounced','complained','unsubscribed')
           AND (
             exported_at < now() - interval '30 days'
