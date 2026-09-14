@@ -13,7 +13,7 @@ import { acquireLease } from "@/lib/cronLock";
 import { getSetting, setSetting } from "@/lib/settings";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { PLATFORMS, type Platform } from "@/lib/leadPolicy";
-import { esputnikConfigured, pullEsputnikActivity, pushToEsputnik, retireColdFromEsputnik } from "@/lib/esputnik";
+import { esputnikBaseSize, esputnikConfigured, pullEsputnikActivity, pushToEsputnik, retireColdFromEsputnik } from "@/lib/esputnik";
 import { shopConfigured, syncShopCustomers } from "@/lib/shopCustomers";
 
 export const dynamic = "force-dynamic";
@@ -55,13 +55,24 @@ export async function GET(request: Request) {
 
   // 3. the day's push
   const perPlatformRaw = parseInt(await getSetting("esputnik_daily_push", "0"), 10) || 0;
-  // The lead window in eSputnik (user, 14.09: ~5 000 seats; plan is 25k with
-  // ~20k customers). Today's push is capped so that live leads never exceed it:
-  // seats free = window − leads currently there (ledger rows still 'live').
-  const windowSize = parseInt(await getSetting("esputnik_window", "5000"), 10) || 5000;
+  // THE BASE, NOT THE LEDGER (user, 14.09: "нові користувачі не будуть
+  // отримувати емейли — цього не має бути"). eSputnik's plan caps the whole
+  // base at esputnik_plan_limit (25 000); the shop's own customers arrive
+  // organically and must always fit. So leads may only occupy what is left
+  // after the plan limit minus a reserve for organic growth:
+  //   seats for leads today = plan_limit − reserve − contacts in the base now
+  // The base size is read from eSputnik itself, never estimated.
+  const planLimit = parseInt(await getSetting("esputnik_plan_limit", "25000"), 10) || 25000;
+  const reserve = parseInt(await getSetting("esputnik_reserve", "1500"), 10) || 1500;
+  const windowSize = parseInt(await getSetting("esputnik_window", "4500"), 10) || 4500;
   const live = await pool.query<{ c: string }>(`SELECT COUNT(*) c FROM lead_exports WHERE batch LIKE 'Leads: %(auto)' AND COALESCE(outcome,'') NOT IN ('retired','converted','bounced','complained','unsubscribed')`).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
-  const seatsFree = Math.max(0, windowSize - live);
+  const baseNow = await esputnikBaseSize().catch(() => null);
+  const seatsByPlan = baseNow === null ? 0 : Math.max(0, planLimit - reserve - baseNow);
+  const seatsByWindow = Math.max(0, windowSize - live);
+  const seatsFree = Math.min(seatsByPlan, seatsByWindow);
   const perPlatform = perPlatformRaw;
+  if (baseNow === null) await sendTelegramMessage(`⛔ eSputnik: не зміг прочитати розмір бази — пуш сьогодні не йде.`).catch(() => {});
+  if (baseNow !== null && baseNow > planLimit - reserve) await sendTelegramMessage(`⚠️ eSputnik: у базі ${baseNow} з ${planLimit}, резерв ${reserve} для клієнтів порушено — пуш не йде, ротація видаляє.`).catch(() => {});
   const lastPush = await getSetting("esputnik_last_push_date", "");
   const platforms = (await getSetting("esputnik_push_platforms", "soundcloud,spotify,youtube"))
     .split(",").map((s) => s.trim().toLowerCase()).filter((p): p is Platform => (PLATFORMS as readonly string[]).includes(p) && p !== "beatport");
@@ -74,15 +85,15 @@ export async function GET(request: Request) {
     for (const p of platforms) {
       if (Date.now() - t0 > 240_000) break;
       const take = Math.min(perPlatform, budget);
-      if (take <= 0) { pushes.push({ group: p, pushed: 0, failed: 0, customers: 0, purged: 0, error: `вікно ${windowSize} заповнене (${live} живих)` }); continue; }
+      if (take <= 0) { pushes.push({ group: p, pushed: 0, failed: 0, customers: 0, purged: 0, error: `місць нема: база ${baseNow} з ${planLimit}, резерв ${reserve}, лідів ${live} з ${windowSize}` }); continue; }
       const res = await pushToEsputnik(p, take).catch((e) => ({ group: p, pushed: 0, failed: 0, customers: 0, purged: 0, error: e instanceof Error ? e.message : String(e) }));
       budget -= res.pushed;
       pushes.push(res);
     }
     if (pushes.some((x) => x.pushed > 0)) await setSetting("esputnik_last_push_date", today).catch(() => {});
     const lines = pushes.map((x) => `• ${x.group}: ${x.pushed}${x.customers ? ` · клієнтів пропущено ${x.customers}` : ""}${x.purged ? ` · клієнтів ВИЛУЧЕНО з групи ${x.purged}` : ""}${x.failed ? ` (не долетіло ${x.failed})` : ""}${x.error ? ` ✗ ${x.error.slice(0, 80)}` : ""}`);
-    await sendTelegramMessage(`📤 eSputnik: сегменти на сьогодні\n${lines.join("\n")}\nВікно: ${live} живих із ${windowSize}, видалено за годину ${retired.deleted}`).catch(() => {});
+    await sendTelegramMessage(`📤 eSputnik: сегменти на сьогодні\n${lines.join("\n")}\nБаза eSputnik: ${baseNow ?? "?"} з ${planLimit} (резерв ${reserve}) · лідів ${live} з ${windowSize} · видалено за годину ${retired.deleted}`).catch(() => {});
   }
 
-  return NextResponse.json({ ok: true, pulled, retired, shop, pushes, perPlatform, windowSize, live, seatsFree, tookMs: Date.now() - t0, ts: new Date().toISOString() });
+  return NextResponse.json({ ok: true, pulled, retired, shop, pushes, perPlatform, planLimit, reserve, baseNow, windowSize, live, seatsFree, tookMs: Date.now() - t0, ts: new Date().toISOString() });
 }

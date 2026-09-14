@@ -74,6 +74,25 @@ export async function findContact(email: string): Promise<EsputnikContact | null
   return null;
 }
 
+/**
+ * How many contacts the eSputnik base holds RIGHT NOW — the number the plan
+ * bills and caps. Read from the TotalCount header of the contacts search,
+ * never estimated from our ledger: on 14.09 the ledger said 3 035 leads while
+ * the base stood at 25 412 of 25 000, and new shop customers were locked out.
+ */
+export async function esputnikBaseSize(): Promise<number> {
+  const key = process.env.ESPUTNIK_API_KEY;
+  if (!key) throw new Error("ESPUTNIK_API_KEY missing");
+  const res = await fetch(`${BASE}/v1/contacts?maxrows=1`, {
+    headers: { Authorization: `Basic ${Buffer.from(`ninja:${key}`).toString("base64")}`, Accept: "application/json" },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) throw new Error(`eSputnik contacts count → ${res.status}`);
+  const n = parseInt(res.headers.get("TotalCount") ?? res.headers.get("totalcount") ?? "", 10);
+  if (!Number.isFinite(n)) throw new Error("eSputnik: no TotalCount header");
+  return n;
+}
+
 /** Group id by exact name, or null. */
 async function groupIdByName(name: string): Promise<number | null> {
   const groups = await api<{ id: number; name: string }[]>(`/v1/groups`);
