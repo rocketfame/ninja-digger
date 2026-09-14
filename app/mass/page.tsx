@@ -1,5 +1,5 @@
 import { NavBar } from "@/app/components/NavBar";
-import { massStats, type MassRow } from "@/lib/massStats";
+import { massStats, type MassRow, type PersonalRow } from "@/lib/massStats";
 
 export const dynamic = "force-dynamic";
 
@@ -55,8 +55,8 @@ export default async function MassPage() {
       <main className="mx-auto max-w-5xl px-4 py-8">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Масовий канал</h1>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">eSputnik · offers.promosound.net · останні 30 днів · один лист на ліда, назавжди</p>
+            <h1 className="text-2xl font-bold tracking-tight">Лідогенерація</h1>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">Два канали · останні 30 днів · один лист на ліда в кожному</p>
           </div>
           <div className="text-right text-xs text-[var(--text-muted)]">
             База eSputnik: <b className="text-[var(--text)]">{s.base.size === null ? "?" : fmt(s.base.size)}</b> з {fmt(s.base.planLimit)}
@@ -91,12 +91,55 @@ export default async function MassPage() {
           );
         })()}
 
-        <div className="mb-6 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+        {/* PERSONAL CHANNEL */}
+        {(() => {
+          const p = s.personal.totals;
+          return (
+            <section className="mb-8">
+              <h2 className="mb-3 text-lg font-bold">Персональний канал <span className="text-sm font-normal text-[var(--text-muted)]">Max · Brevo · promosound.net · відповіді через Telegram</span></h2>
+              <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+                <Kpi value={fmt(p.sent)} label="Відправлено" />
+                <Kpi value={pct(p.delivered, p.sent)} label="Доставлено" sub={fmt(p.delivered)} />
+                <Kpi value={pct(p.opened, p.delivered)} label="Відкрили" sub={fmt(p.opened)} color="#60a5fa" />
+                <Kpi value={fmt(p.replied)} label="Відповіли" sub={pct(p.replied, p.sent)} color="#fbbf24" />
+                <Kpi value={String(p.ordered)} label="Замовлень" sub={p.revenue ? `$${p.revenue.toFixed(0)}` : "після листа"} color="#22c55e" />
+                <Kpi value={p.sent ? `$${(p.revenue / p.sent * 1000).toFixed(0)}` : "—"} label="$ на 1 000 листів" color="#22c55e" />
+              </div>
+              <div className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--bg-card)]">
+                <table className="w-full text-sm">
+                  <thead className="bg-[var(--bg-table-header)] text-left text-xs uppercase tracking-wide text-[var(--text-muted)]">
+                    <tr><th className="px-3 py-2">День</th><th className="px-3 py-2">Сегмент</th><th className="px-3 py-2 text-right">Відправлено</th><th className="px-3 py-2 text-right">Достав.</th><th className="px-3 py-2 text-right">Відкрили</th><th className="px-3 py-2 text-right">Відповіли</th><th className="px-3 py-2 text-right" title="Замовлення цих лідів після листа, з кодом чи без">Замовлень</th></tr>
+                  </thead>
+                  <tbody>
+                    {s.personal.rows.length === 0 ? <tr><td colSpan={7} className="px-3 py-6 text-center text-[var(--text-muted)]">Нема даних</td></tr> : s.personal.rows.map((r: PersonalRow) => {
+                      const pl = PLATFORM[r.platform] ?? { label: r.platform, color: "var(--text-muted)" };
+                      return (
+                        <tr key={`p-${r.day}-${r.platform}`} className="border-t border-[var(--border)] tabular-nums">
+                          <td className="px-3 py-2 text-[var(--text-muted)]">{day(r.day)}</td>
+                          <td className="px-3 py-2"><span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: pl.color }} />{pl.label}</span></td>
+                          <td className="px-3 py-2 text-right font-semibold">{fmt(r.sent)}</td>
+                          <td className="px-3 py-2 text-right">{fmt(r.delivered)}</td>
+                          <td className="px-3 py-2 text-right">{fmt(r.opened)} <span className="text-[var(--text-muted)]">{pct(r.opened, r.delivered)}</span></td>
+                          <td className="px-3 py-2 text-right">{r.replied || "—"}</td>
+                          <td className="px-3 py-2 text-right font-semibold" style={r.ordered ? { color: "#22c55e" } : undefined}>{r.ordered ? `${r.ordered} · $${r.revenue.toFixed(0)}` : "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          );
+        })()}
+
+        {/* MASS CHANNEL */}
+        <h2 className="mb-3 text-lg font-bold">Масовий канал <span className="text-sm font-normal text-[var(--text-muted)]">eSputnik · offers.promosound.net · кампанії на групи</span></h2>
+        <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
           <Kpi value={fmt(t.pushed)} label="Відправлено" sub={t.planned ? `план ${fmt(t.planned)}` : undefined} />
           <Kpi value={pct(t.delivered, t.pushed)} label="Доставлено" sub={fmt(t.delivered)} />
           <Kpi value={pct(t.opened, t.delivered)} label="Відкрили" sub={fmt(t.opened)} color="#60a5fa" />
           <Kpi value={pct(t.clicked, t.delivered)} label="Клікнули" sub={fmt(t.clicked)} color="#fbbf24" />
-          <Kpi value={String(t.ordered)} label="Замовили" sub={t.revenue ? `$${t.revenue.toFixed(0)}` : "з реєстру лідів"} color="#22c55e" />
+          <Kpi value={String(t.ordered)} label="Замовлень" sub={t.revenue ? `$${t.revenue.toFixed(0)}` : "після пушу"} color="#22c55e" />
           <Kpi value={String(s.unattributed.orders)} label="Код/UTM без ліда" sub={s.unattributed.revenue ? `$${s.unattributed.revenue.toFixed(0)}` : "не з нашого пушу"} color="#c084fc" />
         </div>
 
@@ -113,7 +156,7 @@ export default async function MassPage() {
                 <th className="px-3 py-2 text-right">Відкрили</th>
                 <th className="px-3 py-2 text-right">Кліки</th>
                 <th className="px-3 py-2 text-right" title="Відписки + bounce">Негатив</th>
-                <th className="px-3 py-2 text-right" title="Замовлення покупців із цього пушу: код MAX, email або UTM">Замовили</th>
+                <th className="px-3 py-2 text-right" title="Замовлення цих лідів після пушу, з кодом чи без">Замовлень</th>
                 <th className="px-3 py-2 text-right" title="Ще в eSputnik / видалено ротацією">Живі / вид.</th>
               </tr>
             </thead>

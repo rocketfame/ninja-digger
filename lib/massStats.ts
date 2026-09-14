@@ -23,7 +23,10 @@ export type MassRow = {
 export type ChannelMoney = { channel: string; buyers: number; orders: number; revenue: number; withCode: number };
 export type BuyerRow = { email: string; channel: string; first_touch: string; orders: number; revenue: number; codes: string[]; last_order: string };
 
+export type PersonalRow = { day: string; platform: string; sent: number; delivered: number; opened: number; replied: number; ordered: number; revenue: number };
+
 export type MassSummary = {
+  personal: { rows: PersonalRow[]; totals: Omit<PersonalRow, "day" | "platform"> };
   money: ChannelMoney[];
   buyers: BuyerRow[];
   rows: MassRow[];
@@ -132,7 +135,36 @@ export async function massStats(days = 30): Promise<MassSummary> {
     [String(days)]
   ).then((r) => r.rows).catch(() => [] as BuyerRow[]);
 
+  // PERSONAL CHANNEL — Max's one cold email per lead (Brevo). Per day and
+  // platform: sent, delivered, opened (Brevo events on the lead row), replied
+  // (any reply lands in tg_notifications), ordered (shop order after the send).
+  const personalRows = await pool.query<PersonalRow>(
+    `WITH sent AS (
+       SELECT LOWER(email) email, 'soundcloud' platform, contacted_at t, delivered_at, first_open_at FROM sc_artists WHERE contacted_at > now() - ($1 || ' days')::interval AND email IS NOT NULL
+       UNION ALL SELECT LOWER(email), 'spotify', contacted_at, delivered_at, first_open_at FROM spotify_leads WHERE contacted_at > now() - ($1 || ' days')::interval AND email IS NOT NULL
+       UNION ALL SELECT LOWER(r.email), 'youtube', r.contacted_at,
+              (SELECT MIN(e.ts) FROM email_events e WHERE e.email = LOWER(r.email) AND e.event = 'delivered' AND e.ts >= r.contacted_at AND COALESCE(e.meta->>'src','') NOT IN ('esputnik','listmonk')),
+              (SELECT MIN(e.ts) FROM email_events e WHERE e.email = LOWER(r.email) AND e.event IN ('opened','uniqueopened','click') AND e.ts >= r.contacted_at AND COALESCE(e.meta->>'src','') NOT IN ('esputnik','listmonk'))
+         FROM radar_leads r WHERE r.contacted_at > now() - ($1 || ' days')::interval AND r.email IS NOT NULL
+     ),
+     ord AS (
+       SELECT s.email, s.platform, s.t::date AS day, COUNT(o.order_id) n, COALESCE(SUM(o.total),0) rev
+         FROM sent s JOIN shop_orders o ON o.email = s.email AND o.created_at >= s.t GROUP BY 1,2,3
+     )
+     SELECT s.t::date::text AS day, s.platform,
+            COUNT(*)::int sent, COUNT(s.delivered_at)::int delivered, COUNT(s.first_open_at)::int opened,
+            COUNT(*) FILTER (WHERE s.email IN (SELECT LOWER(email) FROM tg_notifications WHERE email IS NOT NULL))::int replied,
+            COALESCE(SUM(ord.n),0)::int ordered, COALESCE(SUM(ord.rev),0)::float revenue
+       FROM sent s LEFT JOIN ord ON ord.email = s.email AND ord.platform = s.platform AND ord.day = s.t::date
+      GROUP BY 1,2 ORDER BY 1 DESC, 2`,
+    [String(days)]
+  ).then((r) => r.rows).catch(() => [] as PersonalRow[]);
+  const personalTotals = personalRows.reduce((t, r) => ({
+    sent: t.sent + r.sent, delivered: t.delivered + r.delivered, opened: t.opened + r.opened, replied: t.replied + r.replied, ordered: t.ordered + r.ordered, revenue: t.revenue + r.revenue,
+  }), { sent: 0, delivered: 0, opened: 0, replied: 0, ordered: 0, revenue: 0 });
+
   return {
+    personal: { rows: personalRows, totals: personalTotals },
     money, buyers, rows, totals,
     unattributed: { orders: Number(un.orders), revenue: Number(un.revenue), byCode },
     base: {
