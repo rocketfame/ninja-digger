@@ -187,7 +187,7 @@ async function markConverted(email: string): Promise<void> {
  * names, then read the group back and purge anything that still looks like a
  * customer. Only what is really in the group is written to the ledger.
  */
-export async function pushToEsputnik(platform: Platform, limit: number, budgetMs = 200_000): Promise<{ group: string; pushed: number; failed: number; customers: number; purged: number }> {
+export async function pushToEsputnik(platform: Platform, limit: number, budgetMs = 270_000): Promise<{ group: string; pushed: number; failed: number; customers: number; purged: number }> {
   const group = groupNameFor(platform);
   const deadline = Date.now() + budgetMs;
   const rows = await selectMassLeads({ platforms: [platform], limit });
@@ -222,6 +222,22 @@ export async function pushToEsputnik(platform: Platform, limit: number, budgetMs
       }),
     });
     failed += r.failedContacts?.length ?? 0;
+  }
+
+  // The upsert's groupNames does not reliably attach to a group that already
+  // exists (14.09: 1 698 upserted, 0 in the group). Attach explicitly, by
+  // contact id, in pages of 500 — then read the group back.
+  const gidAfter = await groupIdByName(group);
+  if (gidAfter) {
+    const ids: number[] = [];
+    for (const l of fresh) {
+      if (Date.now() > deadline) break;
+      const c = await findContact(l.email).catch(() => null);
+      if (c?.id && !isCustomerContact(c)) ids.push(c.id);
+    }
+    for (let i = 0; i < ids.length; i += 500) {
+      await api(`/v1/group/${gidAfter}/contacts/attach`, { method: "POST", body: JSON.stringify({ contactIds: ids.slice(i, i + 500) }) }).catch((e) => console.error("[esputnik] attach failed:", e instanceof Error ? e.message : e));
+    }
   }
 
   // What is REALLY in the group now, minus anyone who is a customer.
