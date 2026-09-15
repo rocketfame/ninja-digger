@@ -47,7 +47,7 @@ function Row({ r }: { r: MassRow }) {
 export default async function MassPage() {
   const s = await massStats(30);
   const t = s.totals;
-  const seatsByPlan = s.base.size === null ? null : Math.max(0, s.base.planLimit - s.base.reserve - s.base.size);
+  const seats = s.base.size === null ? null : Math.max(0, s.base.ceiling - s.base.size);
 
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
@@ -59,9 +59,10 @@ export default async function MassPage() {
             <p className="mt-1 text-sm text-[var(--text-muted)]">Два канали · останні 30 днів · один лист на ліда в кожному</p>
           </div>
           <div className="text-right text-xs text-[var(--text-muted)]">
-            База eSputnik: <b className="text-[var(--text)]">{s.base.size === null ? "?" : fmt(s.base.size)}</b> з {fmt(s.base.planLimit)}
-            {seatsByPlan !== null ? <> · місць для лідів <b className="text-[var(--text)]">{fmt(seatsByPlan)}</b> (резерв {fmt(s.base.reserve)})</> : null}
-            <br />Лідів у базі зараз: <b className="text-[var(--text)]">{fmt(s.base.live)}</b> із вікна {fmt(s.base.window)}
+            База eSputnik: <b className="text-[var(--text)]">{s.base.size === null ? "?" : fmt(s.base.size)}</b> · стеля {fmt(s.base.ceiling)}
+            {seats !== null ? <> · місць на цикл <b className="text-[var(--text)]">{fmt(seats)}</b></> : null}
+            <br />Цикл: до {fmt(s.base.perPlatform)} на платформу · {s.base.cyclesPerDay} на день · лідів у базі <b className="text-[var(--text)]">{fmt(s.base.live)}</b>
+            {s.base.openGroups.length ? <><br />Відкриті групи: {s.base.openGroups.map((g) => `${g.name.replace("Leads: ", "")} ${g.members}${g.scheduled ? ` → ${g.scheduled.slice(11, 16)} (достав. ${g.delivered})` : " · без кампанії"}`).join(" · ")}</> : null}
           </div>
         </div>
 

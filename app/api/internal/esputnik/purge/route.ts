@@ -10,7 +10,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { isAuthorized, unauthorized } from "@/lib/apiAuth";
-import { esputnikConfigured, esputnikDelete, findContact, groupMembers, purgeCustomersFromGroup, detachFromGroup, retireColdFromEsputnik } from "@/lib/esputnik";
+import { esputnikConfigured, esputnikDelete, findContact, groupMembers, purgeCustomersFromGroup, detachFromGroup } from "@/lib/esputnik";
 import { contactEmail, isCustomerContact, type EsputnikContact } from "@/lib/esputnikStatus";
 import { api } from "@/lib/esputnik";
 import { groupNameFor } from "@/lib/esputnikStatus";
@@ -96,12 +96,6 @@ export async function POST(request: Request) {
       } catch { failed++; }
     }
     return NextResponse.json({ ok: true, checked: rows.length, gone, deleted, customers, failed, tookMs: Date.now() - t0 });
-  }
-  // ?retire=N — run the rotation sweep now, up to N deletions (emergency base hygiene)
-  const retireN = parseInt(q.get("retire") ?? "0", 10) || 0;
-  if (retireN > 0) {
-    out.retired = await retireColdFromEsputnik(retireN, 270_000).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
-    return NextResponse.json({ ok: true, ...out });
   }
   // ?inspect=a@x,b@y — show what eSputnik holds for these addresses (id, ext id, groups)
   const inspect = (q.get("inspect") ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);

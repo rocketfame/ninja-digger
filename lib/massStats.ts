@@ -32,7 +32,7 @@ export type MassSummary = {
   rows: MassRow[];
   totals: Omit<MassRow, "day" | "platform">;
   unattributed: { orders: number; revenue: number; byCode: { code: string; orders: number }[] };
-  base: { size: number | null; at: string | null; planLimit: number; reserve: number; live: number; window: number };
+  base: { size: number | null; at: string | null; ceiling: number; perPlatform: number; cyclesPerDay: number; live: number; openGroups: { name: string; members: number; delivered: number; scheduled: string | null }[] };
 };
 
 export async function massStats(days = 30): Promise<MassSummary> {
@@ -98,7 +98,7 @@ export async function massStats(days = 30): Promise<MassSummary> {
     [String(days), MASS_CODES]
   ).then((r) => r.rows.map((x) => ({ code: x.code, orders: Number(x.orders) }))).catch(() => []);
 
-  const s = await pool.query<{ key: string; value: string }>(`SELECT key, value FROM app_settings WHERE key IN ('esputnik_base_size','esputnik_plan_limit','esputnik_reserve','esputnik_window')`)
+  const s = await pool.query<{ key: string; value: string }>(`SELECT key, value FROM app_settings WHERE key IN ('esputnik_base_size','esputnik_ceiling','esputnik_daily_push','esputnik_max_cycles_per_day')`)
     .then((r) => Object.fromEntries(r.rows.map((x) => [x.key, x.value]))).catch(() => ({} as Record<string, string>));
   const m = (s.esputnik_base_size ?? "").match(/^(\d+)@(\d+)$/);
   const liveAll = await pool.query<{ c: string }>(`SELECT COUNT(*) c FROM lead_exports WHERE batch LIKE 'Leads: %' AND COALESCE(outcome,'') NOT IN ('retired','converted','bounced','complained','unsubscribed')`).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
@@ -169,7 +169,8 @@ export async function massStats(days = 30): Promise<MassSummary> {
     unattributed: { orders: Number(un.orders), revenue: Number(un.revenue), byCode },
     base: {
       size: m ? Number(m[1]) : null, at: m ? new Date(Number(m[2])).toISOString() : null,
-      planLimit: Number(s.esputnik_plan_limit ?? 25000), reserve: Number(s.esputnik_reserve ?? 1500), live: liveAll, window: Number(s.esputnik_window ?? 4500),
+      ceiling: Number(s.esputnik_ceiling ?? 24500), perPlatform: Number(s.esputnik_daily_push ?? 0), cyclesPerDay: Number(s.esputnik_max_cycles_per_day ?? 1), live: liveAll,
+      openGroups: await pool.query<{ name: string; members: number; delivered: number; scheduled: string | null }>(`SELECT group_name name, members, delivered, scheduled_at::text scheduled FROM mass_groups WHERE deleted_at IS NULL ORDER BY created_at`).then((r) => r.rows).catch(() => []),
     },
   };
 }
