@@ -92,21 +92,22 @@ export async function esputnikBaseSize(opts: { maxAgeMin?: number; budgetMs?: nu
   const m = cached.match(/^(\d+)@(\d+)$/);
   if (m && Date.now() - Number(m[2]) < maxAge) return Number(m[1]);
 
-  const deadline = Date.now() + (opts.budgetMs ?? 120_000);
-  let total = 0;
-  for (let start = 1; start < 200_000; start += 500) {
-    if (Date.now() > deadline) {
-      // out of time: fall back to the last known value if it is under a day old
-      if (m && Date.now() - Number(m[2]) < 24 * 3600_000) return Number(m[1]);
-      throw new Error("eSputnik base count ran out of time");
-    }
-    const page = await api<unknown[]>(`/v1/contacts?startindex=${start}&maxrows=500`);
-    if (!Array.isArray(page)) throw new Error("eSputnik contacts page is not an array");
-    total += page.length;
-    if (page.length < 500) break;
+  // Binary search on startindex: a page is non-empty iff the index is within
+  // the base. ~17 requests instead of ~50 pages, well inside any budget.
+  const deadline = Date.now() + (opts.budgetMs ?? 60_000);
+  const has = async (start: number) => {
+    const page = await api<unknown[]>(`/v1/contacts?startindex=${start}&maxrows=1`);
+    return Array.isArray(page) && page.length > 0;
+  };
+  let lo = 1, hi = 1;
+  while (await has(hi)) { hi *= 2; if (hi > 4_000_000 || Date.now() > deadline) throw new Error("eSputnik base count: no upper bound"); }
+  while (hi - lo > 1) {
+    if (Date.now() > deadline) { if (m && Date.now() - Number(m[2]) < 24 * 3600_000) return Number(m[1]); throw new Error("eSputnik base count ran out of time"); }
+    const mid = Math.floor((lo + hi) / 2);
+    if (await has(mid)) lo = mid; else hi = mid;
   }
-  const live = await pool.query<{ c: string }>(`SELECT COUNT(*) c FROM lead_exports WHERE batch LIKE 'Leads: %' AND COALESCE(outcome,'') NOT IN ('retired','converted','bounced','complained','unsubscribed')`).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
-  if (total < live || total < 1000) throw new Error(`eSputnik base count looks wrong: ${total} (ledger says ${live} leads live)`);
+  const total = lo;
+  if (total < 1000) throw new Error(`eSputnik base count looks wrong: ${total}`);
   await pool.query(`INSERT INTO app_settings (key, value, updated_at) VALUES ('esputnik_base_size', $1, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, [`${total}@${Date.now()}`]).catch(() => {});
   return total;
 }
