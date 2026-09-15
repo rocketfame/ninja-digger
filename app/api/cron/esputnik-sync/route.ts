@@ -100,11 +100,15 @@ export async function GET(request: Request) {
   const batchCap = parseInt(await getSetting("esputnik_push_batch", "1700"), 10) || 1700;
   const doneToday = await pool.query<{ platform: string; pushed: string }>(`SELECT platform, pushed FROM mass_pushes WHERE day = $1`, [today]).then((r) => Object.fromEntries(r.rows.map((x) => [x.platform, Number(x.pushed)]))).catch(() => ({} as Record<string, number>));
   const remainingToday = platforms.reduce((n, p) => n + Math.max(0, perPlatform - (doneToday[p] ?? 0)), 0);
+  // ONE push per platform per day, period (15.09: repeated attempts created
+  // #2/#3 groups with the same people; 3 250 addresses ended up in 2+ groups).
+  const pushedTodayPlatforms = new Set(Object.keys(doneToday).filter((p) => (doneToday[p] ?? 0) > 0));
   if (perPlatform > 0 && shopOk && remainingToday > 0 && seatsFree > 0) {
     let budget = seatsFree;
     for (const p of platforms) {
       if (Date.now() - t0 > 240_000) break;
-      const take = Math.min(perPlatform - (doneToday[p] ?? 0), batchCap, budget);
+      if (pushedTodayPlatforms.has(p)) continue;
+      const take = Math.min(perPlatform, batchCap, budget);
       if (take <= 0) {
         pushes.push({ group: p, pushed: 0, failed: 0, customers: 0, purged: 0, error: `місць нема: база ${baseNow} з ${planLimit}, резерв ${reserve}, лідів ${live} з ${windowSize}` });
         await pool.query(`INSERT INTO mass_pushes (day, platform, planned, budget, pushed) VALUES ($1,$2,$3,0,0) ON CONFLICT (day, platform) DO UPDATE SET planned = EXCLUDED.planned`, [today, p, perPlatform]).catch(() => {});
@@ -122,10 +126,7 @@ export async function GET(request: Request) {
     if (pushes.some((x) => x.pushed > 0)) await setSetting("esputnik_last_push_date", today).catch(() => {});
     // still budget and still quota → come back right away instead of next hour
     const stillTodo = platforms.reduce((n, p) => n + Math.max(0, perPlatform - (doneToday[p] ?? 0) - (pushes.find((x) => x.group === groupNameFor(p))?.pushed ?? 0)), 0);
-    if (stillTodo > 0 && budget > 0) {
-      const url = new URL(request.url); url.searchParams.set("again", "1");
-      fetch(url.toString(), { headers: { authorization: request.headers.get("authorization") ?? "" } }).catch(() => {});
-    }
+    void stillTodo; // no chaining: one attempt per platform per day
     const lines = pushes.map((x) => `• ${x.group}: ${x.pushed}${x.customers ? ` · клієнтів пропущено ${x.customers}` : ""}${x.purged ? ` · клієнтів ВИЛУЧЕНО з групи ${x.purged}` : ""}${x.failed ? ` (не долетіло ${x.failed})` : ""}${x.error ? ` ✗ ${x.error.slice(0, 80)}` : ""}`);
     await sendTelegramMessage(`📤 eSputnik: сегменти на сьогодні\n${lines.join("\n")}\nБаза eSputnik: ${baseNow ?? "?"} з ${planLimit} (резерв ${reserve}) · лідів ${live} з ${windowSize} · видалено за годину ${retired.deleted}`).catch(() => {});
   }

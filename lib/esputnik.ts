@@ -206,8 +206,13 @@ export async function pushToEsputnik(platform: Platform, limit: number, budgetMs
   const deadline = Date.now() + budgetMs;
   const rows = await selectMassLeads({ platforms: [platform], limit }); // already excludes shop_customers + converted
   // group name unique for this call: #2, #3 … if today's base name is taken
-  let group = groupNameFor(platform);
-  for (let n = 2; n < 50 && (await groupIdByName(group)); n++) group = groupNameFor(platform, new Date(), n);
+  const group = groupNameFor(platform);
+  // The day's group already exists and has people → that platform is done for
+  // today; never create a #2/#3 sibling.
+  if (await groupIdByName(group)) {
+    const members = await groupMembers(group);
+    if (members.size > 0) return { group, pushed: 0, failed: 0, customers: 0, purged: 0 };
+  }
   if (rows.length === 0) return { group, pushed: 0, failed: 0, customers: 0, purged: 0 };
 
   let failed = 0;
