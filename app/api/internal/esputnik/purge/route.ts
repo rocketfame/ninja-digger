@@ -11,7 +11,8 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { isAuthorized, unauthorized } from "@/lib/apiAuth";
 import { esputnikConfigured, esputnikDelete, findContact, groupMembers, purgeCustomersFromGroup, detachFromGroup, retireColdFromEsputnik } from "@/lib/esputnik";
-import { isCustomerContact } from "@/lib/esputnikStatus";
+import { contactEmail, isCustomerContact, type EsputnikContact } from "@/lib/esputnikStatus";
+import { api } from "@/lib/esputnik";
 import { groupNameFor } from "@/lib/esputnikStatus";
 import { PLATFORMS } from "@/lib/leadPolicy";
 
@@ -24,6 +25,63 @@ export async function POST(request: Request) {
   const q = new URL(request.url).searchParams;
   const date = q.get("date") ? new Date(`${q.get("date")}T00:00:00Z`) : new Date();
   const out: Record<string, unknown> = {};
+  // ?orphans=1 — leads we upserted into eSputnik that never got a group and
+  // never reached the ledger (the failed first push of 14.09 left 1 698 such).
+  // Candidates = addresses selectable by the mass channel that eSputnik knows
+  // but that are in NO group; delete them. Customers (any non-lead group or
+  // shop id) are never touched.
+  if (q.get("orphans") === "1") {
+    const { selectMassLeads } = await import("@/lib/leadBridge");
+    const t0 = Date.now();
+    const cand = await selectMassLeads({ platforms: ["soundcloud"], limit: 1800 });
+    let checked = 0, orphans = 0, deleted = 0, failed = 0;
+    for (const l of cand) {
+      if (Date.now() - t0 > 250_000) break;
+      try {
+        const c = await findContact(l.email);
+        checked++;
+        if (!c || !c.id) continue;
+        if (isCustomerContact(c)) continue;
+        if ((c.groups ?? []).length === 0) { orphans++; await esputnikDelete(c.id); deleted++; }
+      } catch { failed++; }
+    }
+    return NextResponse.json({ ok: true, candidates: cand.length, checked, orphans, deleted, failed, tookMs: Date.now() - t0 });
+  }
+  // ?drop=<groupId,groupId,…> — delete every NON-customer contact of these
+  // groups from eSputnik and mark them retired here (one touch, ever). Used
+  // to clean up duplicate/unsent groups left by repeated push attempts.
+  // A contact that also sits in a group NOT in this list is only detached,
+  // never deleted. Customers are never touched.
+  const drop = (q.get("drop") ?? "").split(",").map((x) => parseInt(x, 10)).filter((n) => n > 0);
+  if (drop.length) {
+    const t0 = Date.now();
+    const keepSet = new Set(drop);
+    let seen = 0, deleted = 0, detached = 0, customers = 0, failed = 0;
+    for (const gid of drop) {
+      for (let start = 1; ; start += 500) {
+        if (Date.now() - t0 > 250_000) break;
+        const page = await api<EsputnikContact[]>(`/v1/group/${gid}/contacts?startindex=${start}&maxrows=500`).catch(() => null);
+        if (!Array.isArray(page) || page.length === 0) break;
+        const toDetach: number[] = [];
+        for (const row of page) {
+          if (!row.id) continue;
+          seen++;
+          if (Date.now() - t0 > 250_000) break;
+          try {
+            const full = await api<EsputnikContact>(`/v1/contact/${row.id}`);
+            const e = contactEmail(full);
+            if (isCustomerContact(full)) { customers++; toDetach.push(row.id); continue; }
+            const otherGroups = (full.groups ?? []).filter((g) => g.id && !keepSet.has(g.id));
+            if (otherGroups.length > 0) { toDetach.push(row.id); detached++; }
+            else { await esputnikDelete(row.id); deleted++; if (e) await pool.query(`UPDATE lead_exports SET outcome='retired', outcome_at=now(), verified_gone=true WHERE email=$1 AND COALESCE(outcome,'') NOT IN ('converted','bounced','complained','unsubscribed')`, [e]).catch(() => {}); }
+          } catch { failed++; }
+        }
+        if (toDetach.length) await api(`/v1/group/${gid}/contacts/detach`, { method: "POST", body: JSON.stringify({ contactIds: toDetach }) }).catch(() => {});
+        if (page.length < 500) break;
+      }
+    }
+    return NextResponse.json({ ok: true, groups: drop, seen, deleted, detached, customers, failed, tookMs: Date.now() - t0 });
+  }
   // ?verify=N — ledger says 'retired' but is the contact really gone? Check up
   // to N of them against eSputnik and delete the ones still there (the
   // parallel sweep of 14.09 left ~3 800 behind). Customers are never touched.

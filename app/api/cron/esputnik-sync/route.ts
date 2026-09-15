@@ -75,7 +75,7 @@ export async function GET(request: Request) {
   // The base size is read from eSputnik itself, never estimated.
   // HARD CEILING (user, 15.09: "база не має перевищувати 24 800 — залізобетонне
   // правило"). esputnik_plan_limit is that ceiling, reserve sits under it.
-  const planLimit = parseInt(await getSetting("esputnik_plan_limit", "24800"), 10) || 24800;
+  const planLimit = parseInt(await getSetting("esputnik_plan_limit", "24000"), 10) || 24000;
   const reserve = parseInt(await getSetting("esputnik_reserve", "1500"), 10) || 1500;
   const windowSize = parseInt(await getSetting("esputnik_window", "4500"), 10) || 4500;
   const live = await pool.query<{ c: string }>(`SELECT COUNT(*) c FROM lead_exports WHERE batch LIKE 'Leads: %(auto)' AND COALESCE(outcome,'') NOT IN ('retired','converted','bounced','complained','unsubscribed')`).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);

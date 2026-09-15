@@ -34,7 +34,7 @@ export function esputnikConfigured(): boolean {
   return Boolean(process.env.ESPUTNIK_API_KEY);
 }
 
-async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const key = process.env.ESPUTNIK_API_KEY;
   if (!key) throw new Error("ESPUTNIK_API_KEY missing");
   const res = await fetch(`${BASE}${path}`, {
