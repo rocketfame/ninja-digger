@@ -231,9 +231,9 @@ export async function reconcile(): Promise<{ groups: number; segmented: number }
   const open = await pool.query<{ group_id: string; group_name: string }>(`SELECT group_id, group_name FROM mass_groups WHERE deleted_at IS NULL AND broadcast_id IS NOT NULL`).then((r) => r.rows);
   for (const g of open) {
     await pool.query(
-      `UPDATE mass_groups SET delivered = (
+      `UPDATE mass_groups SET delivered = GREATEST(delivered, (
          SELECT COUNT(DISTINCT le.email) FROM lead_exports le
-          WHERE le.batch = $2 AND EXISTS (SELECT 1 FROM email_events e WHERE e.email = le.email AND e.event = 'delivered' AND e.ts >= le.exported_at))
+          WHERE le.batch = $2 AND EXISTS (SELECT 1 FROM email_events e WHERE e.email = le.email AND e.event = 'delivered' AND e.ts >= le.exported_at)))
        WHERE group_id = $1`, [g.group_id, g.group_name]);
   }
   const seg = await pool.query(
