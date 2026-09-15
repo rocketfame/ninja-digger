@@ -97,6 +97,24 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ ok: true, checked: rows.length, gone, deleted, customers, failed, tookMs: Date.now() - t0 });
   }
+  // ?reschedule=HH:MM — cancel today's open broadcasts and re-create them at
+  // HH:MM Kyiv today (used once on 15.09 when the first slot was computed in UTC).
+  const resched = q.get("reschedule");
+  if (resched && /^\d{2}:\d{2}$/.test(resched)) {
+    const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Kyiv" }).format(new Date());
+    const rows = await pool.query<{ group_id: string; group_name: string; broadcast_id: string; message_id: string }>(`SELECT group_id, group_name, broadcast_id, message_id FROM mass_groups WHERE deleted_at IS NULL AND broadcast_id IS NOT NULL AND delivered = 0`).then((r) => r.rows);
+    const out: unknown[] = [];
+    for (const g of rows) {
+      try {
+        if (Number(g.broadcast_id) > 0) await api(`/v1/broadcast/${g.broadcast_id}`, { method: "DELETE" }).catch(() => {});
+        const b = await api<{ broadcastId?: number; id?: number }>("/v1/broadcast", { method: "POST", body: JSON.stringify({ messageId: String(g.message_id), groups: [Number(g.group_id)], excludedGroups: [202712561, 187278414, 202714346, 202714347, 202702374, 202702372], title: g.group_name, startDate: `${day}T${resched}` }) });
+        const bid = b.broadcastId ?? b.id ?? -1;
+        await pool.query(`UPDATE mass_groups SET broadcast_id = $2, scheduled_at = ($3 || ':00')::timestamp AT TIME ZONE 'Europe/Kyiv' WHERE group_id = $1`, [g.group_id, bid, `${day}T${resched}`]);
+        out.push({ group: g.group_name, broadcastId: bid, startDate: `${day}T${resched}` });
+      } catch (e) { out.push({ group: g.group_name, error: e instanceof Error ? e.message : String(e) }); }
+    }
+    return NextResponse.json({ ok: true, rescheduled: out });
+  }
   // ?inspect=a@x,b@y — show what eSputnik holds for these addresses (id, ext id, groups)
   const inspect = (q.get("inspect") ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
   if (inspect.length) {
