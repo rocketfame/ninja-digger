@@ -47,7 +47,6 @@ function Row({ r }: { r: MassRow }) {
 export default async function MassPage() {
   const s = await massStats(30);
   const t = s.totals;
-  const seats = s.base.size === null ? null : Math.max(0, s.base.ceiling - s.base.size);
 
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
@@ -55,14 +54,8 @@ export default async function MassPage() {
       <main className="mx-auto max-w-5xl px-4 py-8">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Лідогенерація</h1>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">Два канали · останні 30 днів · один лист на ліда в кожному</p>
-          </div>
-          <div className="text-right text-xs text-[var(--text-muted)]">
-            База eSputnik: <b className="text-[var(--text)]">{s.base.size === null ? "?" : fmt(s.base.size)}</b> · стеля {fmt(s.base.ceiling)}
-            {seats !== null ? <> · місць на цикл <b className="text-[var(--text)]">{fmt(seats)}</b></> : null}
-            <br />Цикл: до {fmt(s.base.perPlatform)} на платформу · {s.base.cyclesPerDay} на день · лідів у базі <b className="text-[var(--text)]">{fmt(s.base.live)}</b>
-            {s.base.openGroups.length ? <><br />Відкриті групи: {s.base.openGroups.map((g) => `${g.name.replace("Leads: ", "")} ${g.members}${g.scheduled ? ` → ${g.scheduled.slice(11, 16)} (достав. ${g.delivered})` : " · без кампанії"}`).join(" · ")}</> : null}
+            <h1 className="text-2xl font-bold tracking-tight">Статистика лідогенерації</h1>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">Два канали · останні 30 днів · покупка рахується, якщо сталась після нашого листа</p>
           </div>
         </div>
 
@@ -141,7 +134,6 @@ export default async function MassPage() {
           <Kpi value={pct(t.opened, t.delivered)} label="Відкрили" sub={fmt(t.opened)} color="#60a5fa" />
           <Kpi value={pct(t.clicked, t.delivered)} label="Клікнули" sub={fmt(t.clicked)} color="#fbbf24" />
           <Kpi value={String(t.ordered)} label="Замовлень" sub={t.revenue ? `$${t.revenue.toFixed(0)}` : "після пушу"} color="#22c55e" />
-          <Kpi value={String(s.unattributed.orders)} label="Код/UTM без ліда" sub={s.unattributed.revenue ? `$${s.unattributed.revenue.toFixed(0)}` : "не з нашого пушу"} color="#c084fc" />
         </div>
 
         <div className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--bg-card)]">

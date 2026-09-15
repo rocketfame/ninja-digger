@@ -75,15 +75,17 @@ const TOUCHED_SQL = `
   SELECT l.*, l.first_touch::text first_touch_s, ev.last_event::text last_event, COALESCE(ev.opens,0) opens, COALESCE(ev.clicks,0) clicks,
          COALESCE(ord.orders,0) orders, COALESCE(ord.revenue,0) revenue,
          CASE WHEN ev.negative OR l.email IN (SELECT LOWER(email) FROM email_blacklist) THEN 'blacklist'
-              WHEN ord.orders > 0 OR l.email IN (SELECT email FROM shop_customers) THEN 'converted'
+              WHEN ord.orders > 0 THEN 'converted'
+              WHEN l.email IN (SELECT email FROM shop_customers) THEN 'customer'
               WHEN l.replied OR l.email IN (SELECT LOWER(email) FROM tg_notifications WHERE email IS NOT NULL) THEN 'replied'
               WHEN COALESCE(ev.clicks,0) > 0 THEN 'hot'
               WHEN COALESCE(ev.opens,0) > 0 THEN 'warm'
-              WHEN ev.delivered THEN 'cold'
-              ELSE 'sent' END segment
+              ELSE 'cold' END segment
     FROM lead l LEFT JOIN ev ON ev.email = l.email LEFT JOIN ord ON ord.email = l.email`;
 
-export const SEGMENTS = ["hot", "warm", "replied", "converted", "cold", "sent", "blacklist"] as const;
+/** Working segments (people we may still talk to) and service buckets (we may not). */
+export const SEGMENTS = ["hot", "warm", "replied", "cold"] as const;
+export const SERVICE = ["converted", "customer", "blacklist"] as const;
 
 export async function segmentCounts(): Promise<{ segment: string; platform: string; c: number }[]> {
   const rows = await pool.query<{ segment: string; platform: string; c: string }>(`SELECT segment, platform, COUNT(*) c FROM (${TOUCHED_SQL}) x GROUP BY 1,2`).then((x) => x.rows).catch(() => []);
@@ -102,7 +104,7 @@ export async function segmentRows(f: SegmentFilter): Promise<SegmentRow[]> {
   const rows = await pool.query<SegmentRow & { first_touch_s: string }>(
     `SELECT email, platform, segment, channel, name, followers, country, tier, source, profile_url, first_touch_s AS first_touch, last_event, opens, clicks, orders, revenue
        FROM (${TOUCHED_SQL}) x ${conds.length ? `WHERE ${conds.join(" AND ")}` : ""}
-      ORDER BY CASE segment WHEN 'converted' THEN 0 WHEN 'replied' THEN 1 WHEN 'hot' THEN 2 WHEN 'warm' THEN 3 WHEN 'cold' THEN 4 WHEN 'sent' THEN 5 ELSE 6 END, last_event DESC NULLS LAST
+      ORDER BY CASE segment WHEN 'converted' THEN 0 WHEN 'hot' THEN 1 WHEN 'replied' THEN 2 WHEN 'warm' THEN 3 WHEN 'cold' THEN 4 WHEN 'customer' THEN 5 ELSE 6 END, last_event DESC NULLS LAST
       LIMIT $${lim} OFFSET $${off}`, params
   ).then((r) => r.rows).catch(() => []);
   return rows;

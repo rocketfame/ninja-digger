@@ -1,7 +1,7 @@
 /** GET /api/segments/export?seg=&p=&src=&tier=&days= — CSV of the current segment view (dashboard auth). */
 import { NextResponse } from "next/server";
 import { isAuthorized, unauthorized } from "@/lib/apiAuth";
-import { SEGMENTS, segmentRows } from "@/lib/segments";
+import { SEGMENTS, SERVICE, segmentRows } from "@/lib/segments";
 import { csvCell } from "@/lib/csv";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   const q = new URL(request.url).searchParams;
   const seg = q.get("seg") ?? undefined;
   const rows = await segmentRows({
-    segment: seg && (SEGMENTS as readonly string[]).includes(seg) ? seg : undefined,
+    segment: seg && ([...SEGMENTS, ...SERVICE] as readonly string[]).includes(seg) ? seg : undefined,
     platform: q.get("p") ?? undefined, source: q.get("src") ?? undefined, tier: q.get("tier") ?? undefined,
     days: q.get("days") ? parseInt(q.get("days")!, 10) || undefined : undefined, limit: 20000, offset: 0,
   });
