@@ -55,32 +55,27 @@ export async function POST(request: Request) {
   const drop = (q.get("drop") ?? "").split(",").map((x) => parseInt(x, 10)).filter((n) => n > 0);
   if (drop.length) {
     const t0 = Date.now();
-    const keepSet = new Set(drop);
-    let seen = 0, deleted = 0, detached = 0, customers = 0, failed = 0;
+    // Customers by Shopify mirror + ledger (converted) — one DB read, no per-contact API calls.
+    const customerSet = new Set<string>((await pool.query<{ email: string }>(`SELECT email FROM shop_customers UNION SELECT email FROM lead_exports WHERE outcome = 'converted'`)).rows.map((r) => r.email));
+    let seen = 0, deleted = 0, skipped = 0, failed = 0;
+    const doneEmails: string[] = [];
     for (const gid of drop) {
       for (let start = 1; ; start += 500) {
-        if (Date.now() - t0 > 250_000) break;
+        if (Date.now() - t0 > 240_000) break;
         const page = await api<EsputnikContact[]>(`/v1/group/${gid}/contacts?startindex=${start}&maxrows=500`).catch(() => null);
         if (!Array.isArray(page) || page.length === 0) break;
-        const toDetach: number[] = [];
         for (const row of page) {
-          if (!row.id) continue;
+          if (!row.id || Date.now() - t0 > 240_000) continue;
           seen++;
-          if (Date.now() - t0 > 250_000) break;
-          try {
-            const full = await api<EsputnikContact>(`/v1/contact/${row.id}`);
-            const e = contactEmail(full);
-            if (isCustomerContact(full)) { customers++; toDetach.push(row.id); continue; }
-            const otherGroups = (full.groups ?? []).filter((g) => g.id && !keepSet.has(g.id));
-            if (otherGroups.length > 0) { toDetach.push(row.id); detached++; }
-            else { await esputnikDelete(row.id); deleted++; if (e) await pool.query(`UPDATE lead_exports SET outcome='retired', outcome_at=now(), verified_gone=true WHERE email=$1 AND COALESCE(outcome,'') NOT IN ('converted','bounced','complained','unsubscribed')`, [e]).catch(() => {}); }
-          } catch { failed++; }
+          const e = contactEmail(row);
+          if (row.externalCustomerId || (e && customerSet.has(e))) { skipped++; continue; }
+          try { await esputnikDelete(row.id); deleted++; if (e) doneEmails.push(e); } catch { failed++; }
         }
-        if (toDetach.length) await api(`/v1/group/${gid}/contacts/detach`, { method: "POST", body: JSON.stringify({ contactIds: toDetach }) }).catch(() => {});
         if (page.length < 500) break;
       }
     }
-    return NextResponse.json({ ok: true, groups: drop, seen, deleted, detached, customers, failed, tookMs: Date.now() - t0 });
+    if (doneEmails.length) await pool.query(`UPDATE lead_exports SET outcome='retired', outcome_at=now(), verified_gone=true WHERE email = ANY($1::text[]) AND COALESCE(outcome,'') NOT IN ('converted','bounced','complained','unsubscribed')`, [doneEmails]).catch(() => {});
+    return NextResponse.json({ ok: true, groups: drop, seen, deleted, skippedCustomers: skipped, failed, tookMs: Date.now() - t0 });
   }
   // ?verify=N — ledger says 'retired' but is the contact really gone? Check up
   // to N of them against eSputnik and delete the ones still there (the
