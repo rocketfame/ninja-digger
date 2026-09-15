@@ -49,17 +49,20 @@ export async function GET(request: Request) {
   if (shopConfigured()) {
     const lastShop = await getSetting("shop_customers_synced", "");
     if (lastShop !== today) {
-      shop = await syncShopCustomers().catch((e) => ({ seen: 0, upserted: 0, complete: false, error: e instanceof Error ? e.message : String(e) }));
+      shop = await syncShopCustomers(110_000).catch((e) => ({ seen: 0, upserted: 0, complete: false, error: e instanceof Error ? e.message : String(e) }));
       if (shop.complete) await setSetting("shop_customers_synced", today).catch(() => {});
     } else shop.complete = true;
   }
-  const shopOk = !shopConfigured() || shop.complete;
+  // The mirror must exist and be recent (≤ 2 days); a sync that ran out of
+  // time today is fine, yesterday's mirror still guards the push.
+  const mirrorAge = await pool.query<{ h: string }>(`SELECT EXTRACT(EPOCH FROM (now() - MAX(synced_at)))/3600 h FROM shop_customers`).then((r) => Number(r.rows[0]?.h ?? 1e9)).catch(() => 1e9);
+  const shopOk = !shopConfigured() || shop.complete || mirrorAge < 48;
   // 2c. orders: a rolling 3 days every hour, the full 60 days once a day
   const fullOrdersDone = (await getSetting("shop_orders_full", "")) === today;
   const orders = shopConfigured()
-    ? await syncShopOrders(fullOrdersDone ? 3 : 60, 60_000).catch((e) => ({ seen: 0, upserted: 0, complete: false, error: e instanceof Error ? e.message : String(e) }))
+    ? await syncShopOrders(3, 30_000).catch((e) => ({ seen: 0, upserted: 0, complete: false, error: e instanceof Error ? e.message : String(e) }))
     : { seen: 0, upserted: 0, complete: false };
-  if (shopConfigured() && !fullOrdersDone && orders.complete) await setSetting("shop_orders_full", today).catch(() => {});
+  void fullOrdersDone; // the 60-day refresh runs in /api/cron/report-daily, not here
 
   // 3. the day's push
   const perPlatformRaw = parseInt(await getSetting("esputnik_daily_push", "0"), 10) || 0;
@@ -70,11 +73,15 @@ export async function GET(request: Request) {
   // after the plan limit minus a reserve for organic growth:
   //   seats for leads today = plan_limit − reserve − contacts in the base now
   // The base size is read from eSputnik itself, never estimated.
-  const planLimit = parseInt(await getSetting("esputnik_plan_limit", "25000"), 10) || 25000;
+  // HARD CEILING (user, 15.09: "база не має перевищувати 24 800 — залізобетонне
+  // правило"). esputnik_plan_limit is that ceiling, reserve sits under it.
+  const planLimit = parseInt(await getSetting("esputnik_plan_limit", "24800"), 10) || 24800;
   const reserve = parseInt(await getSetting("esputnik_reserve", "1500"), 10) || 1500;
   const windowSize = parseInt(await getSetting("esputnik_window", "4500"), 10) || 4500;
   const live = await pool.query<{ c: string }>(`SELECT COUNT(*) c FROM lead_exports WHERE batch LIKE 'Leads: %(auto)' AND COALESCE(outcome,'') NOT IN ('retired','converted','bounced','complained','unsubscribed')`).then((r) => Number(r.rows[0]?.c ?? 0)).catch(() => 0);
-  const baseNow = await esputnikBaseSize().catch(() => null);
+  // Never push on a stale number: a cached base let the overnight pushes
+  // climb to 25 855. Re-count before every push (20 min cache at most).
+  const baseNow = await esputnikBaseSize({ maxAgeMin: 20, budgetMs: 120_000 }).catch(() => null);
   const seatsByPlan = baseNow === null ? 0 : Math.max(0, planLimit - reserve - baseNow);
   const seatsByWindow = Math.max(0, windowSize - live);
   const seatsFree = Math.min(seatsByPlan, seatsByWindow);

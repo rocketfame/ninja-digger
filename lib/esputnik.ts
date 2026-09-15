@@ -86,14 +86,20 @@ export async function findContact(email: string): Promise<EsputnikContact | null
  * A count that fails or looks absurd (below the leads we know are there)
  * throws, and the caller must refuse to push.
  */
-export async function esputnikBaseSize(opts: { maxAgeMin?: number } = {}): Promise<number> {
+export async function esputnikBaseSize(opts: { maxAgeMin?: number; budgetMs?: number } = {}): Promise<number> {
   const maxAge = (opts.maxAgeMin ?? 60) * 60_000;
   const cached = await getSetting("esputnik_base_size", "");
   const m = cached.match(/^(\d+)@(\d+)$/);
   if (m && Date.now() - Number(m[2]) < maxAge) return Number(m[1]);
 
+  const deadline = Date.now() + (opts.budgetMs ?? 120_000);
   let total = 0;
   for (let start = 1; start < 200_000; start += 500) {
+    if (Date.now() > deadline) {
+      // out of time: fall back to the last known value if it is under a day old
+      if (m && Date.now() - Number(m[2]) < 24 * 3600_000) return Number(m[1]);
+      throw new Error("eSputnik base count ran out of time");
+    }
     const page = await api<unknown[]>(`/v1/contacts?startindex=${start}&maxrows=500`);
     if (!Array.isArray(page)) throw new Error("eSputnik contacts page is not an array");
     total += page.length;
@@ -103,6 +109,11 @@ export async function esputnikBaseSize(opts: { maxAgeMin?: number } = {}): Promi
   if (total < live || total < 1000) throw new Error(`eSputnik base count looks wrong: ${total} (ledger says ${live} leads live)`);
   await pool.query(`INSERT INTO app_settings (key, value, updated_at) VALUES ('esputnik_base_size', $1, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, [`${total}@${Date.now()}`]).catch(() => {});
   return total;
+}
+
+/** Delete one contact by eSputnik id. Callers check it is a lead first. */
+export async function esputnikDelete(id: number): Promise<void> {
+  await api(`/v1/contact/${id}`, { method: "DELETE" });
 }
 
 /** Group id by exact name, or null. */

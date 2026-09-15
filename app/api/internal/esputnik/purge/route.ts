@@ -10,7 +10,8 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { isAuthorized, unauthorized } from "@/lib/apiAuth";
-import { esputnikConfigured, findContact, groupMembers, purgeCustomersFromGroup, detachFromGroup, retireColdFromEsputnik } from "@/lib/esputnik";
+import { esputnikConfigured, esputnikDelete, findContact, groupMembers, purgeCustomersFromGroup, detachFromGroup, retireColdFromEsputnik } from "@/lib/esputnik";
+import { isCustomerContact } from "@/lib/esputnikStatus";
 import { groupNameFor } from "@/lib/esputnikStatus";
 import { PLATFORMS } from "@/lib/leadPolicy";
 
@@ -23,6 +24,26 @@ export async function POST(request: Request) {
   const q = new URL(request.url).searchParams;
   const date = q.get("date") ? new Date(`${q.get("date")}T00:00:00Z`) : new Date();
   const out: Record<string, unknown> = {};
+  // ?verify=N — ledger says 'retired' but is the contact really gone? Check up
+  // to N of them against eSputnik and delete the ones still there (the
+  // parallel sweep of 14.09 left ~3 800 behind). Customers are never touched.
+  const verifyN = parseInt(q.get("verify") ?? "0", 10) || 0;
+  if (verifyN > 0) {
+    const t0 = Date.now();
+    const rows = await pool.query<{ email: string }>(`SELECT email FROM lead_exports WHERE outcome='retired' AND batch LIKE 'Leads: %' AND COALESCE(verified_gone, false) = false ORDER BY outcome_at LIMIT $1`, [verifyN]).then((r) => r.rows);
+    let gone = 0, deleted = 0, customers = 0, failed = 0;
+    for (const { email } of rows) {
+      if (Date.now() - t0 > 250_000) break;
+      try {
+        const c = await findContact(email);
+        if (!c) { gone++; }
+        else if (isCustomerContact(c)) { customers++; await pool.query(`UPDATE lead_exports SET outcome='converted', outcome_at=now() WHERE email=$1`, [email]); }
+        else if (c.id) { await esputnikDelete(c.id); deleted++; }
+        await pool.query(`UPDATE lead_exports SET verified_gone = true WHERE email = $1`, [email]);
+      } catch { failed++; }
+    }
+    return NextResponse.json({ ok: true, checked: rows.length, gone, deleted, customers, failed, tookMs: Date.now() - t0 });
+  }
   // ?retire=N — run the rotation sweep now, up to N deletions (emergency base hygiene)
   const retireN = parseInt(q.get("retire") ?? "0", 10) || 0;
   if (retireN > 0) {
