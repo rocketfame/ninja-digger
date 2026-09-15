@@ -5,10 +5,9 @@ import { SEGMENTS, SERVICE, segmentCounts, segmentRows } from "@/lib/segments";
 export const dynamic = "force-dynamic";
 
 const SEG: Record<string, { label: string; color: string; hint: string }> = {
-  hot: { label: "Гарячі", color: "#f97316", hint: "клікнули" },
+  hot: { label: "Гарячі", color: "#f97316", hint: "клікнули або відповіли" },
   warm: { label: "Теплі", color: "#60a5fa", hint: "відкрили" },
-  replied: { label: "Відповіли", color: "#fbbf24", hint: "написали Max" },
-  cold: { label: "Холодні", color: "#9ca3af", hint: "без реакції" },
+  cold: { label: "Холодні", color: "#9ca3af", hint: "без реакції або проігноровані" },
   converted: { label: "Купили після листа", color: "#22c55e", hint: "" },
   customer: { label: "Вже клієнти", color: "#6b7280", hint: "були в магазині до нас" },
   blacklist: { label: "Чорний список", color: "#ef4444", hint: "bounce, скарга, відписка" },
@@ -58,7 +57,7 @@ export default async function SegmentsPage({ searchParams }: { searchParams: Pro
           <a href={csv} className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 text-sm font-medium hover:bg-[var(--bg-hover)]">⬇ CSV вибірки</a>
         </div>
 
-        <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <div className="mb-3 grid grid-cols-3 gap-2.5">
           {SEGMENTS.map((k) => (
             <Link key={k} href={qs({ seg: seg === k ? undefined : k, page: undefined })} className="rounded-xl border px-4 py-3.5 transition-all" style={chip(seg === k, SEG[k].color)}>
               <div className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: SEG[k].color }} /><span className="text-2xl font-bold tabular-nums" style={{ color: SEG[k].color }}>{fmt(bySeg[k] ?? 0)}</span></div>
@@ -95,7 +94,7 @@ export default async function SegmentsPage({ searchParams }: { searchParams: Pro
                 return (
                   <tr key={r.email} className="border-t border-[var(--border)] tabular-nums">
                     <td className="px-3 py-2"><div className="font-medium">{r.name ?? "—"}</div><div className="text-xs text-[var(--text-muted)]">{r.profile_url ? <a href={r.profile_url} target="_blank" rel="noreferrer" className="hover:underline">{r.email}</a> : r.email}</div></td>
-                    <td className="px-3 py-2"><span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: s.color }} />{s.label}</span></td>
+                    <td className="px-3 py-2"><span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: s.color }} />{s.label}{r.replied_open ? <span className="text-xs text-[var(--text-muted)]">· відповів</span> : null}</span></td>
                     <td className="px-3 py-2"><span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: p.color }} />{p.label}</span></td>
                     <td className="px-3 py-2 text-[var(--text-muted)]">{srcLabel(r.source)}{r.tier ? <span className="ml-1 opacity-60">· {r.tier}</span> : null}</td>
                     <td className="px-3 py-2 text-right">{r.followers != null ? fmt(r.followers) : "—"}</td>

@@ -215,7 +215,7 @@ async function handleIgnore(msgId: number): Promise<void> {
     `SELECT email, reply_msgid FROM tg_notifications WHERE tg_message_id = $1`, [msgId]
   ).then((r) => r.rows[0]).catch(() => undefined);
   await editMessageReplyMarkup(msgId, []);
-  await pool.query(`UPDATE tg_notifications SET draft = NULL WHERE tg_message_id = $1`, [msgId]).catch(() => {});
+  await pool.query(`UPDATE tg_notifications SET draft = NULL, ignored_at = now() WHERE tg_message_id = $1`, [msgId]).catch(() => {});
   if (row?.reply_msgid) await markGmailRead(row.reply_msgid);
   await sendTelegramMessage(`🙈 <b>Ігноровано</b>${row?.email ? ` → ${tgEscape(row.email)}` : ""} (лист позначено прочитаним у Gmail).`);
 }
