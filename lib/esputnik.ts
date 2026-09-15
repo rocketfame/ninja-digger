@@ -286,7 +286,14 @@ async function activityWindow(from: Date, to: Date, depth = 0): Promise<Activity
   const q = new URLSearchParams({ dateFrom: fmt(from), dateTo: fmt(to), maxrows: String(PAGE) });
   const rows = await api<Activity[]>(`/v2/contacts/activity?${q}`);
   if (!Array.isArray(rows)) return [];
-  if (rows.length < PAGE || depth >= 12 || to.getTime() - from.getTime() < 60_000) return rows;
+  if (rows.length < PAGE) return rows;
+  if (depth >= 14 || to.getTime() - from.getTime() < 10_000) {
+    // a broadcast puts thousands of events into one minute: at the floor,
+    // ask for the whole window in one go rather than lose the tail
+    const big = new URLSearchParams({ dateFrom: fmt(from), dateTo: fmt(to), maxrows: "20000" });
+    const all = await api<Activity[]>(`/v2/contacts/activity?${big}`);
+    return Array.isArray(all) ? all : rows;
+  }
   const mid = new Date((from.getTime() + to.getTime()) / 2);
   return [...(await activityWindow(from, mid, depth + 1)), ...(await activityWindow(mid, to, depth + 1))];
 }
