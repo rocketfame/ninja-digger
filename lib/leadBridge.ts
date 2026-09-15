@@ -52,12 +52,15 @@ const MASS_ORDER: Record<string, string> = {
 const MASS_EXTRA_WHERE: Record<string, string> = {
   soundcloud: `AND a.tier IN ('A','B') AND COALESCE(a.followers_count,0) >= 100`,
 };
+// Local parts eSputnik (and RFC 5321) reject: leading/trailing dot or hyphen,
+// double dots. 186 of the first 300 on 15.09 were ".name@gmail.com" junk.
+const VALID_LOCAL = `s.email ~ '^[a-z0-9][a-z0-9._%+-]*[a-z0-9]@' AND s.email !~ '\\.\\.'`;
 
 /** One page of leads the mass channel may take right now. */
 export async function selectMassLeads(o: MassSelect): Promise<MassLead[]> {
   const w = whereSql(o, 2);
   const single = o.platforms.length === 1 ? o.platforms[0] : null;
-  const order = single && MASS_ORDER[single] ? MASS_ORDER[single] : `p.found_at DESC NULLS LAST`;
+  const order = single && MASS_ORDER[single] ? MASS_ORDER[single] : `a.found_at DESC NULLS LAST`;
   const extra = single && MASS_EXTRA_WHERE[single] ? MASS_EXTRA_WHERE[single] : ``;
   const join = single === "soundcloud" ? `JOIN sc_artists a ON LOWER(a.email) = s.email` : ``;
   const r = await pool.query<MassLead>(
@@ -65,10 +68,14 @@ export async function selectMassLeads(o: MassSelect): Promise<MassLead[]> {
      picked AS (
        SELECT DISTINCT ON (s.email) s.email, s.platform, s.name, s.followers, s.country, s.profile_url, s.found_at, v.verdict
          FROM src s LEFT JOIN email_verification v ON v.email = s.email ${join}
-        WHERE ${w.sql} ${extra}
+        WHERE ${w.sql} ${extra} AND ${VALID_LOCAL}
         ORDER BY s.email, s.found_at DESC NULLS LAST)
-     SELECT DISTINCT ON (p.email) p.* FROM picked p ${single === "soundcloud" ? `JOIN sc_artists a ON LOWER(a.email) = p.email` : ``}
-      ORDER BY p.email, ${order}
+     , dedup AS (
+       SELECT DISTINCT ON (p.email) p.*, ${single === "soundcloud" ? `a.source_seed, a.tier, a.followers_count` : `NULL::text source_seed, NULL::text tier, NULL::int followers_count`}
+         FROM picked p ${single === "soundcloud" ? `JOIN sc_artists a ON LOWER(a.email) = p.email` : ``}
+        ORDER BY p.email)
+     SELECT email, platform, name, followers, country, profile_url, found_at, verdict FROM dedup a
+      ORDER BY ${order}, random()
       LIMIT $1`,
     [o.limit, ...w.params]
   );

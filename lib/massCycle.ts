@@ -96,7 +96,7 @@ export async function advance(budgetMs = 240_000): Promise<Advance[]> {
         body: JSON.stringify({ messageId: String(messageId), groups: [Number(g.group_id)], excludedGroups: EXCLUDED_GROUPS, title: g.group_name, startDate }),
       });
       const bid = b.broadcastId ?? b.id ?? 0;
-      await pool.query(`UPDATE mass_groups SET broadcast_id = $2, message_id = $3, scheduled_at = $4 WHERE group_id = $1`, [g.group_id, bid || -1, messageId, startDate.replace("T", " ") + ":00+03:00"]);
+      await pool.query(`UPDATE mass_groups SET broadcast_id = $2, message_id = $3, scheduled_at = ($4 || ':00')::timestamp AT TIME ZONE 'Europe/Kyiv' WHERE group_id = $1`, [g.group_id, bid || -1, messageId, startDate]);
       done.push({ step: "broadcast", detail: { group: g.group_name, broadcastId: bid, startDate } });
     } catch (e) {
       done.push({ step: "broadcast-failed", detail: { group: g.group_name, error: e instanceof Error ? e.message : String(e) } });
@@ -134,9 +134,11 @@ export async function advance(budgetMs = 240_000): Promise<Advance[]> {
 
 /** Next HH:00 Kyiv today if still ahead by ≥30 min, else tomorrow. Format eSputnik wants: YYYY-MM-DDTHH:mm. */
 function nextSendSlot(hourKyiv: number): string {
+  // eSputnik interprets startDate in the ORGANISATION timezone (Europe/Kyiv).
+  // If the slot is still ≥ 20 min ahead today, use today; else tomorrow.
   const now = new Date();
-  const h = kyivHour(now);
-  const day = h < hourKyiv ? kyivDay(now) : kyivDay(new Date(now.getTime() + 86400_000));
+  const minutesNow = kyivHour(now) * 60 + Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Kyiv", minute: "2-digit" }).format(now));
+  const day = minutesNow + 20 <= hourKyiv * 60 ? kyivDay(now) : kyivDay(new Date(now.getTime() + 86400_000));
   return `${day}T${String(hourKyiv).padStart(2, "0")}:00`;
 }
 
