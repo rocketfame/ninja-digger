@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, BarChart3, Flame, Send } from "lucide-react";
+import { Home, BarChart3, Flame, Send, Layers } from "lucide-react";
 import { SiBeatport, SiSoundcloud, SiSpotify } from "react-icons/si";
 import type { ComponentType } from "react";
 
@@ -16,6 +16,7 @@ const NAV_ITEMS: { href: string; label: string; icon: IconCmp; brand?: string; e
   { href: "/spotify-leads", label: "Spotify", icon: SiSpotify, brand: "#1db954", match: "/spotify-" },
   { href: "/radar", label: "Radar", icon: Flame, brand: "#ff4d00" },
   { href: "/mass", label: "Масовий", icon: Send, brand: "#c084fc" },
+  { href: "/segments", label: "Сегменти", icon: Layers, brand: "#f97316" },
   { href: "/analytics", label: "Аналітика", icon: BarChart3 },
 ];
 
