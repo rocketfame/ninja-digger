@@ -118,10 +118,12 @@ export async function advance(budgetMs = 240_000): Promise<Advance[]> {
       let budget = Math.max(0, k.ceiling - base);
       const cycle = cyclesToday + 1;
       const filled: string[] = [];
-      for (const p of k.platforms) {
-        if (left() < 45_000 || budget <= 0) break;
-        const take = Math.min(k.perPlatform, budget);
-        const r = await fillGroup(p, take, cycle, left() - 15_000).catch((e) => ({ name: "", id: 0, members: 0, error: e instanceof Error ? e.message : String(e) }));
+      // Split the budget across platforms up front, fill all three at once.
+      const shares: [Platform, number][] = [];
+      let rest = budget;
+      for (const p of k.platforms) { const take = Math.min(k.perPlatform, rest); if (take > 0) { shares.push([p, take]); rest -= take; } }
+      const results = await Promise.all(shares.map(([p, take]) => fillGroup(p, take, cycle, left() - 15_000).then((r) => ({ p, r })).catch((e) => ({ p, r: { name: "", id: 0, members: 0, error: e instanceof Error ? e.message : String(e) } }))));
+      for (const { p, r } of results) {
         if (r.id) {
           await pool.query(`INSERT INTO mass_groups (group_id, group_name, platform, cycle, day, members) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (group_id) DO UPDATE SET members = EXCLUDED.members`, [r.id, r.name, p, cycle, kyivDay(), r.members]);
           budget -= r.members;
@@ -208,19 +210,26 @@ async function deleteGroupContacts(gid: number, budgetMs: number): Promise<{ del
   const t0 = Date.now();
   const customerSet = new Set<string>((await pool.query<{ email: string }>(`SELECT email FROM shop_customers UNION SELECT email FROM lead_exports WHERE outcome = 'converted'`)).rows.map((r) => r.email));
   let deleted = 0, customers = 0;
-  const detach: number[] = [];
+  const CONCURRENCY = 10; // eSputnik has no bulk delete; ten in flight keeps 1 700 under a minute
   for (let pass = 0; pass < 20; pass++) {
     if (Date.now() - t0 > budgetMs) break;
     const page = await api<EsputnikContact[]>(`/v1/group/${gid}/contacts?startindex=1&maxrows=500`).catch(() => null);
     if (!Array.isArray(page) || page.length === 0) break;
+    const detach: number[] = [];
+    const toDelete: number[] = [];
     for (const row of page) {
-      if (!row.id || Date.now() - t0 > budgetMs) continue;
+      if (!row.id) continue;
       const e = contactEmail(row);
-      if (row.externalCustomerId || (e && customerSet.has(e)) || isCustomerContact(row)) { customers++; detach.push(row.id); continue; }
-      try { await esputnikDelete(row.id); deleted++; } catch { /* retry next pass */ }
+      if (row.externalCustomerId || (e && customerSet.has(e)) || isCustomerContact(row)) { customers++; detach.push(row.id); }
+      else toDelete.push(row.id);
     }
-    if (detach.length) { await api(`/v1/group/${gid}/contacts/detach`, { method: "POST", body: JSON.stringify({ contactIds: detach.splice(0) }) }).catch(() => {}); }
-    if (page.length < 500) { const again = await groupMembersById(gid).catch(() => new Set<string>()); if (again.size === 0) break; }
+    for (let i = 0; i < toDelete.length; i += CONCURRENCY) {
+      if (Date.now() - t0 > budgetMs) break;
+      const results = await Promise.allSettled(toDelete.slice(i, i + CONCURRENCY).map((id) => esputnikDelete(id)));
+      deleted += results.filter((r) => r.status === "fulfilled").length;
+    }
+    if (detach.length) await api(`/v1/group/${gid}/contacts/detach`, { method: "POST", body: JSON.stringify({ contactIds: detach }) }).catch(() => {});
+    if (page.length < 500 && toDelete.length === 0) break;
   }
   const remaining = (await groupMembersById(gid).catch(() => new Set<string>())).size;
   return { deleted, customers, remaining };
