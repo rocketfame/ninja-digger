@@ -30,7 +30,11 @@ function whereSql(o: MassSelect, firstParam: number): { sql: string; params: unk
   const parts = [
     `s.email NOT IN (${SUPPRESSED_SQL})`,
     massEligibleSql("s.email", "s.cold_at"),
-    o.verifiedOnly === false ? `COALESCE(v.verdict,'unknown') <> 'invalid'` : `v.verdict = 'valid'`,
+    // The mass channel takes every checked mailbox that is not dead: 'unknown'
+    // is what Outlook/iCloud/Yahoo answer to a probe, 'catch_all' is a domain
+    // that accepts everything. The 15.09 test on such addresses delivered
+    // 100% with zero bounces. Only 'invalid' (and never-checked) stay out.
+    o.verifiedOnly === false ? `COALESCE(v.verdict,'unknown') <> 'invalid'` : `v.verdict IN ('valid','unknown','catch_all')`,
   ];
   if (o.engagement === "engaged") parts.push(`s.email IN (${OPENED_SQL})`);
   if (o.engagement === "replied") parts.push(`s.email IN (${REPLIED_SQL})`);
