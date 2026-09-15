@@ -68,6 +68,10 @@ export async function advance(budgetMs = 240_000): Promise<Advance[]> {
   const done: Advance[] = [];
   const left = () => budgetMs - (Date.now() - t0);
 
+  // ── 0. settle imports started earlier (this run or a previous one) ─────
+  done.push(...(await settleFills(left() - 60_000)));
+  const pendingLeft = async () => (await pendingFills()).length;
+
   // ── A. delete groups whose campaign has delivered ─────────────────────
   const delivered = await pool.query<{ group_id: string; group_name: string; members: number; delivered: number; scheduled_at: string | null }>(
     `SELECT group_id, group_name, members, delivered, scheduled_at FROM mass_groups
@@ -82,6 +86,42 @@ export async function advance(budgetMs = 240_000): Promise<Advance[]> {
     done.push({ step: "delete", detail: { group: g.group_name, ...r } });
   }
 
+  // ── C. fill a new cycle if allowed ─────────────────────────────────────
+  // A cycle is filled up to the ceiling, in as many pushes as it takes
+  // (top-ups join the open, unsent cycle). Nothing is filled while a sent
+  // group is still being delivered.
+  const st = await pool.query<{ sent: string; unsent: string; unsent_cycle: string | null }>(
+    `SELECT COUNT(*) FILTER (WHERE broadcast_id IS NOT NULL) sent, COUNT(*) FILTER (WHERE broadcast_id IS NULL) unsent, MAX(cycle) FILTER (WHERE broadcast_id IS NULL) unsent_cycle
+       FROM mass_groups WHERE deleted_at IS NULL`).then((r) => r.rows[0]);
+  const openSent = Number(st.sent), openUnsent = Number(st.unsent);
+  const cyclesToday = await pool.query<{ c: string }>(`SELECT COALESCE(MAX(cycle),0) c FROM mass_groups WHERE day = $1`, [kyivDay()]).then((r) => Number(r.rows[0].c));
+  const mayFill = openUnsent > 0 || cyclesToday < k.maxCycles;
+  if (k.perPlatform > 0 && openSent === 0 && (await pendingLeft()) === 0 && mayFill && left() > 90_000) {
+    const base = await esputnikBaseSize({ maxAgeMin: 0, budgetMs: 90_000 }).catch(() => null);
+    if (base === null) {
+      done.push({ step: "fill-skipped", detail: { reason: "base size unreadable" } });
+      await sendTelegramMessage("⛔ eSputnik: не зміг прочитати розмір бази — цикл відкладено.").catch(() => {});
+    } else {
+      let budget = Math.max(0, k.ceiling - base);
+      const cycle = openUnsent > 0 && st.unsent_cycle ? Number(st.unsent_cycle) : cyclesToday + 1;
+      const filled: string[] = [];
+      // Platforms in knob order, each taking what is left of the budget
+      // (the push itself is one request; only the settle waits).
+      if (budget >= 50) for (const p of k.platforms) {
+        if (budget < 50 || left() < 60_000) break;
+        const r = await fillGroup(p, Math.min(k.perPlatform, budget), cycle).catch((e) => ({ name: "", pushed: 0, session: null, error: e instanceof Error ? e.message : String(e) }));
+        if (r.pushed) { budget -= r.pushed; filled.push(`${LABEL[p] ?? p} ${r.pushed}`); }
+        done.push({ step: "push", detail: { platform: p, ...r } });
+      }
+      else done.push({ step: "fill-skipped", detail: { reason: "at ceiling", base, ceiling: k.ceiling } });
+      // stay on it while the budget allows: most imports settle within a minute or two
+      while ((await pendingLeft()) > 0 && left() > 30_000) {
+        await new Promise((r) => setTimeout(r, 8000));
+        done.push(...(await settleFills(left() - 20_000)).filter((x) => x.step !== "fill-waiting"));
+      }
+      if (filled.length) await sendTelegramMessage(`📤 eSputnik цикл ${cycle}: ${filled.join(" · ")}\nБаза була ${base} із стелі ${k.ceiling}`).catch(() => {});
+    }
+  }
   // ── B. schedule broadcasts for filled groups without one ──────────────
   const unsent = await pool.query<{ group_id: string; group_name: string; platform: string; members: number }>(
     `SELECT group_id, group_name, platform, members FROM mass_groups WHERE deleted_at IS NULL AND broadcast_id IS NULL AND members > 0 ORDER BY created_at`
@@ -106,34 +146,6 @@ export async function advance(budgetMs = 240_000): Promise<Advance[]> {
     }
   }
 
-  // ── C. fill a new cycle if allowed ─────────────────────────────────────
-  const open = await pool.query<{ c: string }>(`SELECT COUNT(*) c FROM mass_groups WHERE deleted_at IS NULL`).then((r) => Number(r.rows[0].c));
-  const cyclesToday = await pool.query<{ c: string }>(`SELECT COALESCE(MAX(cycle),0) c FROM mass_groups WHERE day = $1`, [kyivDay()]).then((r) => Number(r.rows[0].c));
-  if (k.perPlatform > 0 && open === 0 && cyclesToday < k.maxCycles && left() > 90_000) {
-    const base = await esputnikBaseSize({ maxAgeMin: 0, budgetMs: 90_000 }).catch(() => null);
-    if (base === null) {
-      done.push({ step: "fill-skipped", detail: { reason: "base size unreadable" } });
-      await sendTelegramMessage("⛔ eSputnik: не зміг прочитати розмір бази — цикл відкладено.").catch(() => {});
-    } else {
-      let budget = Math.max(0, k.ceiling - base);
-      const cycle = cyclesToday + 1;
-      const filled: string[] = [];
-      // Split the budget across platforms up front, fill all three at once.
-      const shares: [Platform, number][] = [];
-      let rest = budget;
-      for (const p of k.platforms) { const take = Math.min(k.perPlatform, rest); if (take > 0) { shares.push([p, take]); rest -= take; } }
-      const results = await Promise.all(shares.map(([p, take]) => fillGroup(p, take, cycle, left() - 15_000).then((r) => ({ p, r })).catch((e) => ({ p, r: { name: "", id: 0, members: 0, error: e instanceof Error ? e.message : String(e) } }))));
-      for (const { p, r } of results) {
-        if (r.id) {
-          await pool.query(`INSERT INTO mass_groups (group_id, group_name, platform, cycle, day, members) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (group_id) DO UPDATE SET members = EXCLUDED.members`, [r.id, r.name, p, cycle, kyivDay(), r.members]);
-          budget -= r.members;
-          filled.push(`${LABEL[p] ?? p} ${r.members}`);
-        }
-        done.push({ step: "fill", detail: { platform: p, ...r } });
-      }
-      if (filled.length) await sendTelegramMessage(`📤 eSputnik цикл ${cycle}: ${filled.join(" · ")}\nБаза була ${base} із стелі ${k.ceiling}`).catch(() => {});
-    }
-  }
   return done;
 }
 
@@ -147,17 +159,33 @@ function nextSendSlot(hourKyiv: number): string {
   return `${day}T${String(hourKyiv).padStart(2, "0")}:00`;
 }
 
-/** Create the group by upserting the batch into it (eSputnik attaches only on creation), read it back. */
-async function fillGroup(platform: Platform, limit: number, cycle: number, budgetMs: number): Promise<{ name: string; id: number; members: number }> {
-  const t0 = Date.now();
+/**
+ * Pending fills. Per the eSputnik docs, POST /v1/contacts is asynchronous:
+ * it answers with an asyncSessionId and the import runs in a queue
+ * (STARTED → IMPORTING → FINISHED | ERROR, read via /v1/importstatus/{id}).
+ * The group named in groupNames appears only once the import runs. So a
+ * fill is two steps that may span cron runs: push (this record) and settle
+ * (below), and neither depends on the request that started it surviving.
+ */
+type PendingFill = { platform: Platform; name: string; cycle: number; session: string | null; since: number };
+const PENDING_KEY = "mass_pending_fills";
+async function pendingFills(): Promise<PendingFill[]> {
+  try { return JSON.parse(await getSetting(PENDING_KEY, "[]")) as PendingFill[]; } catch { return []; }
+}
+const savePending = (p: PendingFill[]) => setSetting(PENDING_KEY, JSON.stringify(p));
+
+/** Push one platform's batch: upsert into a fresh group, write the ledger, remember the import session. */
+async function fillGroup(platform: Platform, limit: number, cycle: number): Promise<{ name: string; pushed: number; session: string | null }> {
   const day = kyivDay();
   const dd = `${day.slice(8, 10)}.${day.slice(5, 7)}.${day.slice(0, 4)}`;
-  const name = cycle > 1 ? `Leads: ${LABEL[platform] ?? platform} ${dd} /${cycle} (auto)` : `Leads: ${LABEL[platform] ?? platform} ${dd} (auto)`;
+  let name = cycle > 1 ? `Leads: ${LABEL[platform] ?? platform} ${dd} /${cycle} (auto)` : `Leads: ${LABEL[platform] ?? platform} ${dd} (auto)`;
+  for (let n = 2; await groupIdByName(name); n++) name = name.replace(/( \+\d+)? \(auto\)$/, ` +${n} (auto)`); // top-up of the same cycle
   const rows = await selectMassLeads({ platforms: [platform], limit });
-  if (rows.length === 0) return { name, id: 0, members: 0 };
+  if (rows.length === 0) return { name, pushed: 0, session: null };
+  let session: string | null = null;
   for (let i = 0; i < rows.length; i += 3000) {
     const chunk = rows.slice(i, i + 3000);
-    await api("/v1/contacts", {
+    const r = await api<{ asyncSessionId?: string; errorMessage?: string }>("/v1/contacts", {
       method: "POST",
       body: JSON.stringify({
         contacts: chunk.map((l) => ({
@@ -168,21 +196,69 @@ async function fillGroup(platform: Platform, limit: number, cycle: number, budge
         dedupeOn: "email", contactFields: ["firstName", "timeZone", "address"], groupNames: [name], restoreDeleted: true,
       }),
     });
+    if (r?.errorMessage) throw new Error(r.errorMessage);
+    session = r?.asyncSessionId ?? session;
   }
-  // find the group, wait for it to fill, read it back
-  let gid = 0;
-  for (let i = 0; i < 10 && !gid; i++) { gid = await groupIdByName(name); if (!gid) await new Promise((r) => setTimeout(r, 2000)); }
-  if (!gid) throw new Error(`group ${name} not created`);
-  let members = new Set<string>();
-  for (let tries = 0; tries < 30 && Date.now() - t0 < budgetMs; tries++) {
-    await new Promise((r) => setTimeout(r, 3000));
-    const now = await groupMembersById(gid);
-    if (now.size >= rows.length || (now.size > 0 && now.size === members.size)) { members = now; break; }
-    members = now;
+  // The ledger is written the moment the push is accepted: these addresses
+  // are the mass channel's now, whatever the import does with them. Settle
+  // releases the ones that never landed.
+  await recordHandover(rows, name, "esputnik");
+  const pending = await pendingFills();
+  pending.push({ platform, name, cycle, session, since: Date.now() });
+  await savePending(pending);
+  return { name, pushed: rows.length, session };
+}
+
+/**
+ * Settle pending fills: once eSputnik reports the import done (or has no
+ * session to ask), find the group, read it back, release the ledger rows
+ * that did not land, and open the group in mass_groups. Returns what changed.
+ */
+async function settleFills(budgetMs: number): Promise<Advance[]> {
+  const t0 = Date.now();
+  const out: Advance[] = [];
+  let pending = await pendingFills();
+  for (const f of pending) {
+    if (Date.now() - t0 > budgetMs) break;
+    let status = "FINISHED";
+    if (f.session) {
+      const st = await api<{ status?: string; description?: string }>(`/v1/importstatus/${f.session}`).catch(() => null);
+      status = st?.status ?? "UNKNOWN";
+      // an import older than 20 minutes with no readable status is settled by its group, not its session
+      if ((status === "STARTED" || status === "IMPORTING" || status === "UNKNOWN") && Date.now() - f.since < 20 * 60_000) { out.push({ step: "fill-waiting", detail: { group: f.name, status } }); continue; }
+    }
+    const gid = await groupIdByName(f.name);
+    if (!gid) {
+      if (Date.now() - f.since > 60 * 60_000) {
+        // nothing ever appeared: hand the addresses back and forget the fill
+        await releaseBatch(f.name);
+        pending = pending.filter((x) => x !== f); await savePending(pending);
+        out.push({ step: "fill-abandoned", detail: { group: f.name, status } });
+      } else out.push({ step: "fill-waiting", detail: { group: f.name, status, reason: "group not visible yet" } });
+      continue;
+    }
+    const members = await groupMembersById(gid);
+    const ledger = await pool.query<{ email: string }>(`SELECT email FROM lead_exports WHERE batch = $1`, [f.name]).then((r) => r.rows.map((x) => x.email));
+    let landed = ledger.filter((e) => members.has(e)).length;
+    if (ledger.length === 0 && members.size > 0) {
+      // pushed by a run that died before writing the ledger: adopt what is in the group
+      await recordHandover([...members].map((email) => ({ email, platform: f.platform })), f.name, "esputnik");
+      landed = members.size;
+    } else if (landed < ledger.length) {
+      const gone = ledger.filter((e) => !members.has(e));
+      await pool.query(`DELETE FROM lead_exports WHERE batch = $1 AND email = ANY($2::text[])`, [f.name, gone]);
+      await pool.query(`DELETE FROM email_events WHERE event = 'sent' AND meta->>'campaign' = $1 AND email = ANY($2::text[])`, [f.name, gone]).catch(() => {});
+    }
+    await pool.query(`INSERT INTO mass_groups (group_id, group_name, platform, cycle, day, members) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (group_id) DO UPDATE SET members = EXCLUDED.members`, [gid, f.name, f.platform, f.cycle, kyivDay(), landed]);
+    pending = pending.filter((x) => x !== f); await savePending(pending);
+    out.push({ step: "fill", detail: { group: f.name, id: gid, members: landed, pushed: ledger.length, status } });
   }
-  const landed = rows.filter((l) => members.has(l.email.toLowerCase()));
-  await recordHandover(landed, name, "esputnik");
-  return { name, id: gid, members: landed.length };
+  return out;
+}
+
+async function releaseBatch(batch: string): Promise<void> {
+  await pool.query(`DELETE FROM lead_exports WHERE batch = $1 AND outcome IS NULL`, [batch]);
+  await pool.query(`DELETE FROM email_events WHERE event = 'sent' AND meta->>'campaign' = $1`, [batch]).catch(() => {});
 }
 
 async function groupIdByName(name: string): Promise<number> {

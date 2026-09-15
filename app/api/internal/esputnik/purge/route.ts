@@ -130,13 +130,7 @@ export async function POST(request: Request) {
       const purge = await purgeCustomersFromGroup(group);
       if (force.length) purge.detached.push(...(await detachFromGroup(group, force)));
       const members = await groupMembers(group);
-      const ledger = await pool.query<{ email: string }>(`SELECT email FROM lead_exports WHERE batch = $1`, [group]).then((r) => r.rows.map((x) => x.email));
-      const notInGroup = ledger.filter((e) => !members.has(e));
-      if (notInGroup.length) {
-        await pool.query(`DELETE FROM lead_exports WHERE batch = $1 AND email = ANY($2::text[])`, [group, notInGroup]);
-        await pool.query(`DELETE FROM email_events WHERE event = 'sent' AND meta->>'campaign' = $1 AND email = ANY($2::text[])`, [group, notInGroup]).catch(() => {});
-      }
-      out[group] = { checked: purge.checked, customersDetached: purge.detached, inGroup: members.size, ledgerBefore: ledger.length, ledgerReleased: notInGroup.length };
+      out[group] = { checked: purge.checked, customersDetached: purge.detached, inGroup: members.size };
     } catch (e) {
       out[group] = { error: e instanceof Error ? e.message : String(e) };
     }
