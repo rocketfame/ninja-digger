@@ -258,7 +258,23 @@ type Activity = { email?: string; activityStatus?: string; activityDateTime?: st
 
 // eSputnik's agent measured: maxrows above 1000 and windows above a day misbehave.
 const PAGE = 1000;
-const fmt = (d: Date) => d.toISOString().slice(0, 19);
+// The activity API speaks the organisation's time zone (Europe/Kyiv): a
+// campaign sent 16:16 UTC shows activityDateTime 19:29. Windows are asked
+// for in Kyiv time and timestamps read back as Kyiv time.
+const KYIV = "Europe/Kyiv";
+const fmt = (d: Date) => {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: KYIV, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(d).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`;
+};
+/** "YYYY-MM-DDTHH:mm:ss" in Kyiv → Date (UTC). */
+export function kyivToDate(s: string): Date | undefined {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/.exec(s);
+  if (!m) return undefined;
+  const guess = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  // offset of Kyiv at that instant (+2 or +3), applied once
+  const local = Date.parse(fmt(new Date(guess)) + "Z");
+  return new Date(guess - (local - guess));
+}
 
 /**
  * One window of activity. eSputnik's v2 endpoint ignores start indexes and
@@ -298,7 +314,7 @@ export async function pullEsputnikActivity(from: Date, to: Date, budgetMs = 80_0
       if (!a.email || !event) continue;
       const r = await recordOutcome({
         email: a.email, outcome: event, src: "esputnik", campaign: a.messageName,
-        at: a.activityDateTime && !Number.isNaN(Date.parse(a.activityDateTime)) ? new Date(a.activityDateTime) : undefined,
+        at: a.activityDateTime ? kyivToDate(a.activityDateTime) : undefined,
       });
       if (r.logged) logged++;
       if (r.suppressed) suppressed++;
