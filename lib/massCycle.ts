@@ -52,7 +52,7 @@ async function knobs(): Promise<Knobs> {
     perPlatform: parseInt(await g("esputnik_daily_push", "0"), 10) || 0,
     maxCycles: parseInt(await g("esputnik_max_cycles_per_day", "1"), 10) || 1,
     platforms, messages,
-    sendHourKyiv: parseInt(await g("esputnik_send_hour", "15"), 10) || 15,
+    sendHourKyiv: parseInt(await g("esputnik_send_hour", "0"), 10) || 0,
   };
 }
 
@@ -89,15 +89,18 @@ export async function advance(budgetMs = 240_000): Promise<Advance[]> {
   for (const g of unsent) {
     const messageId = k.messages[g.platform];
     if (!messageId) { done.push({ step: "broadcast-skipped", detail: { group: g.group_name, reason: `no esputnik_message_${g.platform}` } }); continue; }
-    const startDate = nextSendSlot(k.sendHourKyiv);
+    // esputnik_send_hour = 0 → send the moment the group is filled (the cycle
+    // is fact-driven, so the campaign follows the fill, not the clock).
+    const startDate = k.sendHourKyiv > 0 ? nextSendSlot(k.sendHourKyiv) : null;
     try {
       const b = await api<{ broadcastId?: number; id?: number }>("/v1/broadcast", {
         method: "POST",
-        body: JSON.stringify({ messageId: String(messageId), groups: [Number(g.group_id)], excludedGroups: EXCLUDED_GROUPS, title: g.group_name, startDate }),
+        body: JSON.stringify({ messageId: String(messageId), groups: [Number(g.group_id)], excludedGroups: EXCLUDED_GROUPS, title: g.group_name, ...(startDate ? { startDate } : {}) }),
       });
       const bid = b.broadcastId ?? b.id ?? 0;
-      await pool.query(`UPDATE mass_groups SET broadcast_id = $2, message_id = $3, scheduled_at = ($4 || ':00')::timestamp AT TIME ZONE 'Europe/Kyiv' WHERE group_id = $1`, [g.group_id, bid || -1, messageId, startDate]);
-      done.push({ step: "broadcast", detail: { group: g.group_name, broadcastId: bid, startDate } });
+      if (startDate) await pool.query(`UPDATE mass_groups SET broadcast_id = $2, message_id = $3, scheduled_at = ($4 || ':00')::timestamp AT TIME ZONE 'Europe/Kyiv' WHERE group_id = $1`, [g.group_id, bid || -1, messageId, startDate]);
+      else await pool.query(`UPDATE mass_groups SET broadcast_id = $2, message_id = $3, scheduled_at = now() WHERE group_id = $1`, [g.group_id, bid || -1, messageId]);
+      done.push({ step: "broadcast", detail: { group: g.group_name, broadcastId: bid, startDate: startDate ?? "now" } });
     } catch (e) {
       done.push({ step: "broadcast-failed", detail: { group: g.group_name, error: e instanceof Error ? e.message : String(e) } });
     }
