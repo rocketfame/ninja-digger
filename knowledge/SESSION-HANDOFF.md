@@ -19,7 +19,7 @@ Read this first in a new session. It says where we stopped and what to do next.
 | `esputnik_poll_cursor` | ISO ts | resumable activity pull (2 h overlap) |
 | `mass_pending_fills` | [] | async imports waiting to settle |
 
-Today's group: **`Leads: SoundCloud 16.09.2026 (auto)`**, 476 members (1 000 pushed, eSputnik refused 524 — cause unknown, refusal log added in the 11:35 UTC run), broadcast **4532505 at 16:00 Kyiv**. Cron (`/api/cron/esputnik-sync`, hourly at :35 UTC) will top up to 1 000 if it can, then delete the group once ≥ 50 % delivered.
+Today (16.09) went out as **1 000 in two shots**: `Leads: SoundCloud 16.09.2026 (auto)` 476 (broadcast 4532505, 16:00 Kyiv, 474 delivered) + `/2 (auto)` 524 (broadcast 4533059, 18:38 Kyiv, 522 delivered, 0 refused after the name fix). Both groups already deleted from eSputnik. The top-up was done through the cron with temporary knobs (daily_push=524, max_cycles=2, send_hour=0), knobs restored to 1000 / 1 / 16 afterwards — this is the way to fill a shortfall the same day.
 
 Yesterday's cycles 2 (4 585) and 3 (4 716) are fully delivered and deleted from eSputnik.
 
