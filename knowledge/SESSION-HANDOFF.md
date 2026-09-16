@@ -1,4 +1,4 @@
-# Session handoff — 16.09.2026 (Lisbon 12:xx / Kyiv 14:xx)
+# Session handoff — 16.09.2026 (Lisbon 13:40 / Kyiv 15:40)
 
 Read this first in a new session. It says where we stopped and what to do next.
 
@@ -25,7 +25,7 @@ Yesterday's cycles 2 (4 585) and 3 (4 716) are fully delivered and deleted from 
 
 ## Open questions to close next session
 
-1. **Why does eSputnik refuse ~half of the Re-Ex import?** Look at Vercel logs for `[massCycle] ... eSputnik refused` (warn printed by `fillGroup`). Candidates: addresses previously deleted by hygiene in eSputnik and not restorable, or import validation. If the same 524 keep failing, mark them so the selection skips them.
+1. ~~Why does eSputnik refuse ~half of the Re-Ex import?~~ **CLOSED 16.09 14:xx** — eSputnik's `firstName` validator drops the whole contact: ≤ 40 chars, ≤ 3 words, no symbols, a dot only at the end of a ≤ 3-char word ("Jr."). SoundCloud names ("D o n K r e z", "Gabe Reed & SteezDeeez Founder, Composer, Producer") fail en masse. Fix deployed (`d87985e`): `cleanFirstName` now fits the validator (383 of the 524 keep a name, 141 go nameless, 0 addresses lost), and `fillGroup` re-pushes any `failedContacts` without a name. Verified against the live API with 14 hard names — all accepted. The 524 were released back to the pool and will be picked up by the next fill.
 2. **Read rate of the 16:00 warm-up** — compare at 18:00 Kyiv with the baseline: cycle 2 had ~40 reads in the first 40 min / 2.4 % in 24 h; cycle 3 (after the reputation hit) 0.7 %. Below ~0.4 % in 2 h = Gmail spam folder → keep volume low.
 3. **Postmaster tomorrow (17.09)**: `promosound.net` was added and verified today (TXT via Cloudflare zone `c43b6e23088a066145dd117dbdd49a80`). The daily spam-rate / domain reputation graphs appear after the next daily update. Also check `offers.promosound.net`. Full pace (3 cycles × ~4 600) only when promosound.net is Compliant and reads ≥ ~2 %.
 4. **Plan B** if promosound.net does not recover within ~a week: a separate domain for offers, unrelated to promosound.net (user buys it; DNS + eSputnik + 7-day warm-up is ours).
@@ -45,6 +45,7 @@ SoundCloud 1 484 963 profiles / 232 821 with email / 168 742 `valid` / **103 675
 
 ## Code landed today (all deployed, on main)
 
+- `lib/esputnikStatus.ts` + `lib/massCycle.ts` (14:xx): eSputnik-safe first names + nameless retry of refused contacts (see closed question 1).
 - `lib/massCycle.ts`: async import per eSputnik docs (push → `mass_pending_fills` → settle via `/v1/importstatus`), top-up to the ceiling within the open cycle, broadcast after fill, deletes 10 in flight, per-platform quota per cycle, `esputnik_sc_source` knob, refusal logging.
 - `lib/esputnik.ts`: activity API is Europe/Kyiv (windows and timestamps), full-minute windows fetched whole (broadcast minutes exceed 1 000 rows), resumable cursor.
 - `lib/leadBridge.ts`: `valid` only; `scSource` filter.
