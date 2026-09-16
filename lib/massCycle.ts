@@ -190,23 +190,34 @@ async function fillGroup(platform: Platform, limit: number, cycle: number): Prom
   const rows = await selectMassLeads({ platforms: [platform], limit, scSource });
   if (rows.length === 0) return { name, pushed: 0, session: null };
   let session: string | null = null;
-  for (let i = 0; i < rows.length; i += 3000) {
-    const chunk = rows.slice(i, i + 3000);
-    const r = await api<{ asyncSessionId?: string; errorMessage?: string; failedContacts?: unknown }>("/v1/contacts", {
+  type Failed = { channels?: { value?: string } | { value?: string }[]; error?: string };
+  const push = async (contacts: Record<string, unknown>[]): Promise<Failed[]> => {
+    const r = await api<{ asyncSessionId?: string; errorMessage?: string; failedContacts?: Failed | Failed[] }>("/v1/contacts", {
       method: "POST",
-      body: JSON.stringify({
-        contacts: chunk.map((l) => ({
-          firstName: cleanFirstName(l.name),
-          channels: [{ type: "email", value: l.email }],
-          ...(l.country && TZ[l.country.toUpperCase()] ? { timeZone: TZ[l.country.toUpperCase()], address: { countryCode: l.country.toUpperCase() } } : {}),
-        })),
-        dedupeOn: "email", contactFields: ["firstName", "timeZone", "address"], groupNames: [name], restoreDeleted: true,
-      }),
+      body: JSON.stringify({ contacts, dedupeOn: "email", contactFields: ["firstName", "timeZone", "address"], groupNames: [name], restoreDeleted: true }),
     });
     if (r?.errorMessage) throw new Error(r.errorMessage);
     session = r?.asyncSessionId ?? session;
-    const failed = Array.isArray(r?.failedContacts) ? r.failedContacts : r?.failedContacts ? [r.failedContacts] : [];
-    if (failed.length) console.warn(`[massCycle] ${name}: eSputnik refused ${failed.length} of ${chunk.length}`, JSON.stringify(failed.slice(0, 3)));
+    return Array.isArray(r?.failedContacts) ? r.failedContacts : r?.failedContacts ? [r.failedContacts] : [];
+  };
+  const failedEmail = (f: Failed) => (Array.isArray(f.channels) ? f.channels[0]?.value : f.channels?.value)?.toLowerCase();
+  for (let i = 0; i < rows.length; i += 3000) {
+    const chunk = rows.slice(i, i + 3000);
+    const failed = await push(chunk.map((l) => ({
+      firstName: cleanFirstName(l.name),
+      channels: [{ type: "email", value: l.email }],
+      ...(l.country && TZ[l.country.toUpperCase()] ? { timeZone: TZ[l.country.toUpperCase()], address: { countryCode: l.country.toUpperCase() } } : {}),
+    })));
+    if (!failed.length) continue;
+    // eSputnik validates firstName (≤ 40 chars, ≤ 3 words, no symbols) and drops
+    // the whole contact when it fails — 16.09 that was 524 of 1 000. A name is
+    // never worth losing the address: push the refused ones again, nameless.
+    console.warn(`[massCycle] ${name}: eSputnik refused ${failed.length} of ${chunk.length}`, JSON.stringify(failed.slice(0, 3)));
+    const retry = failed.map(failedEmail).filter((e): e is string => Boolean(e));
+    if (retry.length) {
+      const again = await push(retry.map((email) => ({ channels: [{ type: "email", value: email }] })));
+      if (again.length) console.warn(`[massCycle] ${name}: ${again.length} still refused without a name`, JSON.stringify(again.slice(0, 3)));
+    }
   }
   // The ledger is written the moment the push is accepted: these addresses
   // are the mass channel's now, whatever the import does with them. Settle

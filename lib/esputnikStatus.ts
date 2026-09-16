@@ -57,14 +57,33 @@ export function contactEmail(c: EsputnikContact): string | null {
 
 /**
  * eSputnik rejects a contact silently (it just drops out of the batch) when
- * firstName carries characters it dislikes — 188 of 1 497 vanished that way
- * on the first push. Letters, digits, space, dot, apostrophe, hyphen only;
- * empty after cleaning means "send no name at all".
+ * firstName fails its validator. What it told us on 16.09 (524 of 1 000
+ * SoundCloud names refused): at most 40 characters, at most 3 words, letters
+ * in any script, digits, apostrophe and hyphen only inside a word, one dot
+ * only at the end of a word of up to 3 characters ("Jr."). A name that is
+ * really a domain or address, or spaced-out letters ("D o n"), is not worth
+ * a fragment: empty means "send no name at all".
  */
+const NAME_MAX_CHARS = 40;
+const NAME_MAX_WORDS = 3;
+const DOMAIN_LIKE = /@|\.(com|net|org|io|co|fm|tv|me|uk|de|br|mx|es|fr|it|nl|ru|ua|info|biz|music|art|link|app|xyz)\b/i;
 export function cleanFirstName(name: string | null | undefined): string | undefined {
-  if (!name) return undefined;
-  const s = name.normalize("NFC").replace(/[^\p{L}\p{N} .'\-]/gu, " ").replace(/\s+/g, " ").trim().slice(0, 60);
-  return s || undefined;
+  if (!name || DOMAIN_LIKE.test(name)) return undefined;
+  const tokens = name
+    .normalize("NFC")
+    .replace(/[^\p{L}\p{N} .'\-]/gu, " ")
+    .split(/\s+/)
+    .flatMap((t) => (/^[^.]{1,3}\.$/.test(t) ? [t] : t.split(".")))
+    .map((t) => {
+      const dot = t.endsWith(".") ? "." : "";
+      const core = t.slice(0, t.length - dot.length).replace(/^['\-]+|['\-]+$/g, "");
+      return core ? core + dot : "";
+    })
+    .filter((t) => t && t.length <= NAME_MAX_CHARS);
+  if (tokens.filter((t) => t.length === 1).length >= 2) return undefined;
+  let out = tokens.slice(0, NAME_MAX_WORDS);
+  while (out.length && out.join(" ").length > NAME_MAX_CHARS) out = out.slice(0, -1);
+  return out.length ? out.join(" ") : undefined;
 }
 
 /**

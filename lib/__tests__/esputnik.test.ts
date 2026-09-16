@@ -61,6 +61,32 @@ describe("first names eSputnik will accept", () => {
     expect(cleanFirstName("★★★")).toBeUndefined();
     expect(cleanFirstName(null)).toBeUndefined();
   });
+  // eSputnik's own validator (16.09: it refused 524 of 1 000 SoundCloud names):
+  // "Incorrect string size: 46. Range: 0-40", "Too many words: 4. Allowed: 3",
+  // "Special characters are not allowed … one dot at the end of words not longer than 3 characters"
+  it("keeps at most three words and forty characters", () => {
+    expect(cleanFirstName("Gabe Reed & SteezDeeez Founder, Composer, Producer,")).toBe("Gabe Reed SteezDeeez");
+    expect(cleanFirstName("Binho Uckermann Deejay & Music Producer")).toBe("Binho Uckermann Deejay");
+    expect(cleanFirstName("Macht Rabatz am Kebabstand")).toBe("Macht Rabatz am");
+    expect(cleanFirstName("Supercalifragilisticexpialidociousandthensomemore Name")).toBe("Name");
+    expect(cleanFirstName("Supercalifragilisticexpialidociousandthensomemore")).toBeUndefined();
+  });
+  it("allows a dot only at the end of a short word", () => {
+    expect(cleanFirstName("Avocaudio.com")).toBeUndefined();
+    expect(cleanFirstName("someone@example.com")).toBeUndefined();
+    expect(cleanFirstName("Von .")).toBe("Von");
+    expect(cleanFirstName("J. R. Smith")).toBe("J. R. Smith");
+    expect(cleanFirstName("Dr. Dre")).toBe("Dr. Dre");
+    expect(cleanFirstName("Anna. Bell")).toBe("Anna Bell");
+  });
+  it("keeps apostrophe and hyphen only inside a word", () => {
+    expect(cleanFirstName("-Leo- 'Max'")).toBe("Leo Max");
+    expect(cleanFirstName("Jean-Luc")).toBe("Jean-Luc");
+  });
+  it("drops spaced-out letters instead of sending a fragment", () => {
+    expect(cleanFirstName("D o n K r e z")).toBeUndefined();
+    expect(cleanFirstName("B.A.D")).toBeUndefined();
+  });
 });
 
 describe("exact email match on a contact", () => {
