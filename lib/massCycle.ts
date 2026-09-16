@@ -180,7 +180,9 @@ async function fillGroup(platform: Platform, limit: number, cycle: number): Prom
   const dd = `${day.slice(8, 10)}.${day.slice(5, 7)}.${day.slice(0, 4)}`;
   let name = cycle > 1 ? `Leads: ${LABEL[platform] ?? platform} ${dd} /${cycle} (auto)` : `Leads: ${LABEL[platform] ?? platform} ${dd} (auto)`;
   for (let n = 2; await groupIdByName(name); n++) name = name.replace(/( \+\d+)? \(auto\)$/, ` +${n} (auto)`); // top-up of the same cycle
-  const rows = await selectMassLeads({ platforms: [platform], limit });
+  // esputnik_sc_source = any | reex | nonreex (user 16.09: warm-up on the graph, not on Re-Ex)
+  const scSource = (await getSetting("esputnik_sc_source", "any")) as "any" | "reex" | "nonreex";
+  const rows = await selectMassLeads({ platforms: [platform], limit, scSource });
   if (rows.length === 0) return { name, pushed: 0, session: null };
   let session: string | null = null;
   for (let i = 0; i < rows.length; i += 3000) {

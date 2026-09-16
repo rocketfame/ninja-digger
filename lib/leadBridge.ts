@@ -22,6 +22,7 @@ export type MassSelect = {
   minFollowers?: number;
   countries?: string[];
   cursor?: string;             // keyset: emails greater than this
+  scSource?: "any" | "reex" | "nonreex"; // SoundCloud: Re-Ex advertisers, the graph/upload, or both (default any)
 };
 
 function whereSql(o: MassSelect, firstParam: number): { sql: string; params: unknown[] } {
@@ -64,7 +65,9 @@ export async function selectMassLeads(o: MassSelect): Promise<MassLead[]> {
   const w = whereSql(o, 2);
   const single = o.platforms.length === 1 ? o.platforms[0] : null;
   const order = single && MASS_ORDER[single] ? MASS_ORDER[single] : `a.found_at DESC NULLS LAST`;
-  const extra = single && MASS_EXTRA_WHERE[single] ? MASS_EXTRA_WHERE[single] : ``;
+  let extra = single && MASS_EXTRA_WHERE[single] ? MASS_EXTRA_WHERE[single] : ``;
+  if (single === "soundcloud" && o.scSource === "nonreex") extra += ` AND (a.source_seed LIKE 'graph:%' OR a.source_seed LIKE 'upload:%')`;
+  if (single === "soundcloud" && o.scSource === "reex") extra += ` AND NOT (a.source_seed LIKE 'graph:%' OR a.source_seed LIKE 'upload:%')`;
   const join = single === "soundcloud" ? `JOIN sc_artists a ON LOWER(a.email) = s.email` : ``;
   const r = await pool.query<MassLead>(
     `WITH src AS (${leadSourcesSql(o.platforms)}),
