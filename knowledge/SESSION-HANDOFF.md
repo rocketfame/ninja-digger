@@ -1,0 +1,58 @@
+# Session handoff — 16.09.2026 (Lisbon 12:xx / Kyiv 14:xx)
+
+Read this first in a new session. It says where we stopped and what to do next.
+
+## State right now
+
+**Everything on Max's personal Brevo channel is PAUSED** (all four crons: `outreach_paused`, `sc_outreach_paused`, `sp_outreach_paused`, `radar_outreach_paused` = 1). Reason: Google Postmaster shows the parent domain `promosound.net` as **Not compliant** (user-reported spam ≥ 0.3 %) — caused by the Brevo cold outreach 08–13.09 (~900/day, 60 % Gmail). Inbox reply detection (IMAP → Telegram) still runs.
+
+**Mass channel (eSputnik, `offers.promosound.net`) is in warm-up / diagnostic mode:**
+
+| knob (app_settings) | value | meaning |
+|---|---|---|
+| `esputnik_daily_push` | 1000 | per platform per cycle (0 = off) |
+| `esputnik_max_cycles_per_day` | 1 | |
+| `esputnik_push_platforms` | soundcloud | Spotify dead, YouTube `valid` exhausted (164 left) |
+| `esputnik_sc_source` | reex | Re-Ex advertisers only (`nonreex` = graph/upload, `any`) |
+| `esputnik_send_hour` | 16 | Kyiv; 0 = send the moment the group is filled |
+| `esputnik_ceiling` | 24500 | hard ceiling of the eSputnik base — never raise |
+| `esputnik_poll_cursor` | ISO ts | resumable activity pull (2 h overlap) |
+| `mass_pending_fills` | [] | async imports waiting to settle |
+
+Today's group: **`Leads: SoundCloud 16.09.2026 (auto)`**, 476 members (1 000 pushed, eSputnik refused 524 — cause unknown, refusal log added in the 11:35 UTC run), broadcast **4532505 at 16:00 Kyiv**. Cron (`/api/cron/esputnik-sync`, hourly at :35 UTC) will top up to 1 000 if it can, then delete the group once ≥ 50 % delivered.
+
+Yesterday's cycles 2 (4 585) and 3 (4 716) are fully delivered and deleted from eSputnik.
+
+## Open questions to close next session
+
+1. **Why does eSputnik refuse ~half of the Re-Ex import?** Look at Vercel logs for `[massCycle] ... eSputnik refused` (warn printed by `fillGroup`). Candidates: addresses previously deleted by hygiene in eSputnik and not restorable, or import validation. If the same 524 keep failing, mark them so the selection skips them.
+2. **Read rate of the 16:00 warm-up** — compare at 18:00 Kyiv with the baseline: cycle 2 had ~40 reads in the first 40 min / 2.4 % in 24 h; cycle 3 (after the reputation hit) 0.7 %. Below ~0.4 % in 2 h = Gmail spam folder → keep volume low.
+3. **Postmaster tomorrow (17.09)**: `promosound.net` was added and verified today (TXT via Cloudflare zone `c43b6e23088a066145dd117dbdd49a80`). The daily spam-rate / domain reputation graphs appear after the next daily update. Also check `offers.promosound.net`. Full pace (3 cycles × ~4 600) only when promosound.net is Compliant and reads ≥ ~2 %.
+4. **Plan B** if promosound.net does not recover within ~a week: a separate domain for offers, unrelated to promosound.net (user buys it; DNS + eSputnik + 7-day warm-up is ours).
+
+## Money (as of 16.09)
+
+All shop orders since 15.07 (1 381) matched against every touch: personal channel $157.70 (1 buyer, 12 orders), mass $18.90 (1 buyer). 21 977 leads touched in total. Mass channel is too young to judge (9 641 of its 15 622 touches were on 15.09).
+
+## Lead base (16.09)
+
+SoundCloud 1 484 963 profiles / 232 821 with email / 168 742 `valid` / **103 675 ready** (valid + untouched + ICP); Re-Ex subset ready 7 530, graph/upload 100 601. YouTube 164 ready, Spotify 1. Warm base (touched) 21 608: hot 36 · warm 1 488 · cold 19 215 · blacklist 833.
+
+## Lessons written into memory today
+
+- `mass-valid-only` — mass channel only on `verdict = 'valid'`; `unknown` bounced 17 %, `catch_all` 7 %.
+- `gmail-reputation-2026-09` — the incident, timeline, and the rule: check Postmaster daily before raising volume.
+
+## Code landed today (all deployed, on main)
+
+- `lib/massCycle.ts`: async import per eSputnik docs (push → `mass_pending_fills` → settle via `/v1/importstatus`), top-up to the ceiling within the open cycle, broadcast after fill, deletes 10 in flight, per-platform quota per cycle, `esputnik_sc_source` knob, refusal logging.
+- `lib/esputnik.ts`: activity API is Europe/Kyiv (windows and timestamps), full-minute windows fetched whole (broadcast minutes exceed 1 000 rows), resumable cursor.
+- `lib/leadBridge.ts`: `valid` only; `scSource` filter.
+- `app/api/internal/esputnik/purge/route.ts`: no longer releases the ledger (it wiped 340 sent leads on 15.09 — restored from eSputnik activity).
+- CLAUDE.md rules 7–8 (background servers, single-run tests).
+
+## How to operate
+
+- Manual cron trigger: from a Chrome tab on ninja-digger.vercel.app: `fetch('/api/cron/esputnik-sync', {credentials:'include'})` after `DELETE FROM app_settings WHERE key='lease:esputnik-sync'`.
+- Group/cycle state: `scratchpad/cyc.ts` printed `name members broadcast scheduled delivered [DELETED]` from `mass_groups` — recreate with a one-liner over `mass_groups` if the scratchpad is gone.
+- Deploy: `npm run build && git push && npx vercel --prod --yes` (git auto-deploy lags).
