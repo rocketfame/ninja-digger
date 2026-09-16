@@ -33,10 +33,13 @@ export async function GET(request: Request) {
   const t0 = Date.now();
   const today = new Date().toISOString().slice(0, 10);
 
-  // 1. outcomes
+  // 1. outcomes — resume from the cursor (2h overlap for late events); a run
+  //    that runs out of budget stores how far it got instead of starting over
+  const cursor = await getSetting("esputnik_poll_cursor", "");
   const since = (await getSetting("esputnik_poll_since", "")) || today;
-  const from = new Date(Date.parse(since.slice(0, 10)) - 2 * 86400000);
-  const pulled = await pullEsputnikActivity(from, new Date(), 60_000).catch((e) => ({ seen: 0, logged: 0, suppressed: 0, complete: false, error: e instanceof Error ? e.message : String(e) }));
+  const from = cursor ? new Date(Date.parse(cursor) - 2 * 3600_000) : new Date(Date.parse(since.slice(0, 10)) - 2 * 86400000);
+  const pulled = await pullEsputnikActivity(from, new Date(), 90_000).catch((e) => ({ seen: 0, logged: 0, suppressed: 0, complete: false, completedTo: from, error: e instanceof Error ? e.message : String(e) }));
+  if (!("error" in pulled) && pulled.completedTo > from) await setSetting("esputnik_poll_cursor", pulled.completedTo.toISOString()).catch(() => {});
   if (!("error" in pulled) && pulled.complete) await setSetting("esputnik_poll_since", today).catch(() => {});
 
   // 2. shop mirrors

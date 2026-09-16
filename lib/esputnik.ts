@@ -303,9 +303,12 @@ async function activityWindow(from: Date, to: Date, depth = 0): Promise<Activity
  * matters, but every email event is cheap to record and the ledger update
  * is a no-op for addresses we never exported.
  */
-export async function pullEsputnikActivity(from: Date, to: Date, budgetMs = 80_000): Promise<{ seen: number; logged: number; suppressed: number; complete: boolean }> {
+export async function pullEsputnikActivity(from: Date, to: Date, budgetMs = 80_000): Promise<{ seen: number; logged: number; suppressed: number; complete: boolean; completedTo: Date }> {
   const deadline = Date.now() + budgetMs;
   let seen = 0, logged = 0, suppressed = 0;
+  // the end of the last slice fully processed — the caller stores it as the
+  // cursor, so a run that runs out of budget resumes there instead of starting over
+  let completedTo = from;
   // eSputnik answers slowly in the minutes a broadcast is going out (the agent
   // measured two-minute windows hanging). If the budget runs out mid-way the
   // caller must NOT advance its cursor, or the unfetched windows are lost.
@@ -328,7 +331,8 @@ export async function pullEsputnikActivity(from: Date, to: Date, budgetMs = 80_0
       // ledger wants the outcome vocabulary, the timeline the event one
       if (r.logged) await pool.query(`UPDATE lead_exports SET outcome = $2 WHERE email = $1 AND COALESCE(outcome,'') NOT IN ('bounced','complained','unsubscribed','converted')`, [a.email.toLowerCase(), outcomeForEvent(event)]).catch(() => {});
     }
+    completedTo = new Date(Math.min(t + 2 * 3600_000, to.getTime()));
   }
-  return { seen, logged, suppressed, complete };
+  return { seen, logged, suppressed, complete, completedTo };
 }
 
