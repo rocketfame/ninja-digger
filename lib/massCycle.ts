@@ -107,9 +107,14 @@ export async function advance(budgetMs = 240_000): Promise<Advance[]> {
       const filled: string[] = [];
       // Platforms in knob order, each taking what is left of the budget
       // (the push itself is one request; only the settle waits).
+      // what this cycle already holds per platform counts against esputnik_daily_push
+      const inCycle = await pool.query<{ platform: string; n: string }>(`SELECT platform, SUM(members) n FROM mass_groups WHERE deleted_at IS NULL AND cycle = $1 AND day = $2 GROUP BY 1`, [cycle, kyivDay()])
+        .then((r) => Object.fromEntries(r.rows.map((x) => [x.platform, Number(x.n)])) as Record<string, number>);
       if (budget >= 50) for (const p of k.platforms) {
         if (budget < 50 || left() < 60_000) break;
-        const r = await fillGroup(p, Math.min(k.perPlatform, budget), cycle).catch((e) => ({ name: "", pushed: 0, session: null, error: e instanceof Error ? e.message : String(e) }));
+        const take = Math.min(k.perPlatform - (inCycle[p] ?? 0), budget);
+        if (take < 50) { done.push({ step: "fill-skipped", detail: { platform: p, reason: "platform quota for this cycle is used", inCycle: inCycle[p] ?? 0 } }); continue; }
+        const r = await fillGroup(p, take, cycle).catch((e) => ({ name: "", pushed: 0, session: null, error: e instanceof Error ? e.message : String(e) }));
         if (r.pushed) { budget -= r.pushed; filled.push(`${LABEL[p] ?? p} ${r.pushed}`); }
         done.push({ step: "push", detail: { platform: p, ...r } });
       }
@@ -187,7 +192,7 @@ async function fillGroup(platform: Platform, limit: number, cycle: number): Prom
   let session: string | null = null;
   for (let i = 0; i < rows.length; i += 3000) {
     const chunk = rows.slice(i, i + 3000);
-    const r = await api<{ asyncSessionId?: string; errorMessage?: string }>("/v1/contacts", {
+    const r = await api<{ asyncSessionId?: string; errorMessage?: string; failedContacts?: unknown }>("/v1/contacts", {
       method: "POST",
       body: JSON.stringify({
         contacts: chunk.map((l) => ({
@@ -200,6 +205,8 @@ async function fillGroup(platform: Platform, limit: number, cycle: number): Prom
     });
     if (r?.errorMessage) throw new Error(r.errorMessage);
     session = r?.asyncSessionId ?? session;
+    const failed = Array.isArray(r?.failedContacts) ? r.failedContacts : r?.failedContacts ? [r.failedContacts] : [];
+    if (failed.length) console.warn(`[massCycle] ${name}: eSputnik refused ${failed.length} of ${chunk.length}`, JSON.stringify(failed.slice(0, 3)));
   }
   // The ledger is written the moment the push is accepted: these addresses
   // are the mass channel's now, whatever the import does with them. Settle
