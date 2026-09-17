@@ -1,5 +1,38 @@
 # Масовий канал — рішення і статус
 
+## ІНЦИДЕНТ 15–17.09: offers.promosound.net у спамі Gmail — урок і новий домен
+
+**Що сталося.** 08–13.09 персональний холодний канал (Brevo, ~900/день з `promosound.net`, 60 % Gmail) дав user-reported spam 2.0 / **5.17** / 1.96 / 1.72 / 1.28 % при ліміті Google 0.3 %. Postmaster: `promosound.net` → **Not compliant**. Масовий канал жив на піддомені `offers.promosound.net` — Google прямо пише: *«to be deemed compliant, the primary domain must meet all requirements»* — піддомен успадкував вирок. 15.09 (перший великий день, 11 k) Gmail **відхилив 42.6 % листів з offers як «Suspected spam»**; eSputnik додоставив з повторів («delivered 99 %»), але лист ліг у Спам: відкриття 25–35 % (тест 10.09) → 4.1 % (15.09 ранні групи) → **1.0 %** (15.09 пізня, 16.09). Скарги на offers — 0.00 %, bounce 0.4–0.6 % — проблема лише успадкована репутація.
+
+**Рішення 17.09 (користувач):** масовий канал переїжджає на **окремий домен `psg-offers.com`** (не пов'язаний із promosound.net), `esputnik_daily_push=0` на offers, broadcast 17.09 скасовано, 1 000 контактів повернуто в пул. offers.promosound.net — резерв: повернути малим обсягом лише коли promosound.net Compliant і spam < 0.1 % 7 днів поспіль.
+
+**Уроки (обов'язкові):**
+1. **Масовий домен ніколи не піддомен домену холодного аутрічу.** Репутація в Gmail — на рівні organizational domain.
+2. **«Delivered» від ESP — не інбокс.** Правда = open rate за 24 год + Postmaster *Delivery errors* + *Authentication*. Падіння відкриттів 25 → 4 → 1 % за добу = папка «Спам», зупинятись негайно, а не «прогрівати далі».
+3. **Прогрів у погану репутацію шкодить:** кожна 1 000 без відкриттів закріплює вирок (нульове залучення). Пауза дешевша.
+4. **Postmaster лагає ~2 доби** (17.09 бачимо 15.09). Тому крок обсягу — не частіше, ніж раз на 2 дні, і лише по свіжих даних.
+5. Холодний персональний канал 900/день з одного домену = 2–5 % скарг. Якщо повертати Brevo — не більше ~200/день на домен і по ICP; окремий домен від масового.
+6. Читати Postmaster **перед** кожним підняттям обсягу (compliance + spam + delivery errors + auth), не після.
+
+## План прогріву psg-offers.com (обережний, з гейтами)
+
+**День 0 (після купівлі, робить Claude):** зона в Cloudflare; SPF `v=spf1 include:spf2.esputnik.com ~all`; DKIM CNAME `esputnik._domainkey` → dkim.esputnik.com; `send` піддомен (TXT SPF + MX trap.esputnik.com) — з інструкції eSputnik при додаванні домену FULL_PLUS; DMARC `p=none; rua=mailto:dmarc@promosound.net; fo=1`; tracking/short-link домен від eSputnik з SSL; MX psg-offers.com → Cloudflare Email Routing, `max@psg-offers.com` → скринька Max (відповіді мають доходити); Postmaster: додати й верифікувати домен; sender у eSputnik «Max from Promosound <max@psg-offers.com>»; шаблон SoundCloud скопіювати під новий sender/Reply-To. **Пауза 48 год** після DNS (вік домену / кеш).
+
+**Сходинка (усі провайдери разом, Gmail ~60 %):**
+| День | Ліміт/день | Гейт для наступного кроку (дані 24 год) |
+|---|---|---|
+| 1 | 100 | open ≥ 10 %, bounce < 2 %, скарг 0 |
+| 2 | 200 | те саме |
+| 3 | 300 | + Postmaster: delivery errors 0, auth 100 % |
+| 4–5 | 500 | + Postmaster spam < 0.1 %, репутація не Low/Bad |
+| 6–7 | 750 | |
+| 8–9 | 1 000 | |
+| 10–11 | 1 500 | |
+| 12–13 | 2 000 | |
+| 14+ | +20 %/2 дні до вікна 5 000 | |
+
+Правила: крок не частіше ніж раз на 2 дні (лаг Postmaster); гейт не пройдено → тримати обсяг ще 2 дні; open < 4 % або delivery errors > 5 % або скарги ≥ 0.1 % → **стоп** (`esputnik_daily_push=0`) і розбір. Аудиторія перших днів — найтепліші: Re-Ex тір A, з іменем, `valid` (`esputnik_sc_source=reex`). Розсилка не одним пострілом, а рівномірно (батч-ліміт у broadcast: `batchSize` + `batchIntervalUnit`, ~100–200/год) — ручка `esputnik_batch_per_hour` (додати в massCycle). З psg-offers.com шле тільки eSputnik, ніякого персонального холодного трафіку.
+
 **ЗМІНА 11.09 (вечір): двигун масового каналу — eSputnik, не listmonk.** Причина: за ті самі $130–150/міс самозбірка (Elastic+listmonk+Hetzner) програє готовій платформі, а eSputnik уже є: акаунт прогрітий, автоматичний прогрів на кожного поштовика, one-click відписка, шаблони, і LEADS-кампанії вони вже пропускають (скарг 0). Elastic Email лишається запасним дротом ($19 Starter, домен верифікований). Hetzner/listmonk — скасовано.
 
 ## Як це працює на eSputnik

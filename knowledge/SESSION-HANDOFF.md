@@ -1,4 +1,4 @@
-# Session handoff — 16.09.2026 (Lisbon 13:40 / Kyiv 15:40)
+# Session handoff — 17.09.2026 (Lisbon 11:xx / Kyiv 13:xx)
 
 Read this first in a new session. It says where we stopped and what to do next.
 
@@ -22,6 +22,13 @@ Read this first in a new session. It says where we stopped and what to do next.
 Today (16.09) went out as **1 000 in two shots**: `Leads: SoundCloud 16.09.2026 (auto)` 476 (broadcast 4532505, 16:00 Kyiv, 474 delivered) + `/2 (auto)` 524 (broadcast 4533059, 18:38 Kyiv, 522 delivered, 0 refused after the name fix). Both groups already deleted from eSputnik. The top-up was done through the cron with temporary knobs (daily_push=524, max_cycles=2, send_hour=0), knobs restored to 1000 / 1 / 16 afterwards — this is the way to fill a shortfall the same day.
 
 Yesterday's cycles 2 (4 585) and 3 (4 716) are fully delivered and deleted from eSputnik.
+
+
+## 17.09 — decision: mass channel moves to psg-offers.com
+
+Postmaster (data to 15.09): promosound.net spam 2–5.17 % on 08–12.09 (Brevo), Not compliant (spam rate + From alignment). offers.promosound.net: complaints 0 %, but 15.09 **42.6 % rejected by Gmail as "Suspected spam"**, auth 58 %; opens 4 % → 1 %. Subdomain inherits the parent → warm-up on offers is futile. Full write-up + lessons + ramp: `knowledge/MASS-OUTREACH.md` (top section).
+
+Done today: broadcast 4533201 (17.09, 1 000) cancelled, group deleted from eSputnik (998 + 2 customers detached), ledger released; `esputnik_daily_push=0`; **user is buying `psg-offers.com`** in Cloudflare Registrar (tab left open). Next: day-0 setup from the plan (DNS, eSputnik FULL_PLUS sender max@psg-offers.com, Postmaster, Email Routing, template copy), 48 h pause, then ramp 100/day with gates. Also open: who sends unaligned From @promosound.net (Postmaster "From: header alignment — Needs work"); Brevo stays paused.
 
 ## Open questions to close next session
 
