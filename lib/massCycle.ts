@@ -39,6 +39,7 @@ type Knobs = {
   platforms: Platform[];
   messages: Record<string, number>; // esputnik_message_<platform> — template id per platform
   sendHourKyiv: number;     // esputnik_send_hour (Kyiv), default 15
+  batchPerHour: number;     // esputnik_batch_per_hour — spread a broadcast over hours (0 = one shot)
 };
 
 async function knobs(): Promise<Knobs> {
@@ -53,6 +54,7 @@ async function knobs(): Promise<Knobs> {
     maxCycles: parseInt(await g("esputnik_max_cycles_per_day", "1"), 10) || 1,
     platforms, messages,
     sendHourKyiv: parseInt(await g("esputnik_send_hour", "0"), 10) || 0,
+    batchPerHour: parseInt(await g("esputnik_batch_per_hour", "0"), 10) || 0,
   };
 }
 
@@ -140,7 +142,8 @@ export async function advance(budgetMs = 240_000): Promise<Advance[]> {
     try {
       const b = await api<{ broadcastId?: number; id?: number }>("/v1/broadcast", {
         method: "POST",
-        body: JSON.stringify({ messageId: String(messageId), groups: [Number(g.group_id)], excludedGroups: EXCLUDED_GROUPS, title: g.group_name, ...(startDate ? { startDate } : {}) }),
+        // warm-up (17.09): a fresh domain gets its day spread over hours, not one shot
+        body: JSON.stringify({ messageId: String(messageId), groups: [Number(g.group_id)], excludedGroups: EXCLUDED_GROUPS, title: g.group_name, ...(startDate ? { startDate } : {}), ...(k.batchPerHour > 0 ? { batchSize: k.batchPerHour, batchIntervalUnit: "HOUR" } : {}) }),
       });
       const bid = b.broadcastId ?? b.id ?? 0;
       if (startDate) await pool.query(`UPDATE mass_groups SET broadcast_id = $2, message_id = $3, scheduled_at = ($4 || ':00')::timestamp AT TIME ZONE 'Europe/Kyiv' WHERE group_id = $1`, [g.group_id, bid || -1, messageId, startDate]);
