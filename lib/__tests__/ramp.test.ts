@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gateVerdict, rampDecision, type DayMetrics, type RampConfig } from "../rampPolicy";
+import { gateVerdict, postmasterVerdict, rampDecision, type DayMetrics, type PostmasterMetrics, type RampConfig } from "../rampPolicy";
 
 const cfg: RampConfig = { start: "2026-09-19", steps: [100, 150, 250, 400], stepDays: 2, hours: 8 };
 const good: DayMetrics = { pushed: 100, delivered: 98, opened: 20, hardBounce: 1, unsub: 0, spam: 0 };
@@ -35,6 +35,17 @@ describe("ramp ladder", () => {
   });
   it("stays stopped until a human clears it", () => {
     expect(rampDecision({ ...base, stopped: true })).toMatchObject({ action: "stop", push: 0 });
+  });
+  it("lets Gmail's own verdict stop or hold the ladder", () => {
+    const pm: PostmasterMetrics = { date: "2026-09-19", spamRatio: 0.0005, authRatio: 1, deliveryErrorRatio: 0, needsWork: [], verdict: null };
+    expect(rampDecision({ ...base, postmaster: pm })).toMatchObject({ action: "climb" });
+    expect(rampDecision({ ...base, postmaster: { ...pm, spamRatio: 0.001 } })).toMatchObject({ action: "stop" });
+    expect(rampDecision({ ...base, postmaster: { ...pm, deliveryErrorRatio: 0.42 } })).toMatchObject({ action: "stop" });
+    expect(rampDecision({ ...base, postmaster: { ...pm, verdict: "SPAM_RATE_HIGH" } })).toMatchObject({ action: "hold" });
+    expect(rampDecision({ ...base, postmaster: { ...pm, authRatio: 0.58 } })).toMatchObject({ action: "hold" });
+    expect(rampDecision({ ...base, postmaster: { ...pm, needsWork: ["DMARC_ALIGNMENT"] } })).toMatchObject({ action: "hold" });
+    expect(rampDecision({ ...base, postmaster: { ...pm, needsWork: ["USER_REPORTED_SPAM_RATE"] } })).toMatchObject({ action: "climb" }); // the ratio itself decides
+    expect(postmasterVerdict({ ...pm, spamRatio: null, authRatio: null })).toEqual({ stop: "", hold: "" });
   });
   it("does not judge a day too small to read", () => {
     expect(gateVerdict({ pushed: 30, delivered: 30, opened: 0, hardBounce: 0, unsub: 0, spam: 1 }, 0)).toEqual({ stop: "", hold: "" });

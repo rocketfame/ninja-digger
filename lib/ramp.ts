@@ -27,7 +27,8 @@ import { pool } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/settings";
 import { sendTelegramMessage } from "@/lib/telegram";
 
-import { rampDecision, type DayMetrics, type RampConfig, type RampDecision } from "@/lib/rampPolicy";
+import { rampDecision, type DayMetrics, type PostmasterMetrics, type RampConfig, type RampDecision } from "@/lib/rampPolicy";
+import { latestTrafficStats, postmasterConfigured } from "@/lib/postmaster";
 export { GATES, gateVerdict, rampDecision } from "@/lib/rampPolicy";
 export type { DayMetrics, RampConfig, RampDecision } from "@/lib/rampPolicy";
 
@@ -75,11 +76,23 @@ export async function applyRamp(now = new Date()): Promise<RampDecision & { skip
   const levelSince = (await getSetting("esputnik_ramp_level_since", "")) || null;
   const yesterday = kyivDay(new Date(now.getTime() - 86_400_000));
   const metrics = await dayMetrics(yesterday).catch(() => null);
+  // Gmail's own verdict on the sending domain (esputnik_sender_domain), newest day it has published
+  const domain = await getSetting("esputnik_sender_domain", "psg-offers.com");
+  let pmNote = "Postmaster: не підключено";
+  let postmaster: PostmasterMetrics | null = null;
+  if (postmasterConfigured()) {
+    try {
+      postmaster = await latestTrafficStats(domain, 4, now);
+      pmNote = postmaster
+        ? `Postmaster ${postmaster.date}: скарги ${postmaster.spamRatio === null ? "—" : (100 * postmaster.spamRatio).toFixed(2) + " %"}, auth ${postmaster.authRatio === null ? "—" : (100 * postmaster.authRatio).toFixed(0) + " %"}, errors ${(100 * postmaster.deliveryErrorRatio).toFixed(1)} %${postmaster.needsWork.length ? ", needs work: " + postmaster.needsWork.join(", ") : ", compliance OK"}${postmaster.verdict ? ", вердикт " + postmaster.verdict : ""}`
+        : `Postmaster: ${domain} ще без даних`;
+    } catch (e) { pmNote = `Postmaster: помилка — ${e instanceof Error ? e.message : String(e)}`; }
+  }
   const d = rampDecision({
     cfg, today, level, levelSince,
     stopped: Boolean(await getSetting("esputnik_ramp_stopped", "")),
     manualHold: (await getSetting("esputnik_ramp_hold", "0")) === "1",
-    metrics,
+    metrics, postmaster,
   });
   if (d.action === "off") return d;
 
@@ -96,6 +109,6 @@ export async function applyRamp(now = new Date()): Promise<RampDecision & { skip
   }
   const m = metrics ? `вчора: ${metrics.pushed} → доставлено ${metrics.delivered}, відкрито ${metrics.opened} (${pct(metrics.opened, metrics.delivered).toFixed(1)} %), bounce ${metrics.hardBounce}, відписки ${metrics.unsub}, скарги ${metrics.spam}` : "вчора: даних нема";
   const icon = d.action === "stop" ? "⛔" : d.action === "climb" ? "📈" : d.action === "start" ? "🚀" : "⏸";
-  await sendTelegramMessage(`${icon} psg-offers ramp, сходинка ${d.level + 1}/${cfg.steps.length}: ${d.action.toUpperCase()} → ${d.push}/день\n${d.reason}\n${m}`).catch(() => {});
+  await sendTelegramMessage(`${icon} ${domain} ramp, сходинка ${d.level + 1}/${cfg.steps.length}: ${d.action.toUpperCase()} → ${d.push}/день\n${d.reason}\n${m}\n${pmNote}`).catch(() => {});
   return d;
 }

@@ -22,7 +22,7 @@
   - `esputnik_ramp` = `{"start":"2026-09-19","steps":[100,150,250,400,600,900,1300,1900,2700,3800,5000],"stepDays":2,"hours":8}`
   - Гейти (`GATES` у rampPolicy): STOP — скарги ≥ 0.1 %, bounce > 4 %, відкриття < 4 %; HOLD — відкриття < 15 % (сходинки 1–2) / < 10 %, bounce ≥ 2 %, відписки ≥ 1 %; день з < 50 доставлених не судиться.
   - **Ручне керування:** `esputnik_ramp_hold=1` — не піднімати (ставити після поганого Postmaster, знімати 0); STOP лишає `esputnik_ramp_stopped` — щоб відновити: видалити цей ключ, поставити `esputnik_ramp_level` на потрібну сходинку (рекомендовано попередню − 1) і, якщо треба, `esputnik_ramp_level_since` = сьогодні. Вимкнути ramp = очистити `esputnik_ramp`.
-  - Postmaster не має API-доступу (потрібен OAuth) — читаємо щодня руками в Chrome перед 16:00 Київ; при червоному → `esputnik_ramp_hold=1`.
+  - **Postmaster — частина гейта автоматично** (`lib/postmaster.ts`, API v2, OAuth refresh-token акаунта infopromosound@gmail.com; env `GOOGLE_OAUTH_CLIENT_ID/SECRET`, `POSTMASTER_REFRESH_TOKEN`; Cloud-проєкт "Promosound", клієнт Desktop "ninja-postmaster", scope `postmaster.traffic.readonly`). Cron читає для `esputnik_sender_domain` (psg-offers.com) найсвіжіший день: SPAM_RATE, AUTH_SUCCESS_RATE (dmarc), DELIVERY_ERROR_RATE + complianceStatus. STOP: скарги ≥ 0.1 % або errors > 5 %; HOLD: вердикт SPAM_RATE_HIGH/SMTP_ERRORS_HIGH/USER_FEEDBACK_NEGATIVE, DMARC-auth < 95 %, будь-який NEEDS_WORK крім spam-rate. Без даних (новий домен) — гейт лише на наших метриках, у Telegram пише «ще без даних». v1 API Google закрив (429 "no longer supported").
 
 ## План прогріву psg-offers.com (обережний, з гейтами)
 

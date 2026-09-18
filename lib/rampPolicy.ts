@@ -7,6 +7,9 @@ export type RampConfig = { start: string; steps: number[]; stepDays: number; hou
 /** Yesterday's outcome, 24 h after each group's broadcast. */
 export type DayMetrics = { pushed: number; delivered: number; opened: number; hardBounce: number; unsub: number; spam: number };
 
+/** What Gmail itself reports for the sending domain (lib/postmaster.ts), newest published day. */
+export type PostmasterMetrics = { date: string; spamRatio: number | null; authRatio: number | null; deliveryErrorRatio: number; needsWork: string[]; verdict: string | null };
+
 export type RampDecision =
   | { action: "off"; reason: string }
   | { action: "stop"; level: number; push: 0; reason: string }
@@ -22,12 +25,36 @@ export const GATES = {
   holdOpenPctEarly: 15,    // first two rungs
   holdBouncePct: 2,        // of pushed
   holdUnsubPct: 1,
+  pmStopSpam: 0.001,       // Postmaster userReportedSpamRatio (0..1): Google's own "keep below 0.1 %"
+  pmStopErrors: 0.05,      // Postmaster delivery error ratio
+  pmHoldAuth: 0.95,        // SPF/DKIM/DMARC success ratios
 } as const;
 
 const pct = (a: number, b: number) => (b > 0 ? (100 * a) / b : 0);
 
 /** Which gate failed, if any. Empty string = all passed. `stop` gates are checked first. */
-export function gateVerdict(m: DayMetrics | null, level: number): { stop: string; hold: string } {
+export function gateVerdict(m: DayMetrics | null, level: number, pm: PostmasterMetrics | null = null): { stop: string; hold: string } {
+  const p = postmasterVerdict(pm);
+  if (p.stop) return p;
+  const own = ownVerdict(m, level);
+  if (own.stop) return own;
+  return { stop: "", hold: own.hold || p.hold };
+}
+
+/** Postmaster is judged on its own: it lags ~2 days but it is Gmail's verdict, not ours. */
+export function postmasterVerdict(pm: PostmasterMetrics | null): { stop: string; hold: string } {
+  if (!pm) return { stop: "", hold: "" };
+  const f = (x: number) => (100 * x).toFixed(2);
+  if (pm.spamRatio !== null && pm.spamRatio >= GATES.pmStopSpam) return { stop: `Postmaster ${pm.date}: скарги ${f(pm.spamRatio)} % ≥ 0.1 %`, hold: "" };
+  if (pm.deliveryErrorRatio > GATES.pmStopErrors) return { stop: `Postmaster ${pm.date}: delivery errors ${f(pm.deliveryErrorRatio)} % > 5 %`, hold: "" };
+  if (pm.verdict && /SPAM_RATE_HIGH|SMTP_ERRORS_HIGH|USER_FEEDBACK_NEGATIVE/.test(pm.verdict)) return { stop: "", hold: `Postmaster: вердикт ${pm.verdict}` };
+  if (pm.authRatio !== null && pm.authRatio < GATES.pmHoldAuth) return { stop: "", hold: `Postmaster ${pm.date}: автентифікація ${f(pm.authRatio)} % < 95 %` };
+  const hard = pm.needsWork.filter((r) => r !== "USER_REPORTED_SPAM_RATE"); // spam rate is judged by the ratio above
+  if (hard.length) return { stop: "", hold: `Postmaster: needs work — ${hard.join(", ")}` };
+  return { stop: "", hold: "" };
+}
+
+function ownVerdict(m: DayMetrics | null, level: number): { stop: string; hold: string } {
   if (!m || m.delivered < GATES.minDelivered) return { stop: "", hold: "" };
   const open = pct(m.opened, m.delivered), spam = pct(m.spam, m.delivered), bounce = pct(m.hardBounce, m.pushed), unsub = pct(m.unsub, m.delivered);
   const f = (x: number) => x.toFixed(2);
@@ -45,7 +72,7 @@ const dayDiff = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse
 
 export function rampDecision(i: {
   cfg: RampConfig | null; today: string; level: number; levelSince: string | null;
-  stopped: boolean; manualHold: boolean; metrics: DayMetrics | null;
+  stopped: boolean; manualHold: boolean; metrics: DayMetrics | null; postmaster?: PostmasterMetrics | null;
 }): RampDecision {
   const { cfg } = i;
   if (!cfg || !cfg.steps.length) return { action: "off", reason: "esputnik_ramp не заданий" };
@@ -53,7 +80,7 @@ export function rampDecision(i: {
   if (i.stopped) return { action: "stop", level: i.level, push: 0, reason: "стоп-кран не знято (esputnik_ramp_stopped)" };
   const level = Math.min(Math.max(i.level, 0), cfg.steps.length - 1);
   if (!i.levelSince) return { action: "start", level, push: cfg.steps[level], reason: "перший день сходинки" };
-  const g = gateVerdict(i.metrics, level);
+  const g = gateVerdict(i.metrics, level, i.postmaster ?? null);
   if (g.stop) return { action: "stop", level, push: 0, reason: g.stop };
   if (i.manualHold) return { action: "hold", level, push: cfg.steps[level], reason: "ручний hold (esputnik_ramp_hold)" };
   if (g.hold) return { action: "hold", level, push: cfg.steps[level], reason: g.hold };
