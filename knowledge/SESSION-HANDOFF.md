@@ -37,7 +37,7 @@ Done today: broadcast 4533201 (17.09, 1 000) cancelled, group deleted from eSput
 Strategy doc (artifact): https://claude.ai/code/artifact/66eac0d7-68b2-42ec-9572-ef9b333f927a. User decisions: keep template 4690375 as is (no A/B during warm-up), 21-day ladder OK, engagement-first OK, stop rules OK, own link domain — done (`click.psg-offers.com`, SSL by eSputnik).
 Code deployed: `lib/ramp.ts` + `lib/rampPolicy.ts` (tests) wired at the top of `advance()`; `esputnik_engagement` knob with fallback in `fillGroup`. Knobs set: `esputnik_ramp` (start 2026-09-19, 11 rungs, 2 days each, 8 h), level 0, `daily_push=0` until the ramp starts it, `sc_source=reex`, `engagement=engaged`, `send_hour=16`.
 **Tomorrow 19.09**: first cron after 00:00 Kyiv runs applyRamp → START 100/day (batch 13/h), fill, broadcast 16:00 Kyiv → Telegram "🚀". Postmaster is read by the cron itself (v2 API, OAuth done 18.09) — no daily human task; `esputnik_ramp_hold=1` stays as a manual override. Warm pool is only ~105 addresses — day 2+ is Re-Ex tier A.
-Still open: Postmaster "From: header alignment — Needs work" on promosound.net (source unknown); Brevo stays paused.
+Closed 18.09: the "From alignment" flag is residue of the 15–16.09 Gmail rejections on offers (DMARC 58 % on 15.09), no third-party sender — see MASS-OUTREACH.md. Brevo stays paused. Postmaster is automated: ramp gate + daily digest for all 4 domains (Telegram).
 
 ## Open questions to close next session
 

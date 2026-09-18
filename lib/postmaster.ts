@@ -73,7 +73,7 @@ const num = (v: Stat["value"]) => (v?.doubleValue ?? v?.floatValue ?? (v?.intVal
 export async function latestTrafficStats(domain: string, daysBack = 5, now = new Date()): Promise<PostmasterDay | null> {
   const parent = `domains/${encodeURIComponent(domain)}`;
   const start = new Date(now.getTime() - daysBack * 86_400_000), end = new Date(now.getTime() - 86_400_000);
-  const q = await call<{ domainStats?: Stat[] }>(`${parent}/domainStats:query`, {
+  const body = {
     metricDefinitions: [
       { name: "spam", baseMetric: { standardMetric: "SPAM_RATE" } },
       // AUTH_SUCCESS_RATE needs an auth_type filter; DMARC is the one Gmail's compliance table judges
@@ -82,11 +82,21 @@ export async function latestTrafficStats(domain: string, daysBack = 5, now = new
     ],
     timeQuery: { dateRanges: { dateRanges: [{ start: ymd(start), end: ymd(end) }] } },
     aggregationGranularity: "DAILY",
-  });
+    pageSize: 200,
+  };
+  // the default page is 10 rows — three metrics over five days would be cut off
+  const rows: Stat[] = [];
+  let pageToken: string | undefined;
+  do {
+    const q = await call<{ domainStats?: Stat[]; nextPageToken?: string }>(`${parent}/domainStats:query`, { ...body, ...(pageToken ? { pageToken } : {}) });
+    rows.push(...(q.domainStats ?? []));
+    pageToken = q.nextPageToken;
+  } while (pageToken);
+
   // each metric on its own newest day: Gmail publishes spam rate only for days
   // with enough volume, auth/errors for any day with traffic
   const latest: Partial<Record<"spam" | "auth" | "errors", { date: string; v: number }>> = {};
-  for (const s of q.domainStats ?? []) {
+  for (const s of rows) {
     if (!s.date || !s.metric) continue;
     const v = num(s.value);
     if (v === null) continue;
@@ -106,4 +116,38 @@ export async function latestTrafficStats(domain: string, daysBack = 5, now = new
   } catch { /* the day's metrics still stand */ }
 
   return { date, spamRatio: latest.spam?.v ?? null, authRatio: latest.auth?.v ?? null, deliveryErrorRatio: latest.errors?.v ?? 0, needsWork, verdict };
+}
+
+/** One line per domain for the daily Telegram digest, plus alerts for what got worse since yesterday. */
+export type DomainHealth = PostmasterDay & { domain: string };
+export async function postmasterHealth(domains: string[], now = new Date()): Promise<{ health: DomainHealth[]; missing: string[] }> {
+  const health: DomainHealth[] = [], missing: string[] = [];
+  for (const domain of domains) {
+    try {
+      const d = await latestTrafficStats(domain, 5, now);
+      if (d) health.push({ domain, ...d }); else missing.push(domain);
+    } catch (e) { missing.push(`${domain} (${e instanceof Error ? e.message.slice(0, 60) : String(e)})`); }
+  }
+  return { health, missing };
+}
+
+const pctS = (x: number | null, digits = 2) => (x === null ? "—" : `${(100 * x).toFixed(digits)} %`);
+
+export function healthLine(h: DomainHealth): string {
+  const flags = [...h.needsWork.map((r) => `NEEDS_WORK ${r}`), ...(h.verdict && h.verdict !== "USER_FEEDBACK_POSITIVE" ? [`вердикт ${h.verdict}`] : [])];
+  return `${h.domain} (${h.date}): скарги ${pctS(h.spamRatio)}, DMARC ${pctS(h.authRatio, 0)}, errors ${pctS(h.deliveryErrorRatio, 1)}${flags.length ? " — " + flags.join(", ") : " — ✅"}`;
+}
+
+/** What got worse against the previous snapshot: new NEEDS_WORK, a verdict, thresholds crossed. */
+export function healthAlerts(now: DomainHealth[], prev: Record<string, Partial<DomainHealth>>): string[] {
+  const out: string[] = [];
+  for (const h of now) {
+    const p = prev[h.domain] ?? {};
+    if (h.spamRatio !== null && h.spamRatio >= 0.001 && !((p.spamRatio ?? 0) >= 0.001)) out.push(`${h.domain}: скарги ${pctS(h.spamRatio)} ≥ 0.1 %`);
+    if (h.deliveryErrorRatio > 0.05 && !((p.deliveryErrorRatio ?? 0) > 0.05)) out.push(`${h.domain}: delivery errors ${pctS(h.deliveryErrorRatio, 1)} > 5 %`);
+    if (h.authRatio !== null && h.authRatio < 0.95 && !((p.authRatio ?? 1) < 0.95)) out.push(`${h.domain}: DMARC ${pctS(h.authRatio, 0)} < 95 %`);
+    for (const r of h.needsWork) if (!(p.needsWork ?? []).includes(r)) out.push(`${h.domain}: NEEDS_WORK ${r}`);
+    if (h.verdict && h.verdict !== "USER_FEEDBACK_POSITIVE" && h.verdict !== p.verdict) out.push(`${h.domain}: вердикт ${h.verdict}`);
+  }
+  return out;
 }
