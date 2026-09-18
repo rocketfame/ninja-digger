@@ -25,8 +25,9 @@ export async function postmasterDigest(now = new Date()): Promise<{ sent: boolea
 
   await setSetting("postmaster_digest_day", today);
   await setSetting("postmaster_last", JSON.stringify(Object.fromEntries(health.map((h) => [h.domain, h]))));
-  const lines = [`📮 Postmaster ${today}`, ...health.map(healthLine), ...(missing.length ? [`без даних: ${missing.join(", ")}`] : [])];
+  const dataDay = health[0]?.date ?? today;
+  const lines = [`📮 Репутація доменів у Gmail (дані за ${dataDay.slice(8, 10)}.${dataDay.slice(5, 7)})`, ...health.map(healthLine), ...missing.map((m) => `— ${m} — ще без даних`)];
   await sendTelegramMessage(lines.join("\n")).catch(() => {});
-  if (alerts.length) await sendTelegramMessage(`⚠️ Репутація погіршилась:\n${alerts.map((a) => "• " + a).join("\n")}`).catch(() => {});
+  if (alerts.length) await sendTelegramMessage(`⚠️ Стало гірше, ніж учора:\n${alerts.map((a) => "• " + a).join("\n")}`).catch(() => {});
   return { sent: true, alerts: alerts.length };
 }

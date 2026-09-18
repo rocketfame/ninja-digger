@@ -133,21 +133,42 @@ export async function postmasterHealth(domains: string[], now = new Date()): Pro
 
 const pctS = (x: number | null, digits = 2) => (x === null ? "—" : `${(100 * x).toFixed(digits)} %`);
 
+// Plain words for the bot (user, 18.09: "мені не зрозумілі англіцизми — роби простіше")
+const REQ: Record<string, string> = {
+  SPF: "SPF-запис", DKIM: "DKIM-підпис", SPF_AND_DKIM: "SPF/DKIM", DMARC_POLICY: "політика DMARC", DMARC_ALIGNMENT: "збіг адреси From з підписом (DMARC)",
+  MESSAGE_FORMATTING: "формат листа", DNS_RECORDS: "DNS-записи", ENCRYPTION: "шифрування", USER_REPORTED_SPAM_RATE: "рівень скарг",
+  ONE_CLICK_UNSUBSCRIBE: "відписка в один клік", HONOR_UNSUBSCRIBE: "виконання відписок",
+};
+const VERDICT: Record<string, string> = {
+  SMTP_ERRORS_HIGH: "Gmail відхиляє листи", SPAM_RATE_HIGH: "забагато скарг", USER_FEEDBACK_NEGATIVE: "люди реагують негативно",
+  SENDER_NOT_COMPLIANT: "не відповідає вимогам Gmail", USER_FEEDBACK_LOW: "мало реакцій", MESSAGE_VOLUME_LOW: "замало листів для оцінки",
+};
+const plainReq = (r: string) => REQ[r] ?? r;
+const plainVerdict = (v: string) => VERDICT[v] ?? v;
+const badVerdict = (v: string | null) => Boolean(v && !["USER_FEEDBACK_POSITIVE", "MESSAGE_VOLUME_LOW", "USER_FEEDBACK_LOW"].includes(v));
+
 export function healthLine(h: DomainHealth): string {
-  const flags = [...h.needsWork.map((r) => `NEEDS_WORK ${r}`), ...(h.verdict && h.verdict !== "USER_FEEDBACK_POSITIVE" ? [`вердикт ${h.verdict}`] : [])];
-  return `${h.domain} (${h.date}): скарги ${pctS(h.spamRatio)}, DMARC ${pctS(h.authRatio, 0)}, errors ${pctS(h.deliveryErrorRatio, 1)}${flags.length ? " — " + flags.join(", ") : " — ✅"}`;
+  const problems: string[] = [];
+  if (h.spamRatio !== null && h.spamRatio >= 0.001) problems.push(`скарги ${pctS(h.spamRatio)}`);
+  if (h.deliveryErrorRatio > 0.05) problems.push(`Gmail відхиляє ${pctS(h.deliveryErrorRatio, 1)} листів`);
+  if (h.authRatio !== null && h.authRatio < 0.95) problems.push(`підпис DMARC проходить лише ${pctS(h.authRatio, 0)}`);
+  if (badVerdict(h.verdict)) problems.push(plainVerdict(h.verdict!));
+  const notOk = h.needsWork.map(plainReq);
+  if (problems.length === 0 && notOk.length === 0) return `✅ ${h.domain} — усе гаразд (скарг ${pctS(h.spamRatio)}, відхилень ${pctS(h.deliveryErrorRatio, 1)})`;
+  const icon = h.deliveryErrorRatio > 0.05 || (h.spamRatio ?? 0) >= 0.003 ? "⛔" : "⚠️";
+  return `${icon} ${h.domain} — ${[...problems, ...(notOk.length ? [`не ок: ${notOk.join(", ")}`] : [])].join("; ")}`;
 }
 
-/** What got worse against the previous snapshot: new NEEDS_WORK, a verdict, thresholds crossed. */
+/** What got worse against the previous snapshot: new problems, thresholds crossed. */
 export function healthAlerts(now: DomainHealth[], prev: Record<string, Partial<DomainHealth>>): string[] {
   const out: string[] = [];
   for (const h of now) {
     const p = prev[h.domain] ?? {};
-    if (h.spamRatio !== null && h.spamRatio >= 0.001 && !((p.spamRatio ?? 0) >= 0.001)) out.push(`${h.domain}: скарги ${pctS(h.spamRatio)} ≥ 0.1 %`);
-    if (h.deliveryErrorRatio > 0.05 && !((p.deliveryErrorRatio ?? 0) > 0.05)) out.push(`${h.domain}: delivery errors ${pctS(h.deliveryErrorRatio, 1)} > 5 %`);
-    if (h.authRatio !== null && h.authRatio < 0.95 && !((p.authRatio ?? 1) < 0.95)) out.push(`${h.domain}: DMARC ${pctS(h.authRatio, 0)} < 95 %`);
-    for (const r of h.needsWork) if (!(p.needsWork ?? []).includes(r)) out.push(`${h.domain}: NEEDS_WORK ${r}`);
-    if (h.verdict && h.verdict !== "USER_FEEDBACK_POSITIVE" && h.verdict !== p.verdict) out.push(`${h.domain}: вердикт ${h.verdict}`);
+    if (h.spamRatio !== null && h.spamRatio >= 0.001 && !((p.spamRatio ?? 0) >= 0.001)) out.push(`${h.domain}: скарги ${pctS(h.spamRatio)} (ліміт Gmail 0.1 %)`);
+    if (h.deliveryErrorRatio > 0.05 && !((p.deliveryErrorRatio ?? 0) > 0.05)) out.push(`${h.domain}: Gmail почав відхиляти листи — ${pctS(h.deliveryErrorRatio, 1)}`);
+    if (h.authRatio !== null && h.authRatio < 0.95 && !((p.authRatio ?? 1) < 0.95)) out.push(`${h.domain}: підпис DMARC проходить лише ${pctS(h.authRatio, 0)}`);
+    for (const r of h.needsWork) if (!(p.needsWork ?? []).includes(r)) out.push(`${h.domain}: тепер не ок — ${plainReq(r)}`);
+    if (badVerdict(h.verdict) && h.verdict !== p.verdict) out.push(`${h.domain}: ${plainVerdict(h.verdict!)}`);
   }
   return out;
 }
