@@ -14,6 +14,16 @@
 5. Холодний персональний канал 900/день з одного домену = 2–5 % скарг. Якщо повертати Brevo — не більше ~200/день на домен і по ICP; окремий домен від масового.
 6. Читати Postmaster **перед** кожним підняттям обсягу (compliance + spam + delivery errors + auth), не після.
 
+## Рішення 18.09 (користувач) і як працює прогрів
+
+- **Формат листа не міняємо**: шаблон 4690375 (брендований HTML, one-click unsub) — 0 % скарг на здоровому домені. A/B з text-first — після виходу на 5 000, не під час прогріву.
+- **Домен коротких посилань**: `click.psg-offers.com` (CNAME → ssl.esclick.me, DNS-only; SSL видає eSputnik). Спільний go.esputnik.com не використовуємо.
+- **Сходинка — автомат у cron** (`lib/ramp.ts`, тести `lib/rampPolicy.ts`): раз на київський день перед fill читає вчорашні групи (24 год після старту) і вирішує START / CLIMB / HOLD / STOP; пише `esputnik_daily_push`, `esputnik_batch_per_hour` (= денний ÷ 8), `esputnik_engagement` (перші 2 сходинки = ті, хто відкривав наші листи; таких лише ~105, решту добирає Re-Ex). Кожне рішення — у Telegram.
+  - `esputnik_ramp` = `{"start":"2026-09-19","steps":[100,150,250,400,600,900,1300,1900,2700,3800,5000],"stepDays":2,"hours":8}`
+  - Гейти (`GATES` у rampPolicy): STOP — скарги ≥ 0.1 %, bounce > 4 %, відкриття < 4 %; HOLD — відкриття < 15 % (сходинки 1–2) / < 10 %, bounce ≥ 2 %, відписки ≥ 1 %; день з < 50 доставлених не судиться.
+  - **Ручне керування:** `esputnik_ramp_hold=1` — не піднімати (ставити після поганого Postmaster, знімати 0); STOP лишає `esputnik_ramp_stopped` — щоб відновити: видалити цей ключ, поставити `esputnik_ramp_level` на потрібну сходинку (рекомендовано попередню − 1) і, якщо треба, `esputnik_ramp_level_since` = сьогодні. Вимкнути ramp = очистити `esputnik_ramp`.
+  - Postmaster не має API-доступу (потрібен OAuth) — читаємо щодня руками в Chrome перед 16:00 Київ; при червоному → `esputnik_ramp_hold=1`.
+
 ## План прогріву psg-offers.com (обережний, з гейтами)
 
 **День 0 (після купівлі, робить Claude):** зона в Cloudflare; SPF `v=spf1 include:spf2.esputnik.com ~all`; DKIM CNAME `esputnik._domainkey` → dkim.esputnik.com; `send` піддомен (TXT SPF + MX trap.esputnik.com) — з інструкції eSputnik при додаванні домену FULL_PLUS; DMARC `p=none; rua=mailto:dmarc@promosound.net; fo=1`; tracking/short-link домен від eSputnik з SSL; MX psg-offers.com → Cloudflare Email Routing, `max@psg-offers.com` → скринька Max (відповіді мають доходити); Postmaster: додати й верифікувати домен; sender у eSputnik «Max from Promosound <max@psg-offers.com>»; шаблон SoundCloud скопіювати під новий sender/Reply-To. **Пауза 48 год** після DNS (вік домену / кеш).

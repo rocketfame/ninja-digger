@@ -1,4 +1,4 @@
-# Session handoff — 17.09.2026 (Lisbon 11:xx / Kyiv 13:xx)
+# Session handoff — 18.09.2026 (Lisbon 11:15 / Kyiv 13:15)
 
 Read this first in a new session. It says where we stopped and what to do next.
 
@@ -30,6 +30,14 @@ Postmaster (data to 15.09): promosound.net spam 2–5.17 % on 08–12.09 (Brevo)
 
 Done today: broadcast 4533201 (17.09, 1 000) cancelled, group deleted from eSputnik (998 + 2 customers detached), ledger released; `esputnik_daily_push=0`; **user is buying `psg-offers.com`** in Cloudflare Registrar (tab left open). **Day-0 done 17.09 ~13:40 Kyiv** (Cloudflare zone `f6decaac628e151bebf02575be4ab994`): SPF/DKIM/send-subdomain/DMARC/google-site-verification/esputnik-verification TXT; Email Routing on, rule `max@psg-offers.com → inbox`; **Postmaster Verified**; eSputnik domain added (FULL_PLUS, `verificationPassed: true`, status IN_PROGRESS — "up to 24 h, usually much less"). Code: `esputnik_batch_per_hour` knob deployed.
 **Done 17.09 17:50 Kyiv:** eSputnik domain CONFIGURED (~4 h after TXT); sender "Max from Promosound <max@psg-offers.com>" added and confirmed (confirmation mail arrived through Email Routing → read via IMAP with GMAIL_USER creds, link opened); message **4690375** = byte-identical clone of 4681093 with the new sender; `esputnik_message_soundcloud=4690375` (old offers template 4681093 kept). Then 48 h pause from DNS (earliest first send 19.09 16:00 Kyiv): `esputnik_daily_push=100`, `esputnik_batch_per_hour=25`, `esputnik_sc_source=reex`, and the ramp with gates from MASS-OUTREACH.md. Also open: who sends unaligned From @promosound.net (Postmaster "From: header alignment — Needs work"); Brevo stays paused.
+
+
+## 18.09 — ramp automated, start tomorrow
+
+Strategy doc (artifact): https://claude.ai/code/artifact/66eac0d7-68b2-42ec-9572-ef9b333f927a. User decisions: keep template 4690375 as is (no A/B during warm-up), 21-day ladder OK, engagement-first OK, stop rules OK, own link domain — done (`click.psg-offers.com`, SSL by eSputnik).
+Code deployed: `lib/ramp.ts` + `lib/rampPolicy.ts` (tests) wired at the top of `advance()`; `esputnik_engagement` knob with fallback in `fillGroup`. Knobs set: `esputnik_ramp` (start 2026-09-19, 11 rungs, 2 days each, 8 h), level 0, `daily_push=0` until the ramp starts it, `sc_source=reex`, `engagement=engaged`, `send_hour=16`.
+**Tomorrow 19.09**: first cron after 00:00 Kyiv runs applyRamp → START 100/day (batch 13/h), fill, broadcast 16:00 Kyiv → Telegram "🚀". Daily human task: read Postmaster (psg-offers.com + promosound.net) before 16:00; if anything red → `esputnik_ramp_hold=1`. Warm pool is only ~105 addresses — day 2+ is Re-Ex tier A.
+Still open: Postmaster "From: header alignment — Needs work" on promosound.net (source unknown); Brevo stays paused.
 
 ## Open questions to close next session
 
