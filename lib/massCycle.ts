@@ -20,6 +20,7 @@ import { PLATFORMS, type Platform } from "@/lib/leadPolicy";
 import { api, esputnikBaseSize, esputnikDelete } from "@/lib/esputnik";
 import { cleanFirstName, contactEmail, isCustomerContact, type EsputnikContact } from "@/lib/esputnikStatus";
 import { recordHandover, selectMassLeads } from "@/lib/leadBridge";
+import { applyRamp } from "@/lib/ramp";
 
 const LABEL: Record<string, string> = { soundcloud: "SoundCloud", spotify: "Spotify", youtube: "YouTube" };
 const TZ: Record<string, string> = {
@@ -66,8 +67,11 @@ export type Advance = { step: string; detail: Record<string, unknown> };
 /** One turn of the crank. Returns what it did. */
 export async function advance(budgetMs = 240_000): Promise<Advance[]> {
   const t0 = Date.now();
-  const k = await knobs();
   const done: Advance[] = [];
+  // warm-up ladder decides today's volume before the knobs are read
+  const ramp = await applyRamp().catch((e) => ({ action: "off" as const, reason: e instanceof Error ? e.message : String(e), skipped: true }));
+  if (!ramp.skipped) done.push({ step: "ramp", detail: { ...ramp } });
+  const k = await knobs();
   const left = () => budgetMs - (Date.now() - t0);
 
   // ── 0. settle imports started earlier (this run or a previous one) ─────
@@ -190,7 +194,15 @@ async function fillGroup(platform: Platform, limit: number, cycle: number): Prom
   for (let n = 2; await groupIdByName(name); n++) name = name.replace(/( \+\d+)? \(auto\)$/, ` +${n} (auto)`); // top-up of the same cycle
   // esputnik_sc_source = any | reex | nonreex (user 16.09: warm-up on the graph, not on Re-Ex)
   const scSource = (await getSetting("esputnik_sc_source", "any")) as "any" | "reex" | "nonreex";
-  const rows = await selectMassLeads({ platforms: [platform], limit, scSource });
+  // esputnik_engagement = engaged → people who opened our mail go first (a new
+  // domain's first days); whatever they cannot fill comes from the usual queue
+  const engagement = (await getSetting("esputnik_engagement", "any")) as "any" | "engaged";
+  let rows = engagement === "engaged" ? await selectMassLeads({ platforms: [platform], limit, scSource, engagement }) : [];
+  if (rows.length < limit) {
+    const seen = new Set(rows.map((r) => r.email));
+    const more = await selectMassLeads({ platforms: [platform], limit, scSource });
+    rows = rows.concat(more.filter((r) => !seen.has(r.email))).slice(0, limit);
+  }
   if (rows.length === 0) return { name, pushed: 0, session: null };
   let session: string | null = null;
   type Failed = { channels?: { value?: string } | { value?: string }[]; error?: string };
