@@ -35,6 +35,7 @@ export type { DayMetrics, RampConfig, RampDecision } from "@/lib/rampPolicy";
 const pct = (a: number, b: number) => (b > 0 ? (100 * a) / b : 0);
 
 const kyivDay = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Kyiv" }).format(d);
+const kyivHour = (d = new Date()) => Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Kyiv", hour: "2-digit", hour12: false }).format(d));
 
 /** Outcome of the groups broadcast on `day` (Kyiv), each measured 24 h after its start. */
 export async function dayMetrics(day: string): Promise<DayMetrics | null> {
@@ -66,11 +67,28 @@ function parseCfg(raw: string): RampConfig | null {
 }
 
 /** Runs once per Kyiv day; sets the day's volume from the ladder. Returns what it decided. */
+/**
+ * Has the ladder decided today's volume yet? While a ramp is configured, the
+ * cycle must not fill before it has — otherwise the first run after midnight
+ * fills on yesterday's number.
+ */
+export async function rampDecidedToday(now = new Date()): Promise<boolean> {
+  const cfg = parseCfg(await getSetting("esputnik_ramp", ""));
+  if (!cfg || kyivDay(now) < cfg.start) return true; // no ramp → nothing to wait for
+  return (await getSetting("esputnik_ramp_day", "")) === kyivDay(now);
+}
+
 export async function applyRamp(now = new Date()): Promise<RampDecision & { skipped?: boolean }> {
   const today = kyivDay(now);
   const cfg = parseCfg(await getSetting("esputnik_ramp", ""));
   if (!cfg) return { action: "off", reason: "esputnik_ramp не заданий", skipped: true };
   if ((await getSetting("esputnik_ramp_day", "")) === today) return { action: "off", reason: "сьогодні вже вирішено", skipped: true };
+  // Yesterday's letter went out at esputnik_send_hour and was spread over
+  // `hours`; judging it at 00:35 would see a third of its opens. Decide at
+  // esputnik_ramp_decide_hour (Kyiv, default 13) — 21 h after a 16:00 send,
+  // still ahead of today's send.
+  const decideHour = parseInt(await getSetting("esputnik_ramp_decide_hour", "13"), 10) || 13;
+  if (kyivHour(now) < decideHour && today > cfg.start) return { action: "off", reason: `рішення о ${decideHour}:00 Київ`, skipped: true };
 
   const level = parseInt(await getSetting("esputnik_ramp_level", "0"), 10) || 0;
   const levelSince = (await getSetting("esputnik_ramp_level_since", "")) || null;

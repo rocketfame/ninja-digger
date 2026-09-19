@@ -20,7 +20,7 @@ import { PLATFORMS, type Platform } from "@/lib/leadPolicy";
 import { api, esputnikBaseSize, esputnikDelete } from "@/lib/esputnik";
 import { cleanFirstName, contactEmail, isCustomerContact, type EsputnikContact } from "@/lib/esputnikStatus";
 import { recordHandover, selectMassLeads } from "@/lib/leadBridge";
-import { applyRamp } from "@/lib/ramp";
+import { applyRamp, rampDecidedToday } from "@/lib/ramp";
 
 const LABEL: Record<string, string> = { soundcloud: "SoundCloud", spotify: "Spotify", youtube: "YouTube" };
 const TZ: Record<string, string> = {
@@ -79,11 +79,18 @@ export async function advance(budgetMs = 240_000): Promise<Advance[]> {
   const pendingLeft = async () => (await pendingFills()).length;
 
   // ── A. delete groups whose campaign has delivered ─────────────────────
+  // A broadcast spread over hours (esputnik_batch_per_hour) is still sending
+  // long after half of it is delivered — 19.09 the group was deleted with 48
+  // contacts unsent. So: delete only once the whole send window has passed
+  // (members ÷ batch per hour, plus 3 h of slack) or after 36 h regardless.
+  const windowH = k.batchPerHour > 0 ? 3 : 0;
   const delivered = await pool.query<{ group_id: string; group_name: string; members: number; delivered: number; scheduled_at: string | null }>(
     `SELECT group_id, group_name, members, delivered, scheduled_at FROM mass_groups
       WHERE deleted_at IS NULL AND broadcast_id IS NOT NULL
-        AND (delivered >= GREATEST(1, members * 0.5) OR scheduled_at < now() - interval '36 hours')
-      ORDER BY created_at LIMIT 3`
+        AND ((delivered >= GREATEST(1, members * 0.5)
+              AND scheduled_at < now() - make_interval(hours => $1 + CASE WHEN $2 > 0 THEN CEIL(members::numeric / $2)::int ELSE 0 END))
+             OR scheduled_at < now() - interval '36 hours')
+      ORDER BY created_at LIMIT 3`, [windowH, k.batchPerHour]
   ).then((r) => r.rows);
   for (const g of delivered) {
     if (left() < 60_000) break;
@@ -102,7 +109,9 @@ export async function advance(budgetMs = 240_000): Promise<Advance[]> {
   const openSent = Number(st.sent), openUnsent = Number(st.unsent);
   const cyclesToday = await pool.query<{ c: string }>(`SELECT COALESCE(MAX(cycle),0) c FROM mass_groups WHERE day = $1`, [kyivDay()]).then((r) => Number(r.rows[0].c));
   const mayFill = openUnsent > 0 || cyclesToday < k.maxCycles;
-  if (k.perPlatform > 0 && openSent === 0 && (await pendingLeft()) === 0 && mayFill && left() > 90_000) {
+  const rampReady = await rampDecidedToday();
+  if (!rampReady) done.push({ step: "fill-skipped", detail: { reason: "ramp has not decided today's volume yet" } });
+  if (rampReady && k.perPlatform > 0 && openSent === 0 && (await pendingLeft()) === 0 && mayFill && left() > 90_000) {
     const base = await esputnikBaseSize({ maxAgeMin: 0, budgetMs: 90_000 }).catch(() => null);
     if (base === null) {
       done.push({ step: "fill-skipped", detail: { reason: "base size unreadable" } });
