@@ -1,4 +1,4 @@
-# Session handoff — 18.09.2026 (Lisbon 11:15 / Kyiv 13:15)
+# Session handoff — 19.09.2026 (Lisbon 20:30 / Kyiv 22:30)
 
 Read this first in a new session. It says where we stopped and what to do next.
 
@@ -38,6 +38,11 @@ Strategy doc (artifact): https://claude.ai/code/artifact/66eac0d7-68b2-42ec-9572
 Code deployed: `lib/ramp.ts` + `lib/rampPolicy.ts` (tests) wired at the top of `advance()`; `esputnik_engagement` knob with fallback in `fillGroup`. Knobs set: `esputnik_ramp` (start 2026-09-19, 11 rungs, 2 days each, 8 h), level 0, `daily_push=0` until the ramp starts it, `sc_source=reex`, `engagement=engaged`, `send_hour=16`.
 **Tomorrow 19.09**: first cron after 00:00 Kyiv runs applyRamp → START 100/day (batch 13/h), fill, broadcast 16:00 Kyiv → Telegram "🚀". Postmaster is read by the cron itself (v2 API, OAuth done 18.09) — no daily human task; `esputnik_ramp_hold=1` stays as a manual override. Warm pool is only ~105 addresses — day 2+ is Re-Ex tier A.
 Closed 18.09: the "From alignment" flag is residue of the 15–16.09 Gmail rejections on offers (DMARC 58 % on 15.09), no third-party sender — see MASS-OUTREACH.md. Brevo stays paused. Postmaster is automated: ramp gate + daily digest for all 4 domains (Telegram).
+
+
+## 19.09 — ramp day 1 (psg-offers.com)
+
+START 100/day fired at 00:35: group `Leads: SoundCloud 19.09.2026 (auto)`, broadcast 4536221 16:00 Kyiv, 13/h. Two bugs found and fixed the same evening (deployed): (1) the cron deleted the group at 21:35 with 48 contacts still queued (≥50 % delivered rule ignored batching) → deletion now waits for the full send window; the 48 were released back to the pool (ledger + events), `members` corrected to 52; (2) the ladder judged yesterday at 00:35 = 8.5 h after a 16:00 send → decision now at 13:00 Kyiv (`esputnik_ramp_decide_hour`), fill waits for it. Day-1 truth: 52 sent, 52 delivered, **0 opens by 22:00 Kyiv** (eSputnik analytics). If still < 4 % at 13:00 on 20.09 the gate will STOP — then read Postmaster for psg-offers.com (first data expected 21.09) before deciding anything.
 
 ## Open questions to close next session
 
