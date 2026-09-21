@@ -19,6 +19,7 @@ import { shopConfigured, syncShopCustomers } from "@/lib/shopCustomers";
 import { syncShopOrders } from "@/lib/shopOrders";
 import { advance, reconcile } from "@/lib/massCycle";
 import { postmasterDigest } from "@/lib/postmasterDigest";
+import { leadgenDigest } from "@/lib/leadgenDigest";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -55,11 +56,12 @@ export async function GET(request: Request) {
   const rec = await reconcile().catch((e) => ({ groups: 0, segmented: 0, error: e instanceof Error ? e.message : String(e) }));
 
   // 3b. reputation digest for every domain, once a day (independent of the cycle)
-  const digest = await postmasterDigest().catch((e) => ({ sent: false, alerts: 0, reason: e instanceof Error ? e.message : String(e) }));
+  const digest = await postmasterDigest().catch((e) => ({ sent: false, alerts: 0, reason: e instanceof Error ? e.message : String(e), health: [], missing: [] }));
+  const leadgen = await leadgenDigest(digest.health, digest.missing).catch((e) => ({ sent: false, reason: e instanceof Error ? e.message : String(e) }));
 
   // 4. the cycle — only with a customer mirror younger than two days
   const mirrorAgeH = await pool.query<{ h: string }>(`SELECT EXTRACT(EPOCH FROM (now() - MAX(synced_at)))/3600 h FROM shop_customers`).then((r) => Number(r.rows[0]?.h ?? 1e9)).catch(() => 1e9);
   const steps = mirrorAgeH < 48 ? await advance(280_000 - (Date.now() - t0)).catch((e) => [{ step: "error", detail: { error: e instanceof Error ? e.message : String(e) } }]) : [{ step: "skipped", detail: { reason: "shop customer mirror stale" } }];
 
-  return NextResponse.json({ ok: true, pulled, shop, orders, reconcile: rec, digest, steps, tookMs: Date.now() - t0, ts: new Date().toISOString() });
+  return NextResponse.json({ ok: true, pulled, shop, orders, reconcile: rec, digest: { sent: digest.sent, alerts: digest.alerts, reason: digest.reason }, leadgen, steps, tookMs: Date.now() - t0, ts: new Date().toISOString() });
 }

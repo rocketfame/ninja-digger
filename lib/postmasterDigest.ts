@@ -8,15 +8,20 @@
  */
 import { getSetting, setSetting } from "@/lib/settings";
 import { sendTelegramMessage } from "@/lib/telegram";
-import { healthAlerts, healthLine, postmasterConfigured, postmasterHealth, type DomainHealth } from "@/lib/postmaster";
+import { healthAlerts, postmasterConfigured, postmasterHealth, type DomainHealth } from "@/lib/postmaster";
 
 const DEFAULT_DOMAINS = "promosoundgroup.net,promosound.net,offers.promosound.net,psg-offers.com";
 const kyivDay = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Kyiv" }).format(d);
 
-export async function postmasterDigest(now = new Date()): Promise<{ sent: boolean; alerts: number; reason?: string }> {
-  if (!postmasterConfigured()) return { sent: false, alerts: 0, reason: "not configured" };
+export type DigestResult = { sent: boolean; alerts: number; reason?: string; health: DomainHealth[]; missing: string[] };
+export async function postmasterDigest(now = new Date()): Promise<DigestResult> {
+  if (!postmasterConfigured()) return { sent: false, alerts: 0, reason: "not configured", health: [], missing: [] };
   const today = kyivDay(now);
-  if ((await getSetting("postmaster_digest_day", "")) === today) return { sent: false, alerts: 0, reason: "already sent today" };
+  if ((await getSetting("postmaster_digest_day", "")) === today) {
+    let health: DomainHealth[] = [];
+    try { health = Object.values(JSON.parse(await getSetting("postmaster_last", "{}"))) as DomainHealth[]; } catch { /* none */ }
+    return { sent: false, alerts: 0, reason: "already sent today", health, missing: [] };
+  }
   const domains = (await getSetting("postmaster_domains", DEFAULT_DOMAINS)).split(",").map((s) => s.trim()).filter(Boolean);
   const { health, missing } = await postmasterHealth(domains, now);
   let prev: Record<string, Partial<DomainHealth>> = {};
@@ -25,9 +30,7 @@ export async function postmasterDigest(now = new Date()): Promise<{ sent: boolea
 
   await setSetting("postmaster_digest_day", today);
   await setSetting("postmaster_last", JSON.stringify(Object.fromEntries(health.map((h) => [h.domain, h]))));
-  const dataDay = health[0]?.date ?? today;
-  const lines = [`📮 Репутація доменів у Gmail (дані за ${dataDay.slice(8, 10)}.${dataDay.slice(5, 7)})`, ...health.map(healthLine), ...missing.map((m) => `— ${m} — ще без даних`)];
-  await sendTelegramMessage(lines.join("\n")).catch(() => {});
+  // the per-domain lines go out inside the daily lead-gen digest; here only what got worse
   if (alerts.length) await sendTelegramMessage(`⚠️ Стало гірше, ніж учора:\n${alerts.map((a) => "• " + a).join("\n")}`).catch(() => {});
-  return { sent: true, alerts: alerts.length };
+  return { sent: true, alerts: alerts.length, health, missing };
 }

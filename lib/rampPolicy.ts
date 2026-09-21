@@ -5,7 +5,7 @@
 export type RampConfig = { start: string; steps: number[]; stepDays: number; hours: number };
 
 /** Yesterday's outcome, 24 h after each group's broadcast. */
-export type DayMetrics = { pushed: number; delivered: number; opened: number; hardBounce: number; unsub: number; spam: number };
+export type DayMetrics = { pushed: number; delivered: number; opened: number; hardBounce: number; unsub: number; spam: number; clicked?: number };
 
 /** What Gmail itself reports for the sending domain (lib/postmaster.ts), newest published day. */
 export type PostmasterMetrics = { date: string; spamRatio: number | null; authRatio: number | null; deliveryErrorRatio: number; needsWork: string[]; verdict: string | null };

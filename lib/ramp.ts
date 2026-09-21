@@ -48,6 +48,7 @@ export async function dayMetrics(day: string): Promise<DayMetrics | null> {
      SELECT COUNT(DISTINCT b.email) pushed,
        COUNT(DISTINCT e.email) FILTER (WHERE e.event = 'delivered') delivered,
        COUNT(DISTINCT e.email) FILTER (WHERE e.event IN ('opened','uniqueopened','click')) opened,
+       COUNT(DISTINCT e.email) FILTER (WHERE e.event = 'click') clicked,
        COUNT(DISTINCT e.email) FILTER (WHERE e.event = 'hard_bounce') hard_bounce,
        COUNT(DISTINCT e.email) FILTER (WHERE e.event = 'unsubscribed') unsub,
        COUNT(DISTINCT e.email) FILTER (WHERE e.event = 'spam') spam
@@ -55,7 +56,7 @@ export async function dayMetrics(day: string): Promise<DayMetrics | null> {
        AND e.ts >= b.scheduled_at AND e.ts < b.scheduled_at + interval '24 hours'`, [day]);
   const x = r.rows[0];
   if (!x || Number(x.pushed) === 0) return null;
-  return { pushed: +x.pushed, delivered: +x.delivered, opened: +x.opened, hardBounce: +x.hard_bounce, unsub: +x.unsub, spam: +x.spam };
+  return { pushed: +x.pushed, delivered: +x.delivered, opened: +x.opened, hardBounce: +x.hard_bounce, unsub: +x.unsub, spam: +x.spam, clicked: +x.clicked };
 }
 
 function parseCfg(raw: string): RampConfig | null {
