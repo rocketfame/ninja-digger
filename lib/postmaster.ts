@@ -74,9 +74,12 @@ const key = (d: YMD) => `${d.year}-${String(d.month).padStart(2, "0")}-${String(
 const num = (v: Stat["value"]) => (v?.doubleValue ?? v?.floatValue ?? (v?.intValue !== undefined ? Number(v.intValue) : null)) ?? null;
 
 /** Newest published day in the last `daysBack` days, plus the current compliance table. */
-export async function latestTrafficStats(domain: string, daysBack = 5, now = new Date()): Promise<PostmasterDay | null> {
+export async function latestTrafficStats(domain: string, daysBack = 6, now = new Date()): Promise<PostmasterDay | null> {
   const parent = `domains/${encodeURIComponent(domain)}`;
-  const start = new Date(now.getTime() - daysBack * 86_400_000), end = new Date(now.getTime() - 86_400_000);
+  // Google publishes with a 1–2 day lag and the newest day is often still
+  // filling in (20.09 read as "0 letters" the evening of the 21st) — so the
+  // newest day we trust ends two days ago.
+  const start = new Date(now.getTime() - daysBack * 86_400_000), end = new Date(now.getTime() - 2 * 86_400_000);
   const body = {
     metricDefinitions: [
       { name: "spam", baseMetric: { standardMetric: "SPAM_RATE" } },
