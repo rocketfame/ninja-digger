@@ -18,12 +18,16 @@
  *     the deliverability verdict (SPAM_RATE_HIGH, SMTP_ERRORS_HIGH, …).
  */
 const API = "https://gmailpostmastertools.googleapis.com/v2";
+/** Fewer letters than this in a day → the day's ratios are not a verdict. */
+export const LOW_VOLUME = 100;
 
 export type PostmasterDay = {
   date: string;                  // YYYY-MM-DD of the newest published day
   spamRatio: number | null;      // SPAM_RATE, 0..1
   authRatio: number | null;      // AUTH_SUCCESS_RATE for auth_type = dmarc, 0..1
   deliveryErrorRatio: number;    // DELIVERY_ERROR_RATE, 0..1 (0 when unpublished)
+  volume: number | null;         // TLS_ENCRYPTION_MESSAGE_COUNT — the closest thing to "how many letters that day"
+  lowVolume: boolean;            // under LOW_VOLUME letters: ratios are a handful of stray mails, not a verdict
   needsWork: string[];           // compliance requirements in NEEDS_WORK
   verdict: string | null;        // deliverabilityStatusVerdict.reason
 };
@@ -79,6 +83,9 @@ export async function latestTrafficStats(domain: string, daysBack = 5, now = new
       // AUTH_SUCCESS_RATE needs an auth_type filter; DMARC is the one Gmail's compliance table judges
       { name: "auth", baseMetric: { standardMetric: "AUTH_SUCCESS_RATE" }, filter: 'auth_type = "dmarc"' },
       { name: "errors", baseMetric: { standardMetric: "DELIVERY_ERROR_RATE" } },
+      // "inbound" = arriving at Gmail from the domain (19.09 psg-offers.com: 47 ≈ our 52); the TLS count is the
+      // closest thing to the day's volume — unencrypted stray mail is exactly what a low number should hide
+      { name: "volume", baseMetric: { standardMetric: "TLS_ENCRYPTION_MESSAGE_COUNT" }, filter: 'traffic_direction = "inbound"' },
     ],
     timeQuery: { dateRanges: { dateRanges: [{ start: ymd(start), end: ymd(end) }] } },
     aggregationGranularity: "DAILY",
@@ -93,18 +100,23 @@ export async function latestTrafficStats(domain: string, daysBack = 5, now = new
     pageToken = q.nextPageToken;
   } while (pageToken);
 
-  // each metric on its own newest day: Gmail publishes spam rate only for days
-  // with enough volume, auth/errors for any day with traffic
-  const latest: Partial<Record<"spam" | "auth" | "errors", { date: string; v: number }>> = {};
+  // One day per domain — the newest with any published metric — so the line
+  // never mixes Saturday's spam rate with Sunday's DMARC. 20.09 promosoundgroup.net
+  // showed "DMARC 0 %" from a handful of unsigned mails on a day eSputnik sent
+  // nothing; with the day's volume next to it that reads as what it is.
+  const byDay = new Map<string, Partial<Record<"spam" | "auth" | "errors" | "volume", number>>>();
   for (const s of rows) {
     if (!s.date || !s.metric) continue;
     const v = num(s.value);
     if (v === null) continue;
-    const k = s.metric as "spam" | "auth" | "errors", d = key(s.date);
-    if (!latest[k] || latest[k]!.date < d) latest[k] = { date: d, v };
+    const d = key(s.date);
+    byDay.set(d, { ...(byDay.get(d) ?? {}), [s.metric]: v });
   }
-  if (!latest.spam && !latest.auth && !latest.errors) return null;
-  const date = [latest.spam, latest.auth, latest.errors].filter(Boolean).map((x) => x!.date).sort().pop()!;
+  const days = [...byDay.keys()].sort();
+  if (days.length === 0) return null;
+  const date = days[days.length - 1], m = byDay.get(date)!;
+  const volume = m.volume ?? null;
+  const lowVolume = volume !== null && volume < LOW_VOLUME;
 
   // compliance is "now", not per day — read best-effort so a missing table never hides the metrics
   let needsWork: string[] = [], verdict: string | null = null;
@@ -115,7 +127,7 @@ export async function latestTrafficStats(domain: string, daysBack = 5, now = new
     verdict = v?.state?.status === "NEEDS_WORK" ? (v.reason ?? "NEEDS_WORK") : v?.reason ?? null;
   } catch { /* the day's metrics still stand */ }
 
-  return { date, spamRatio: latest.spam?.v ?? null, authRatio: latest.auth?.v ?? null, deliveryErrorRatio: latest.errors?.v ?? 0, needsWork, verdict };
+  return { date, spamRatio: m.spam ?? null, authRatio: m.auth ?? null, deliveryErrorRatio: m.errors ?? 0, volume, lowVolume, needsWork, verdict };
 }
 
 /** One line per domain for the daily Telegram digest, plus alerts for what got worse since yesterday. */
@@ -148,6 +160,7 @@ const plainVerdict = (v: string) => VERDICT[v] ?? v;
 const badVerdict = (v: string | null) => Boolean(v && !["USER_FEEDBACK_POSITIVE", "MESSAGE_VOLUME_LOW", "USER_FEEDBACK_LOW"].includes(v));
 
 export function healthLine(h: DomainHealth): string {
+  if (h.lowVolume) return `— ${h.domain} — за ${h.date.slice(8, 10)}.${h.date.slice(5, 7)} лише ${h.volume} лист(ів), замало для оцінки`;
   const problems: string[] = [];
   if (h.spamRatio !== null && h.spamRatio >= 0.001) problems.push(`скарги ${pctS(h.spamRatio)}`);
   if (h.deliveryErrorRatio > 0.05) problems.push(`Gmail відхиляє ${pctS(h.deliveryErrorRatio, 1)} листів`);
@@ -163,6 +176,7 @@ export function healthLine(h: DomainHealth): string {
 export function healthAlerts(now: DomainHealth[], prev: Record<string, Partial<DomainHealth>>): string[] {
   const out: string[] = [];
   for (const h of now) {
+    if (h.lowVolume) continue;
     const p = prev[h.domain] ?? {};
     if (h.spamRatio !== null && h.spamRatio >= 0.001 && !((p.spamRatio ?? 0) >= 0.001)) out.push(`${h.domain}: скарги ${pctS(h.spamRatio)} (ліміт Gmail 0.1 %)`);
     if (h.deliveryErrorRatio > 0.05 && !((p.deliveryErrorRatio ?? 0) > 0.05)) out.push(`${h.domain}: Gmail почав відхиляти листи — ${pctS(h.deliveryErrorRatio, 1)}`);

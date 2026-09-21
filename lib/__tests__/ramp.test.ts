@@ -46,6 +46,7 @@ describe("ramp ladder", () => {
     expect(rampDecision({ ...base, postmaster: { ...pm, needsWork: ["DMARC_ALIGNMENT"] } })).toMatchObject({ action: "hold" });
     expect(rampDecision({ ...base, postmaster: { ...pm, needsWork: ["USER_REPORTED_SPAM_RATE"] } })).toMatchObject({ action: "climb" }); // the ratio itself decides
     expect(postmasterVerdict({ ...pm, spamRatio: null, authRatio: null })).toEqual({ stop: "", hold: "" });
+    expect(postmasterVerdict({ ...pm, authRatio: 0, lowVolume: true })).toEqual({ stop: "", hold: "" }); // a Sunday with 3 stray mails is not evidence
   });
   it("does not judge a day too small to read", () => {
     expect(gateVerdict({ pushed: 100, delivered: 100, opened: 0, hardBounce: 0, unsub: 0, spam: 1 }, 0)).toEqual({ stop: "", hold: "" });

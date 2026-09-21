@@ -8,7 +8,7 @@ export type RampConfig = { start: string; steps: number[]; stepDays: number; hou
 export type DayMetrics = { pushed: number; delivered: number; opened: number; hardBounce: number; unsub: number; spam: number; clicked?: number };
 
 /** What Gmail itself reports for the sending domain (lib/postmaster.ts), newest published day. */
-export type PostmasterMetrics = { date: string; spamRatio: number | null; authRatio: number | null; deliveryErrorRatio: number; needsWork: string[]; verdict: string | null };
+export type PostmasterMetrics = { date: string; spamRatio: number | null; authRatio: number | null; deliveryErrorRatio: number; needsWork: string[]; verdict: string | null; lowVolume?: boolean };
 
 export type RampDecision =
   | { action: "off"; reason: string }
@@ -42,7 +42,7 @@ export function gateVerdict(m: DayMetrics | null, level: number, pm: PostmasterM
 
 /** Postmaster is judged on its own: it lags ~2 days but it is Gmail's verdict, not ours. */
 export function postmasterVerdict(pm: PostmasterMetrics | null): { stop: string; hold: string } {
-  if (!pm) return { stop: "", hold: "" };
+  if (!pm || pm.lowVolume) return { stop: "", hold: "" };
   const f = (x: number) => (100 * x).toFixed(2);
   if (pm.spamRatio !== null && pm.spamRatio >= GATES.pmStopSpam) return { stop: `Postmaster ${pm.date}: скарги ${f(pm.spamRatio)} % ≥ 0.1 %`, hold: "" };
   if (pm.deliveryErrorRatio > GATES.pmStopErrors) return { stop: `Postmaster ${pm.date}: delivery errors ${f(pm.deliveryErrorRatio)} % > 5 %`, hold: "" };

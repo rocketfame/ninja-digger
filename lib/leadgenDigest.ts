@@ -51,7 +51,7 @@ export async function leadgenDigest(health: DomainHealth[], missing: string[], n
   lines.push(stopped ? `⛔ сходинка зупинена` : steps.length ? `сходинка ${level + 1}/${steps.length}: сьогодні ${push}/день` : `обсяг сьогодні: ${push}/день`);
   lines.push(``, `💬 Відповіді лідів за 24 год: ${n(r.replies)}`);
   lines.push(``, `🔎 Парсинг SoundCloud за ${dm(yesterday)}`, `профілів +${n(r.profiles).toLocaleString("uk-UA")} · з email +${n(r.emails).toLocaleString("uk-UA")} · перевірено valid +${n(r.valid).toLocaleString("uk-UA")}`);
-  lines.push(``, `📮 Репутація в Gmail (дані за ${health[0]?.date ? dm(health[0].date) : "—"})`, ...health.map(healthLine), ...missing.map((m) => `— ${m} — ще без даних`));
+  lines.push(``, `📮 Репутація в Gmail (Postmaster, останній день з даними)`, ...health.map((h) => `${healthLine(h)}${h.lowVolume ? "" : ` [${dm(h.date)}, ${h.volume ?? "?"} листів]`}`), ...missing.map((m) => `— ${m} — ще без даних`));
 
   await setSetting("leadgen_digest_day", today);
   await sendTelegramMessage(lines.join("\n")).catch(() => {});
