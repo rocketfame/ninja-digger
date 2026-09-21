@@ -17,10 +17,9 @@ export type RampDecision =
 
 /** Gates (knowledge/MASS-OUTREACH.md, ramp table). Percentages of delivered unless noted. */
 export const GATES = {
-  minDelivered: 50,        // below this a day is too small to judge — treated as passed
+  minDelivered: 150,       // below this a day is too small to judge — treated as passed (52 letters stopped the ladder on 20.09)
   stopSpamPct: 0.1,
   stopBouncePct: 4,        // of pushed
-  stopOpenPct: 4,
   holdOpenPct: 10,
   holdOpenPctEarly: 15,    // first two rungs
   holdBouncePct: 2,        // of pushed
@@ -60,7 +59,6 @@ function ownVerdict(m: DayMetrics | null, level: number): { stop: string; hold: 
   const f = (x: number) => x.toFixed(2);
   if (spam >= GATES.stopSpamPct) return { stop: `скарги ${f(spam)} % ≥ ${GATES.stopSpamPct} %`, hold: "" };
   if (bounce > GATES.stopBouncePct) return { stop: `bounce ${f(bounce)} % > ${GATES.stopBouncePct} %`, hold: "" };
-  if (open < GATES.stopOpenPct) return { stop: `відкриття ${f(open)} % < ${GATES.stopOpenPct} %`, hold: "" };
   const need = level < 2 ? GATES.holdOpenPctEarly : GATES.holdOpenPct;
   if (open < need) return { stop: "", hold: `відкриття ${f(open)} % < ${need} %` };
   if (bounce >= GATES.holdBouncePct) return { stop: "", hold: `bounce ${f(bounce)} % ≥ ${GATES.holdBouncePct} %` };

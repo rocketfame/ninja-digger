@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { gateVerdict, postmasterVerdict, rampDecision, type DayMetrics, type PostmasterMetrics, type RampConfig } from "../rampPolicy";
 
 const cfg: RampConfig = { start: "2026-09-19", steps: [100, 150, 250, 400], stepDays: 2, hours: 8 };
-const good: DayMetrics = { pushed: 100, delivered: 98, opened: 20, hardBounce: 1, unsub: 0, spam: 0 };
+const good: DayMetrics = { pushed: 200, delivered: 196, opened: 40, hardBounce: 2, unsub: 0, spam: 0 };
 const base = { cfg, today: "2026-09-21", level: 0, levelSince: "2026-09-19", stopped: false, manualHold: false, metrics: good };
 
 describe("ramp ladder", () => {
@@ -24,14 +24,14 @@ describe("ramp ladder", () => {
   });
   it("holds on a manual hold and on soft gates", () => {
     expect(rampDecision({ ...base, manualHold: true }).action).toBe("hold");
-    expect(rampDecision({ ...base, metrics: { ...good, opened: 12 } })).toMatchObject({ action: "hold", push: 100 }); // 12.2 % < 15 % on rung 1
-    expect(rampDecision({ ...base, level: 2, metrics: { ...good, opened: 12 } })).toMatchObject({ action: "climb" }); // 12.2 % ≥ 10 % later
-    expect(rampDecision({ ...base, metrics: { ...good, unsub: 2 } }).action).toBe("hold");
+    expect(rampDecision({ ...base, metrics: { ...good, opened: 24 } })).toMatchObject({ action: "hold", push: 100 }); // 12.2 % < 15 % on rung 1
+    expect(rampDecision({ ...base, level: 2, metrics: { ...good, opened: 24 } })).toMatchObject({ action: "climb" }); // 12.2 % ≥ 10 % later
+    expect(rampDecision({ ...base, metrics: { ...good, unsub: 4 } }).action).toBe("hold");
   });
-  it("pulls the stop cord on complaints, bounces or dead opens", () => {
+  it("pulls the stop cord only on hard signals: complaints, bounces — never on quiet opens", () => {
     expect(rampDecision({ ...base, metrics: { ...good, pushed: 1000, delivered: 990, opened: 200, spam: 1 } })).toMatchObject({ action: "stop", push: 0 });
-    expect(rampDecision({ ...base, metrics: { ...good, hardBounce: 5 } })).toMatchObject({ action: "stop" });
-    expect(rampDecision({ ...base, metrics: { ...good, opened: 3 } })).toMatchObject({ action: "stop" });
+    expect(rampDecision({ ...base, metrics: { ...good, hardBounce: 10 } })).toMatchObject({ action: "stop" });
+    expect(rampDecision({ ...base, metrics: { ...good, opened: 0 } })).toMatchObject({ action: "hold", push: 100 }); // the system keeps running (user, 21.09)
   });
   it("stays stopped until a human clears it", () => {
     expect(rampDecision({ ...base, stopped: true })).toMatchObject({ action: "stop", push: 0 });
@@ -48,7 +48,7 @@ describe("ramp ladder", () => {
     expect(postmasterVerdict({ ...pm, spamRatio: null, authRatio: null })).toEqual({ stop: "", hold: "" });
   });
   it("does not judge a day too small to read", () => {
-    expect(gateVerdict({ pushed: 30, delivered: 30, opened: 0, hardBounce: 0, unsub: 0, spam: 1 }, 0)).toEqual({ stop: "", hold: "" });
+    expect(gateVerdict({ pushed: 100, delivered: 100, opened: 0, hardBounce: 0, unsub: 0, spam: 1 }, 0)).toEqual({ stop: "", hold: "" });
     expect(gateVerdict(null, 0)).toEqual({ stop: "", hold: "" });
   });
 });
