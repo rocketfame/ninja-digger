@@ -1,4 +1,4 @@
-# Session handoff — 19.09.2026 (Lisbon 20:30 / Kyiv 22:30)
+# Session handoff — 21.09.2026 (Lisbon 17:15 / Kyiv 19:15)
 
 Read this first in a new session. It says where we stopped and what to do next.
 
@@ -43,6 +43,11 @@ Closed 18.09: the "From alignment" flag is residue of the 15–16.09 Gmail rejec
 ## 19.09 — ramp day 1 (psg-offers.com)
 
 START 100/day fired at 00:35: group `Leads: SoundCloud 19.09.2026 (auto)`, broadcast 4536221 16:00 Kyiv, 13/h. Two bugs found and fixed the same evening (deployed): (1) the cron deleted the group at 21:35 with 48 contacts still queued (≥50 % delivered rule ignored batching) → deletion now waits for the full send window; the 48 were released back to the pool (ledger + events), `members` corrected to 52; (2) the ladder judged yesterday at 00:35 = 8.5 h after a 16:00 send → decision now at 13:00 Kyiv (`esputnik_ramp_decide_hour`), fill waits for it. Day-1 truth: 52 sent, 52 delivered, **0 opens by 22:00 Kyiv** (eSputnik analytics). If still < 4 % at 13:00 on 20.09 the gate will STOP — then read Postmaster for psg-offers.com (first data expected 21.09) before deciding anything.
+
+
+## 21.09 — the ladder had stopped itself; rule changed, resumed
+
+20.09 13:36 the gate pulled STOP on day 1 (52 delivered, 2 opens = 3.8 % < 4 %); 20–21.09 nothing went out. Postmaster for psg-offers.com 19.09: auth 100 %, spam 0, rejections 0 — no harm signal. User: "воно має працювати постійно". Rule changed and deployed: STOP only on spam ≥ 0.1 %, bounce > 4 %, Postmaster errors > 5 %; low opens/unsubs → HOLD; a day under 150 delivered is not judged. Resumed at rung 1 (100/day, 13/h, level_since 21.09); the fill ran 21.09 evening → broadcast 22.09 16:00 Kyiv. Watchdog: Re-Ex seeds down to 24 — harvest from repostexchange in Chrome next session (memory reex-refuel-proactive). promosoundgroup.net had 0 % auth days again on 17.09 and 20.09 (low-volume days; likely a mailbox sending as @promosoundgroup.net outside SPF/DKIM) — source still unknown, no harm yet.
 
 ## Open questions to close next session
 
