@@ -1,4 +1,4 @@
-# Session handoff — 21.09.2026 (Lisbon 17:15 / Kyiv 19:15)
+# Session handoff — 23.09.2026 (Lisbon 12:xx / Kyiv 14:xx)
 
 Read this first in a new session. It says where we stopped and what to do next.
 
@@ -53,6 +53,11 @@ START 100/day fired at 00:35: group `Leads: SoundCloud 19.09.2026 (auto)`, broad
 ## 22.09 — audiences for the PPC manager (Meta)
 
 Exported to `scratchpad/ppc/` (gitignored) + `scratchpad/ppc_audiences_2026-09-22.zip` (2.4 MB). Filters everywhere: valid syntax, not in email_blacklist, not a shop customer (prospecting lists must not contain clients). Tiers: 1 hot (replied/clicked) 85 · 2 warm (opened) 2 128 · 3 delivered-no-reaction (valid) 15 671 · 4 clean-untouched ICP (SMTP valid, tier A/B, ≥100 followers) 131 487 · 5 shop customers 64 363 (buyers 15 275, repeat 5 074, 60-day buyers 557 with spend). Recommendation given: value-based lookalike from 5a buyers; interest lookalike from 1+2 (+3 as a second seed); 4 = direct custom audience (expect 30–50 % Meta match); exclude 5 from prospecting. Re-export = `npx tsx scratchpad/segexport.ts` + `scratchpad/shopexport.ts` (temp table needs one connection — segment 4 count comes from the file).
+
+
+## 23.09 — research: магазин даних (не почато, чекає рішень)
+
+Повне дослідження в `knowledge/research/DATA-SHOP.md` (артефакт: https://claude.ai/code/artifact/e73bbcb8-40ff-4141-aa31-3e47ff0691d9). Коротко: продавати базу на Shopify можна — платформа й Stripe не забороняють; ділимо базу на три зони (зелена = рольові адреси, жовта = персональні поза ЄС + реєстрація дата-брокера, червона = ЄС/UK, не продаємо); окремий бренд і домен, бо конфлікт із promosoundgroup.net і ризик випалити власну базу. 8 SKU, $79–899 + $49/міс. Блокує старт: рішення по зоні, бюджет юриста, назва/домен.
 
 ## Open questions to close next session
 
