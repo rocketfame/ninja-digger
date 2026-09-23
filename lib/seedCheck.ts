@@ -39,17 +39,28 @@ export async function seedPlacements(since: Date): Promise<SeedPlacement[]> {
   await client.connect();
   const out: SeedPlacement[] = [];
   try {
-    // "[Gmail]/All Mail" holds every message whatever its folder; the labels say where it is
-    const lock = await client.getMailboxLock("[Gmail]/All Mail");
-    try {
-      const uids = await client.search({ since, from: "psg-offers.com" }, { uid: true });
-      for (const uid of (uids || []).slice(-10)) {
-        const msg = await client.fetchOne(String(uid), { envelope: true, labels: true }, { uid: true });
-        if (!msg || typeof msg === "boolean") continue;
-        const to = msg.envelope?.to?.[0]?.address ?? "?";
-        out.push({ to, folder: folderOf(new Set(msg.labels ?? [])), subject: msg.envelope?.subject ?? "" });
-      }
-    } finally { lock.release(); }
+    // Gmail's All-Mail folder holds everything EXCEPT Spam and Trash, so a letter
+    // that went to Spam is invisible there — exactly the case we are testing for.
+    // Both folders are searched, and their names are localised ("[Gmail]/Спам" on a
+    // Ukrainian account), so they are found by their \\All and \\Junk special-use flags.
+    const boxes = await client.list();
+    const pick = (flag: string, re: RegExp) => boxes.find((b) => b.specialUse === flag)?.path ?? boxes.find((b) => re.test(b.path))?.path;
+    const targets: { path: string; spam: boolean }[] = [];
+    const all = pick("\\All", /All Mail|Уся пошта/i); if (all) targets.push({ path: all, spam: false });
+    const junk = pick("\\Junk", /Spam|Спам/i); if (junk) targets.push({ path: junk, spam: true });
+    if (targets.length === 0) throw new Error("mailboxes not found");
+    for (const t of targets) {
+      const lock = await client.getMailboxLock(t.path);
+      try {
+        const uids = await client.search({ since, from: "psg-offers" }, { uid: true });
+        for (const uid of (uids || []).slice(-10)) {
+          const msg = await client.fetchOne(String(uid), { envelope: true, labels: true }, { uid: true });
+          if (!msg || typeof msg === "boolean") continue;
+          const to = msg.envelope?.to?.[0]?.address ?? "?";
+          out.push({ to, folder: t.spam ? "Spam" : folderOf(new Set(msg.labels ?? [])), subject: msg.envelope?.subject ?? "" });
+        }
+      } finally { lock.release(); }
+    }
   } finally { await client.logout().catch(() => {}); }
   return out;
 }
