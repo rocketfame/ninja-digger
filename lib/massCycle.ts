@@ -243,6 +243,16 @@ async function fillGroup(platform: Platform, limit: number, cycle: number): Prom
       if (again.length) console.warn(`[massCycle] ${name}: ${again.length} still refused without a name`, JSON.stringify(again.slice(0, 3)));
     }
   }
+  // Seed mailboxes ride along in every group so seedCheck can say which Gmail
+  // folder the letter reached (open rate alone cannot tell Spam from a blocked
+  // tracking pixel). They are ours, so they never enter the ledger.
+  const seeds = (await getSetting("esputnik_seeds", "")).split(",").map((x) => x.trim()).filter(Boolean);
+  if (seeds.length) {
+    await push(seeds.map((email) => ({ firstName: "Seed", channels: [{ type: "email", value: email }] })))
+      .then((f) => { if (f.length) console.warn(`[massCycle] ${name}: seeds refused`, JSON.stringify(f.slice(0, 2))); })
+      .catch((e) => console.warn(`[massCycle] ${name}: seed push failed`, e instanceof Error ? e.message : String(e)));
+  }
+
   // The ledger is written the moment the push is accepted: these addresses
   // are the mass channel's now, whatever the import does with them. Settle
   // releases the ones that never landed.
