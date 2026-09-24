@@ -1,95 +1,153 @@
-# Session handoff — 23.09.2026 (Lisbon 12:xx / Kyiv 14:xx)
+# Session handoff — 24.09.2026 (Kyiv 17:xx)
 
-Read this first in a new session. It says where we stopped and what to do next.
+Читай цей файл першим. Нижче — точка, на якій зупинилися, і все, що треба, щоб продовжити без перепитувань.
 
-## State right now
+---
 
-**Everything on Max's personal Brevo channel is PAUSED** (all four crons: `outreach_paused`, `sc_outreach_paused`, `sp_outreach_paused`, `radar_outreach_paused` = 1). Reason: Google Postmaster shows the parent domain `promosound.net` as **Not compliant** (user-reported spam ≥ 0.3 %) — caused by the Brevo cold outreach 08–13.09 (~900/day, 60 % Gmail). Inbox reply detection (IMAP → Telegram) still runs.
+## ПОЧНИ ЗВІДСИ: відкрите рішення
 
-**Mass channel (eSputnik, `offers.promosound.net`) is in warm-up / diagnostic mode:**
+Пишемо **новий перший лист** для холодного прогріву psg-offers.com. Написано 6 варіантів (3 на сегмент), користувач ще не обрав. Мої рекомендації — **A2** і **Б1** (контрарний кут).
 
-| knob (app_settings) | value | meaning |
+Сегменти:
+- **Тип А** — каталог 50+ треків (приклад: 133 треки / 1 815 слухачів)
+- **Тип Б** — новачок до 25 треків (приклад: 12 треків / 40 слухачів)
+
+Тексти всіх шести — у транскрипті сесії 24.09; якщо їх нема під рукою, перегенеруй за правилами нижче (скіл `hype-smith` + жорсткі заборони).
+
+**Після вибору:** англійські версії → шаблон в eSputnik із підстановкою (`username`, `track_count`, `followers_count`) → сегментація аудиторії → заміна `esputnik_message_soundcloud` → обсяг 50/день.
+
+---
+
+## Жорсткі правила для копірайтингу холодних листів
+
+Вистраждані на шести ітераціях 24.09. Порушення = лист летить у смітник, а сесія — на новий круг.
+
+1. **НІКОЛИ не згадувати нашу базу даних, парсинг, «ми відстежуємо 2.4 млн профілів», «ти у нашому відборі з бази».** Це зізнання у скрапінгу, сіра зона compliance і пряма підказка «звідки в тебе мій email». Усі цифри в листі беруться **з його публічного профілю**, куди може зайти будь-хто. Бенчмарки подаються як **наш досвід роботи з артистами**, без чисел про розмір бази.
+2. **Не писати «ти відкривав мої попередні листи»** — звучить як стеження.
+3. **Ніяких порад і повчального тону в першому листі.** Жодних «на старті вирішує ось що…». Спостереження — так, рекомендації — ні.
+4. **Не просити прислати трек** — з треком ми нічого не робимо (подетальних даних по треках нема), а чекаут усе одно питає лінк. Зайвий крок, який гасить конверсію.
+5. **Має бути привітання на імʼя і нормальне прощання.** Дамп цифр без «привіт» — не лист.
+6. **Позиціювання: ми промо-компанія, працюємо з артистами і відкриті до нових.** Прямо, без гри в друзів і без вдавання приватної особи.
+7. **Без посилань і без цін у першому листі.** Мета — відповідь. Продаж у другому листі, коли він сам написав. Нуль посилань також означає, що нічого не загортається в трекінг-домен.
+8. Довжина тіла **50–125 слів**, тема **25–40 символів**, імʼя + один конкретний сигнал.
+9. «Беремо кількох артистів» має лишатися **правдою** — зараз так (50/день). На 5 000/день цю фразу прибрати.
+
+Скіл для копії: `hype-smith` (маркетолог-копірайтер PromoSound, фреймворки у `~/.claude/skills/hype-smith/references/`).
+
+---
+
+## Що довів seed-тест 23.09 — головна причина всіх проблем
+
+**Наші листи лягають у СПАМ Gmail.** Не в «Промоакції» — у спам. Дві seed-скриньки, обидві в папці Спам, підтверджено по IMAP-мітках.
+
+Тому відкриття 1 %: люди листа не бачать. eSputnik при цьому показує «доставлено 99 %» — для нього спам-папка теж доставка.
+
+При цьому технічно домен чистий: SPF/DKIM/DMARC 100 %, скарг 0, відписок 0, bounce одиниці, Gmail нічого не відхиляє. Postmaster для psg-offers.com даних не дає взагалі — при 100–150 листах/день обсяг нижчий за поріг публікації (останній день з даними — 19.09: auth 100 %, spam 0, errors 0, 47 листів).
+
+**Причина — сам лист.** Поточний шаблон 4690375: 11 картинок, 16 посилань на магазин, 917 слів, промокод і «15 % off» у темі. Для відправника без історії це профіль, який Gmail фільтрує за замовчуванням. Той самий шаблон збирав 2–5 % скарг з promosound.net у вересні — Gmail тримає відбиток такого листа.
+
+**Seed-механізм у конвеєрі назавжди:**
+- ручка `esputnik_seeds` — адреси через кому, зараз `infopromosoundgroup+seed1@gmail.com,infopromosoundgroup+seed2@gmail.com`
+- `fillGroup` додає їх у кожну групу (в ledger не пишуться — вони наші, не ліди)
+- `lib/seedCheck.ts` через 2 год після розсилки читає IMAP і шле в Telegram «📬 Перевірка доставки»: ✅ Основні / 🟡 Промоакції / ⛔ СПАМ
+- пастка, на якій я вже спіймався: **Gmail All Mail НЕ містить Спам** — шукати треба і в `\Junk`; назви папок локалізовані, тому шукати по `specialUse`, не по імені
+
+---
+
+## Стан каналів
+
+**Масовий (eSputnik, psg-offers.com) — працює сам:**
+
+| ручка | значення | сенс |
 |---|---|---|
-| `esputnik_daily_push` | 1000 | per platform per cycle (0 = off) |
-| `esputnik_max_cycles_per_day` | 1 | |
-| `esputnik_push_platforms` | soundcloud | Spotify dead, YouTube `valid` exhausted (164 left) |
-| `esputnik_sc_source` | reex | Re-Ex advertisers only (`nonreex` = graph/upload, `any`) |
-| `esputnik_send_hour` | 16 | Kyiv; 0 = send the moment the group is filled |
-| `esputnik_ceiling` | 24500 | hard ceiling of the eSputnik base — never raise |
-| `esputnik_poll_cursor` | ISO ts | resumable activity pull (2 h overlap) |
-| `mass_pending_fills` | [] | async imports waiting to settle |
+| `esputnik_ramp` | start 2026-09-19, steps [100,150,250,400,600,900,1300,1900,2700,3800,5000], stepDays 2, hours 8 | сходинка |
+| `esputnik_ramp_level` | 1 (сходинка 2) | з 23.09 |
+| `esputnik_daily_push` | 150 | ставить сам ramp |
+| `esputnik_batch_per_hour` | 19 | денний ÷ 8 |
+| `esputnik_engagement` | engaged | перші 2 сходинки — ті, хто відкривав |
+| `esputnik_sc_source` | reex | |
+| `esputnik_message_soundcloud` | 4690375 | поточний (спамний) шаблон |
+| `esputnik_seeds` | 2 адреси | seed-перевірка |
+| `esputnik_send_hour` | 16 | Київ |
+| `esputnik_ceiling` | 24500 | стеля бази eSputnik, не піднімати |
 
-Today (16.09) went out as **1 000 in two shots**: `Leads: SoundCloud 16.09.2026 (auto)` 476 (broadcast 4532505, 16:00 Kyiv, 474 delivered) + `/2 (auto)` 524 (broadcast 4533059, 18:38 Kyiv, 522 delivered, 0 refused after the name fix). Both groups already deleted from eSputnik. The top-up was done through the cron with temporary knobs (daily_push=524, max_cycles=2, send_hour=0), knobs restored to 1000 / 1 / 16 afterwards — this is the way to fill a shortfall the same day.
+Результати прогріву (усе доставлено, скарг і відписок ~0, але відкриття 1 %):
 
-Yesterday's cycles 2 (4 585) and 3 (4 716) are fully delivered and deleted from eSputnik.
+| дата | надіслано | доставлено | відкрито | кліки |
+|---|---:|---:|---:|---:|
+| 19.09 | 52 | 52 | 3 (5.8 %) | 1 |
+| 22.09 | 100 | 100 | 2 | 0 |
+| 23.09 | 150 | 150 | 1 | 0 |
+| 24.09 | 150 | 131 (досилає) | 1 | 0 |
 
+**Персональний (Brevo, promosound.net) — на паузі з 16.09**, усі чотири ствола (`outreach_paused`, `sc_outreach_paused`, `sp_outreach_paused`, `radar_outreach_paused` = 1). Причина: promosound.net Not compliant після 08–13.09. Відповіді на старі листи Max далі приходять у бот (IMAP) — це нормально, не нова розсилка.
 
-## 17.09 — decision: mass channel moves to psg-offers.com
+---
 
-Postmaster (data to 15.09): promosound.net spam 2–5.17 % on 08–12.09 (Brevo), Not compliant (spam rate + From alignment). offers.promosound.net: complaints 0 %, but 15.09 **42.6 % rejected by Gmail as "Suspected spam"**, auth 58 %; opens 4 % → 1 %. Subdomain inherits the parent → warm-up on offers is futile. Full write-up + lessons + ramp: `knowledge/MASS-OUTREACH.md` (top section).
+## Перевірені факти про дані (не перевіряти заново)
 
-Done today: broadcast 4533201 (17.09, 1 000) cancelled, group deleted from eSputnik (998 + 2 customers detached), ledger released; `esputnik_daily_push=0`; **user is buying `psg-offers.com`** in Cloudflare Registrar (tab left open). **Day-0 done 17.09 ~13:40 Kyiv** (Cloudflare zone `f6decaac628e151bebf02575be4ab994`): SPF/DKIM/send-subdomain/DMARC/google-site-verification/esputnik-verification TXT; Email Routing on, rule `max@psg-offers.com → inbox`; **Postmaster Verified**; eSputnik domain added (FULL_PLUS, `verificationPassed: true`, status IN_PROGRESS — "up to 24 h, usually much less"). Code: `esputnik_batch_per_hour` knob deployed.
-**Done 17.09 17:50 Kyiv:** eSputnik domain CONFIGURED (~4 h after TXT); sender "Max from Promosound <max@psg-offers.com>" added and confirmed (confirmation mail arrived through Email Routing → read via IMAP with GMAIL_USER creds, link opened); message **4690375** = byte-identical clone of 4681093 with the new sender; `esputnik_message_soundcloud=4690375` (old offers template 4681093 kept). Then 48 h pause from DNS (earliest first send 19.09 16:00 Kyiv): `esputnik_daily_push=100`, `esputnik_batch_per_hour=25`, `esputnik_sc_source=reex`, and the ramp with gates from MASS-OUTREACH.md. Also open: who sends unaligned From @promosound.net (Postmaster "From: header alignment — Needs work"); Brevo stays paused.
+- **Порожні колонки `sc_artists`:** `likes_count`, `reposts_count`, `sc_created_at` — нулі/null у всіх. У листах їх НЕ використовувати.
+- **Надійні:** `followers_count`, `track_count`, `username`, `city` (61 %), `country_code` (49 %). `genres` заповнений у 338 з 277 тис. — не використовувати.
+- **Свіжість:** середній вік профілю 11.6 дня, 265 з 277 тис. оновлені за 30 днів. Перед відправкою варто оновити профілі тих 50, кому шлемо.
+- **Формулювання:** ніколи «top 7% on SoundCloud», лише «серед артистів, яких ми бачимо в роботі» — і краще взагалі без згадки вибірки (див. правило 1).
 
+**Когортні медіани фоловерів за розміром каталогу** (2.42 млн профілів, рахував 24.09):
 
-## 18.09 — ramp automated, start tomorrow
+| треків | артистів | медіана фол. | p75 |
+|---|---:|---:|---:|
+| 1–9 | 982 072 | 88 | 254 |
+| 10–24 | 724 748 | 137 | 385 |
+| 25–49 | 444 826 | 201 | 578 |
+| 50–99 | 189 662 | 291 | 972 |
+| 100–199 | 50 010 | 780 | 3 591 |
+| 200–499 | 23 240 | 1 252 | 6 281 |
+| 500+ | 9 992 | 1 507 | 8 226 |
 
-Strategy doc (artifact): https://claude.ai/code/artifact/66eac0d7-68b2-42ec-9572-ef9b333f927a. User decisions: keep template 4690375 as is (no A/B during warm-up), 21-day ladder OK, engagement-first OK, stop rules OK, own link domain — done (`click.psg-offers.com`, SSL by eSputnik).
-Code deployed: `lib/ramp.ts` + `lib/rampPolicy.ts` (tests) wired at the top of `advance()`; `esputnik_engagement` knob with fallback in `fillGroup`. Knobs set: `esputnik_ramp` (start 2026-09-19, 11 rungs, 2 days each, 8 h), level 0, `daily_push=0` until the ramp starts it, `sc_source=reex`, `engagement=engaged`, `send_hour=16`.
-**Tomorrow 19.09**: first cron after 00:00 Kyiv runs applyRamp → START 100/day (batch 13/h), fill, broadcast 16:00 Kyiv → Telegram "🚀". Postmaster is read by the cron itself (v2 API, OAuth done 18.09) — no daily human task; `esputnik_ramp_hold=1` stays as a manual override. Warm pool is only ~105 addresses — day 2+ is Re-Ex tier A.
-Closed 18.09: the "From alignment" flag is residue of the 15–16.09 Gmail rejections on offers (DMARC 58 % on 15.09), no third-party sender — see MASS-OUTREACH.md. Brevo stays paused. Postmaster is automated: ramp gate + daily digest for all 4 domains (Telegram).
+Що з цього випливає: каталог працює до ~200 релізів, далі кількість не дає приросту; розрив між p75 і медіаною зростає з 2.9× до 5.5× — тобто вирішує охоплення, а не кількість. **Ці висновки — для нашої аргументації у другому листі, не для лекцій у першому.**
 
+**Пул для прогріву:** 1 530 лідів, які нам відкривали (SoundCloud 793, YouTube 413, Spotify 198, Beatport 126), valid, без блеклиста і клієнтів. З них 733 вже отримували масовий лист → щоб слати повторно, треба послабити `massEligibleSql` для цього сегмента (ще НЕ зроблено).
 
-## 19.09 — ramp day 1 (psg-offers.com)
+**Клієнтів магазину не чіпати** — вони в автоматизаціях promosoundgroup.net. Рішення користувача 24.09, не переголосовувати.
 
-START 100/day fired at 00:35: group `Leads: SoundCloud 19.09.2026 (auto)`, broadcast 4536221 16:00 Kyiv, 13/h. Two bugs found and fixed the same evening (deployed): (1) the cron deleted the group at 21:35 with 48 contacts still queued (≥50 % delivered rule ignored batching) → deletion now waits for the full send window; the 48 were released back to the pool (ledger + events), `members` corrected to 52; (2) the ladder judged yesterday at 00:35 = 8.5 h after a 16:00 send → decision now at 13:00 Kyiv (`esputnik_ramp_decide_hour`), fill waits for it. Day-1 truth: 52 sent, 52 delivered, **0 opens by 22:00 Kyiv** (eSputnik analytics). If still < 4 % at 13:00 on 20.09 the gate will STOP — then read Postmaster for psg-offers.com (first data expected 21.09) before deciding anything.
+---
 
+## Черга робіт
 
-## 21.09 — the ladder had stopped itself; rule changed, resumed
+1. **Обрати варіант листа** (відкрите питання вгорі) → англійські версії.
+2. Створити шаблон в eSputnik із підстановкою `username / track_count / followers_count`, поставити `esputnik_message_soundcloud`.
+3. Сегментація: тип А (`track_count >= 50`) / тип Б (`track_count < 25`), плюс прапорець «нижче медіани когорти» — саме їм є що сказати.
+4. Послабити «один масовий дотик назавжди» для сегмента engaged (retouch не раніше ніж через 30 днів).
+5. Опустити обсяг до **50/день** на час зміни підходу (`esputnik_daily_push=50`, `esputnik_batch_per_hour=7`).
+6. Другий лист (розбір + офер) — розширити `lib/leadFacts.ts` / `draftReplyAssist` когортними цифрами.
+7. Послідовність із 3 листів замість одного дотику (день 0 / +4 / +8).
+8. Щотижнева синхронізація Meta-аудиторій для таргетолога.
 
-20.09 13:36 the gate pulled STOP on day 1 (52 delivered, 2 opens = 3.8 % < 4 %); 20–21.09 nothing went out. Postmaster for psg-offers.com 19.09: auth 100 %, spam 0, rejections 0 — no harm signal. User: "воно має працювати постійно". Rule changed and deployed: STOP only on spam ≥ 0.1 %, bounce > 4 %, Postmaster errors > 5 %; low opens/unsubs → HOLD; a day under 150 delivered is not judged. Resumed at rung 1 (100/day, 13/h, level_since 21.09); the fill ran 21.09 evening → broadcast 22.09 16:00 Kyiv. Watchdog: Re-Ex seeds down to 24 — harvest from repostexchange in Chrome next session (memory reex-refuel-proactive). promosoundgroup.net had 0 % auth days again on 17.09 and 20.09 (low-volume days; likely a mailbox sending as @promosoundgroup.net outside SPF/DKIM) — source still unknown, no harm yet.
+---
 
+## Інші відкриті нитки
 
-## 22.09 — audiences for the PPC manager (Meta)
+- **Shopify: SoundCloud-товари мають статус ARCHIVED** (Plays, Likes, Followers, Genre Plays, USA Plays) — активні лише Facebook. Якщо це не старі дублі, другому листу нікуди вести. Перевірити.
+- **Магазин даних** — дослідження в `knowledge/research/DATA-SHOP.md`, чекає трьох рішень користувача (зелена зона чи дата-брокер; бюджет юриста; назва/домен).
+- **PPC-аудиторії** віддані 22.09: `scratchpad/ppc_final/` + `ppc_meta_audiences_2026-09-22.zip` (A_buyers 15 275, B_engaged 17 254, C_artists 131 487, YT ×2 ≈9.8k, X_exclude 64 363) + `ШПАРГАЛКА_для_PPC.md`. Перегенерація: `scratchpad/segexport.ts`, `shopexport.ts`, `ytexport.ts`.
+- **promosoundgroup.net** у тихі дні (17.09, 20.09, 25–28.08) показує 0 % автентифікації — хтось шле з цього домену повз SPF/DKIM. Шкоди нема (скарг 0, compliance ✅), джерело не знайдене.
+- **Brevo** лишається на паузі, поки promosound.net не Compliant + spam < 0.1 % 7 днів.
 
-Exported to `scratchpad/ppc/` (gitignored) + `scratchpad/ppc_audiences_2026-09-22.zip` (2.4 MB). Filters everywhere: valid syntax, not in email_blacklist, not a shop customer (prospecting lists must not contain clients). Tiers: 1 hot (replied/clicked) 85 · 2 warm (opened) 2 128 · 3 delivered-no-reaction (valid) 15 671 · 4 clean-untouched ICP (SMTP valid, tier A/B, ≥100 followers) 131 487 · 5 shop customers 64 363 (buyers 15 275, repeat 5 074, 60-day buyers 557 with spend). Recommendation given: value-based lookalike from 5a buyers; interest lookalike from 1+2 (+3 as a second seed); 4 = direct custom audience (expect 30–50 % Meta match); exclude 5 from prospecting. Re-export = `npx tsx scratchpad/segexport.ts` + `scratchpad/shopexport.ts` (temp table needs one connection — segment 4 count comes from the file).
+---
 
+## Автоматика, яка працює без сесії
 
-## 23.09 — research: магазин даних (не почато, чекає рішень)
+- `/api/cron/esputnik-sync` щогодини :35 UTC: ramp (рішення о 13:00 Київ) → pull активності → дзеркала магазину → reconcile → Postmaster-дайджест → лідген-дайджест (09:00+) → seed-перевірка → цикл (fill → broadcast 16:00 → delete після повного вікна).
+- Telegram отримує: щоденний «📊 Лідогенерація» (~09:35), рішення сходинки, «📮 Репутація доменів», «⚠️ Стало гірше», «📬 Перевірка доставки», відповіді лідів, годинний звіт по емейлах.
+- Postmaster читається сам (API v2, OAuth, env `GOOGLE_OAUTH_CLIENT_ID/SECRET`, `POSTMASTER_REFRESH_TOKEN`).
 
-Повне дослідження в `knowledge/research/DATA-SHOP.md` (артефакт: https://claude.ai/code/artifact/e73bbcb8-40ff-4141-aa31-3e47ff0691d9). Коротко: продавати базу на Shopify можна — платформа й Stripe не забороняють; ділимо базу на три зони (зелена = рольові адреси, жовта = персональні поза ЄС + реєстрація дата-брокера, червона = ЄС/UK, не продаємо); окремий бренд і домен, бо конфлікт із promosoundgroup.net і ризик випалити власну базу. 8 SKU, $79–899 + $49/міс. Блокує старт: рішення по зоні, бюджет юриста, назва/домен.
+## Як керувати
 
-## Open questions to close next session
+- Ручний запуск крону: у вкладці Chrome на ninja-digger.vercel.app → `fetch('/api/cron/esputnik-sync', {credentials:'include'})`, попередньо `DELETE FROM app_settings WHERE key='lease:esputnik-sync'`.
+- Стоп/пауза сходинки: `esputnik_ramp_hold=1` (не піднімати), `esputnik_ramp_stopped` (повний стоп; зняти = видалити ключ).
+- Правило гейтів: STOP лише на твердих сигналах (скарги ≥ 0.1 %, bounce > 4 %, Postmaster errors > 5 %); мало відкриттів → HOLD, ніколи не стоп. День з < 150 доставлених не судиться.
+- Деплой: `npm run build && git push && npx vercel --prod --yes`.
+- Локальні скрипти в `scratchpad/` (gitignored): `rep.ts` (стан+результати), `seednow.ts` (де лист), `engaged.ts` (пул), `cohort.ts` (медіани), `.pm.env` (ключі Postmaster).
 
-1. ~~Why does eSputnik refuse ~half of the Re-Ex import?~~ **CLOSED 16.09 14:xx** — eSputnik's `firstName` validator drops the whole contact: ≤ 40 chars, ≤ 3 words, no symbols, a dot only at the end of a ≤ 3-char word ("Jr."). SoundCloud names ("D o n K r e z", "Gabe Reed & SteezDeeez Founder, Composer, Producer") fail en masse. Fix deployed (`d87985e`): `cleanFirstName` now fits the validator (383 of the 524 keep a name, 141 go nameless, 0 addresses lost), and `fillGroup` re-pushes any `failedContacts` without a name. Verified against the live API with 14 hard names — all accepted. The 524 were released back to the pool and will be picked up by the next fill.
-2. **Read rate of the 16:00 warm-up** — compare at 18:00 Kyiv with the baseline: cycle 2 had ~40 reads in the first 40 min / 2.4 % in 24 h; cycle 3 (after the reputation hit) 0.7 %. Below ~0.4 % in 2 h = Gmail spam folder → keep volume low.
-3. **Postmaster tomorrow (17.09)**: `promosound.net` was added and verified today (TXT via Cloudflare zone `c43b6e23088a066145dd117dbdd49a80`). The daily spam-rate / domain reputation graphs appear after the next daily update. Also check `offers.promosound.net`. Full pace (3 cycles × ~4 600) only when promosound.net is Compliant and reads ≥ ~2 %.
-4. **Plan B** if promosound.net does not recover within ~a week: a separate domain for offers, unrelated to promosound.net (user buys it; DNS + eSputnik + 7-day warm-up is ours).
+## Історія раніше
 
-## Money (as of 16.09)
-
-All shop orders since 15.07 (1 381) matched against every touch: personal channel $157.70 (1 buyer, 12 orders), mass $18.90 (1 buyer). 21 977 leads touched in total. Mass channel is too young to judge (9 641 of its 15 622 touches were on 15.09).
-
-## Lead base (16.09)
-
-SoundCloud 1 484 963 profiles / 232 821 with email / 168 742 `valid` / **103 675 ready** (valid + untouched + ICP); Re-Ex subset ready 7 530, graph/upload 100 601. YouTube 164 ready, Spotify 1. Warm base (touched) 21 608: hot 36 · warm 1 488 · cold 19 215 · blacklist 833.
-
-## Lessons written into memory today
-
-- `mass-valid-only` — mass channel only on `verdict = 'valid'`; `unknown` bounced 17 %, `catch_all` 7 %.
-- `gmail-reputation-2026-09` — the incident, timeline, and the rule: check Postmaster daily before raising volume.
-
-## Code landed today (all deployed, on main)
-
-- `lib/esputnikStatus.ts` + `lib/massCycle.ts` (14:xx): eSputnik-safe first names + nameless retry of refused contacts (see closed question 1).
-- `lib/massCycle.ts`: async import per eSputnik docs (push → `mass_pending_fills` → settle via `/v1/importstatus`), top-up to the ceiling within the open cycle, broadcast after fill, deletes 10 in flight, per-platform quota per cycle, `esputnik_sc_source` knob, refusal logging.
-- `lib/esputnik.ts`: activity API is Europe/Kyiv (windows and timestamps), full-minute windows fetched whole (broadcast minutes exceed 1 000 rows), resumable cursor.
-- `lib/leadBridge.ts`: `valid` only; `scSource` filter.
-- `app/api/internal/esputnik/purge/route.ts`: no longer releases the ledger (it wiped 340 sent leads on 15.09 — restored from eSputnik activity).
-- CLAUDE.md rules 7–8 (background servers, single-run tests).
-
-## How to operate
-
-- Manual cron trigger: from a Chrome tab on ninja-digger.vercel.app: `fetch('/api/cron/esputnik-sync', {credentials:'include'})` after `DELETE FROM app_settings WHERE key='lease:esputnik-sync'`.
-- Group/cycle state: `scratchpad/cyc.ts` printed `name members broadcast scheduled delivered [DELETED]` from `mass_groups` — recreate with a one-liner over `mass_groups` if the scratchpad is gone.
-- Deploy: `npm run build && git push && npx vercel --prod --yes` (git auto-deploy lags).
+Інцидент із доменами, уроки й сходинка прогріву — `knowledge/MASS-OUTREACH.md` (верхні розділи). Коротко: 08–13.09 Brevo з promosound.net дав 2–5 % скарг → домен Not compliant → offers.promosound.net як піддомен успадкував вирок (15.09 Gmail відхилив 42.6 %) → 17.09 переїзд на окремий psg-offers.com, налаштований і верифікований того ж дня.
