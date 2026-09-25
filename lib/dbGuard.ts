@@ -6,7 +6,7 @@
  * Thresholds (of 512MB):
  *   RECLAIM (440) — auto-reclaim: TRUNCATE the regenerable cache, drop stale logs
  *   ALERT   (480) — still high after reclaim → Telegram 🔴 (deduped to 1 / 6h)
- * The harvest itself already stops adding rows above 460 (see cron/soundcloud).
+ * The harvest stops adding rows at 90% of the same line (see cron/soundcloud).
  */
 import { pool } from "@/lib/db";
 import { sendTelegramMessage } from "@/lib/telegram";
@@ -31,7 +31,7 @@ async function sizeMB(): Promise<number> {
 }
 
 
-export async function defendDbSpace(): Promise<{ before: number; after: number; reclaimed: boolean; alerted: boolean }> {
+export async function defendDbSpace(): Promise<{ before: number; after: number; limit: number; reclaimed: boolean; alerted: boolean }> {
   const before = await sizeMB();
   let reclaimed = false;
   let alerted = false;
@@ -73,5 +73,5 @@ export async function defendDbSpace(): Promise<{ before: number; after: number; 
       alerted = true;
     }
   }
-  return { before, after, reclaimed, alerted };
+  return { before, after, limit, reclaimed, alerted };
 }

@@ -22,10 +22,12 @@ export async function GET(request: Request) {
   // Self-defense first: auto-reclaim space + Telegram alert if near the limit.
   const guard = await defendDbSpace();
 
-  // Overflow guard: the Neon free tier caps at 512MB and a full DB once killed
-  // ingestion. Above the safe line we stop adding rows (harvest) but still run
-  // enrich/verify, which only update existing rows.
-  const SAFE_MB = 460;
+  // Overflow guard: above the safe line we stop adding rows (harvest) but still
+  // run enrich/verify, which only update existing rows. The line follows the
+  // guard's runtime limit (db_alert_mb). It was a hard-coded 460 from the free
+  // tier: once the DB passed that on the Launch plan, seed harvest went silent
+  // from 10.09 to 25.09 while the crawler kept every counter green.
+  const SAFE_MB = Math.round(guard.limit * 0.9);
   const dbMb = guard.after;
   const harvestOk = dbMb < SAFE_MB;
 
