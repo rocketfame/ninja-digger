@@ -147,25 +147,33 @@ async function insertCandidates(cands: Candidate[]): Promise<number> {
  * Instagram lead tables once a day.
  */
 export async function ingestFromOwnBase(): Promise<{ found: number; inserted: number; wrapped: boolean }> {
-  const from = (await getSettingOrNull("labels_sc_cursor")) || "0";
-  const { rows } = await pool.query<{ soundcloud_id: string; username: string; permalink_url: string; email: string | null; max_id: string }>(
-    `WITH chunk AS (SELECT * FROM sc_artists WHERE soundcloud_id > $1::bigint ORDER BY soundcloud_id LIMIT ${SC_CHUNK})
-     SELECT c.soundcloud_id::text, c.username, c.permalink_url, c.email, (SELECT MAX(soundcloud_id) FROM chunk)::text max_id
-       FROM chunk c
-      WHERE c.track_count > 0 AND c.followers_count >= 100
-        AND (${nameHit("c.username")} OR COALESCE(c.description,'') ~* ${DESC_TRIGGER})`,
-    [from]
-  );
-  let inserted = await insertCandidates(rows.map((r) => ({ name: r.username, via: "our_base_sc", sc_id: r.soundcloud_id, email: r.email, source_url: r.permalink_url })));
-  const maxId = rows[0]?.max_id ?? (await pool.query<{ m: string | null }>(
-    `SELECT MAX(soundcloud_id)::text m FROM (SELECT soundcloud_id FROM sc_artists WHERE soundcloud_id > $1::bigint ORDER BY soundcloud_id LIMIT ${SC_CHUNK}) x`, [from]
-  )).rows[0]?.m;
-  const wrapped = !maxId; // reached the end: start over, new profiles arrive every day
-  await setSetting("labels_sc_cursor", wrapped ? "0" : maxId!);
+  // After a full pass, wait a day before the next one: only new profiles are
+  // left to find, and a lap is ~16 chunks of re-reading 2.4M rows.
+  const wrappedAt = await getSettingOrNull("labels_sc_wrapped_at");
+  const resting = !!wrappedAt && Date.now() - Date.parse(wrappedAt) < 24 * 3600e3;
+  let found = 0, inserted = 0, wrapped = false;
+  if (!resting) {
+    const from = (await getSettingOrNull("labels_sc_cursor")) || "0";
+    const { rows } = await pool.query<{ soundcloud_id: string; username: string; permalink_url: string; email: string | null; max_id: string }>(
+      `WITH chunk AS (SELECT * FROM sc_artists WHERE soundcloud_id > $1::bigint ORDER BY soundcloud_id LIMIT ${SC_CHUNK})
+       SELECT c.soundcloud_id::text, c.username, c.permalink_url, c.email, (SELECT MAX(soundcloud_id) FROM chunk)::text max_id
+         FROM chunk c
+        WHERE c.track_count > 0 AND c.followers_count >= 100
+          AND (${nameHit("c.username")} OR COALESCE(c.description,'') ~* ${DESC_TRIGGER})`,
+      [from]
+    );
+    inserted += await insertCandidates(rows.map((r) => ({ name: r.username, via: "our_base_sc", sc_id: r.soundcloud_id, email: r.email, source_url: r.permalink_url })));
+    const maxId = rows[0]?.max_id ?? (await pool.query<{ m: string | null }>(
+      `SELECT MAX(soundcloud_id)::text m FROM (SELECT soundcloud_id FROM sc_artists WHERE soundcloud_id > $1::bigint ORDER BY soundcloud_id LIMIT ${SC_CHUNK}) x`, [from]
+    )).rows[0]?.m;
+    wrapped = !maxId; // reached the end: start over after a day, new profiles arrive daily
+    await setSetting("labels_sc_cursor", wrapped ? "0" : maxId!);
+    if (wrapped) await setSetting("labels_sc_wrapped_at", new Date().toISOString());
+    found = rows.length;
+  }
 
   // YouTube radar + Instagram (Spotify) leads: small tables, once a day.
   const today = new Date().toISOString().slice(0, 10);
-  let found = rows.length;
   if ((await getSettingOrNull("labels_small_day")) !== today) {
     const small = await pool.query<{ name: string; email: string | null; url: string | null; via: string }>(
       `SELECT COALESCE(NULLIF(name,''), handle) name, email, source_url url, 'our_base_yt' via FROM radar_leads
