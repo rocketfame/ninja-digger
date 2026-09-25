@@ -23,11 +23,11 @@
       "schedule": "40 6 * * 0"
     },
     {
-      "path": "/api/internal/report/telegram?period=Ранок",
+      "path": "/api/internal/report/telegram?period=\u0420\u0430\u043d\u043e\u043a",
       "schedule": "0 8 * * *"
     },
     {
-      "path": "/api/internal/report/telegram?period=Вечір",
+      "path": "/api/internal/report/telegram?period=\u0412\u0435\u0447\u0456\u0440",
       "schedule": "0 18 * * *"
     },
     {
@@ -89,6 +89,10 @@
     {
       "path": "/api/cron/esputnik-sync",
       "schedule": "35 * * * *"
+    },
+    {
+      "path": "/api/cron/labels",
+      "schedule": "4,24,44 * * * *"
     }
   ]
 }

@@ -26,6 +26,7 @@ python3 -c "import json;[print(f\"{c['schedule']:<16} {c['path']}\") for c in js
 | `watchdog` — самоперевірка + алерти в Telegram | кожні 3 год :30 |
 | `hygiene` — тижнева гігієна бази + VACUUM | нд 06:40 |
 | `report-hourly` + звіти в Telegram | :58, 08:00, 18:00 |
+| `labels` — база лейблів (knowledge/LABELS.md) | :04, :24, :44 |
 
 **Як вимкнути одну задачу:** прибрати її блок із `crons` у `vercel.json` → `git push` (Vercel застосує на наступному деплої).
 **Як вимкнути відправку, не чіпаючи код:** перемикачі в БД, миттєво, без деплою —
@@ -85,6 +86,7 @@ tail -f /tmp/ninjadigger-verify.log
 | Скрипт | Навіщо |
 |---|---|
 | `scripts/verify-queue.mjs` | SMTP-перевірка скриньок у черзі |
+| `scripts/verify-labels.mjs` | SMTP-перевірка email бази лейблів |
 | `scripts/scrub-junk-emails.mjs` | скраб бази за junk-політикою |
 | `scripts/crawl-contacts.mjs` | пошук email на лінках Spotify-лідів |
 | `scripts/rewind-blackout-sends.mjs` | повернення лідів у чергу після збою доставки |
