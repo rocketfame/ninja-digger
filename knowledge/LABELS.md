@@ -12,7 +12,7 @@
 3. **Країна** (`lib/labelCountries.ts`) — білий список тір 1–3. RU/BY/IR/KP/SY — ніколи; UA — лише топ (≥10k SC або ≥30 чарт-входжень). Без прапорця — мова біо (ы/э/ё/ъ = виключити) і TLD сайту.
 4. **Краулінг сайту** — корінь домену + contact/demo/about (або /contact, /demos навмання) → адреси з роллю (demo/info/promo/press/booking) і URL-джерелом, спосіб подачі демо.
 5. **Фільтри email**: `classifyEmail` (junk/placeholder/relay/hostile/жорсткі ролі) → MX → історія доставки (bounce/скарга/відписка/junk). **`not-ICP` у блеклисті НЕ вбиває адресу** — це саме лейбли, яких відсікли з артистського аутрічу.
-6. **SMTP** — локально `npx tsx scripts/verify-labels.mjs [limit]` (порт 25 закритий на Vercel). Тільки явний 5xx = invalid.
+6. **SMTP** — щоночі о 02:30 launchd-агент `com.ninjadigger.verify-labels` на Mac (порт 25 закритий на Vercel); якщо Mac спав — одразу після пробудження. Вручну: `npx tsx scripts/verify-labels.mjs [limit]`. Тільки явний 5xx = invalid. ~3 адреси/с → денний приплив ~5k за 30–40 хв.
 7. **Оцінка**: A — SMTP-valid + активний лейбл; B — email є, скринька catch-all/unknown/pending; C — лише форма чи соцмережі.
 
 Мейджори й дистриб'ютори (Sony/Warner/UMG-бренди, DistroKid, TuneCore, AWAL…) — `excluded`.

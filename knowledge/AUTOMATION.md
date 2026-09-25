@@ -50,7 +50,7 @@ launchctl unload ~/Library/LaunchAgents/<назва>.plist   # зупинити
 rm ~/Library/LaunchAgents/<назва>.plist                 # прибрати назовсім
 ```
 
-### Стан на 2026-09-08
+### Стан на 2026-09-25
 
 | Агент | Проєкт | Стан |
 |---|---|---|
@@ -58,7 +58,8 @@ rm ~/Library/LaunchAgents/<назва>.plist                 # прибрати 
 | `com.promosound.theme-drift` | Shopify-воркспейс | завантажений, працює |
 | `com.promosound.cleanup-orders` | Shopify-воркспейс | завантажений |
 | `com.promosound.newsscan` | Shopify-воркспейс | завантажений |
-| `com.ninjadigger.verify-queue` | **цей проєкт** | **НЕ встановлений** — лежить у `scripts/`, ставиться вручну |
+| `com.ninjadigger.verify-queue` | **цей проєкт** | завантажений (перевірено 25.09) — SMTP черги лідів, 03:20 |
+| `com.ninjadigger.verify-labels` | **цей проєкт** | встановлено 25.09 — SMTP бази лейблів, 02:30, `caffeinate` тримає Mac бадьорим, лог `/tmp/ninjadigger-verify-labels.log` |
 
 Чотири `com.promosound.*` належать іншому воркспейсу (Shopify-менеджер), не цьому репозиторію.
 

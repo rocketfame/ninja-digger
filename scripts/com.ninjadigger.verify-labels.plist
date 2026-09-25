@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Nightly SMTP layer for the label database (scripts/verify-labels.mjs).
+  Port 25 is closed on Vercel, so this Mac is where mailboxes get probed.
+  caffeinate keeps the machine awake for the length of the run; if the Mac was
+  asleep at 02:30, launchd runs the job as soon as it wakes.
+
+  Install:
+    cp scripts/com.ninjadigger.verify-labels.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.ninjadigger.verify-labels.plist
+  Remove:
+    launchctl unload ~/Library/LaunchAgents/com.ninjadigger.verify-labels.plist
+    rm ~/Library/LaunchAgents/com.ninjadigger.verify-labels.plist
+  Log: /tmp/ninjadigger-verify-labels.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ninjadigger.verify-labels</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd "$HOME/Documents/GitHub/ninja-digger" &amp;&amp; echo "=== $(date)" &gt;&gt; /tmp/ninjadigger-verify-labels.log &amp;&amp; /usr/bin/caffeinate -is /usr/local/bin/npx tsx scripts/verify-labels.mjs 20000 &gt;&gt; /tmp/ninjadigger-verify-labels.log 2&gt;&amp;1</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>2</integer>
+    <key>Minute</key><integer>30</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>Nice</key>
+  <integer>5</integer>
+</dict>
+</plist>
