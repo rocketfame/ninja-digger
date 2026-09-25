@@ -43,8 +43,8 @@ export async function findLabel(name: string, match: (title: string) => boolean)
 
 // Country names as they appear in label addresses → ISO code.
 const COUNTRY_NAMES: [RegExp, string][] = [
-  [/\b(united states|usa|u\.s\.a\.)\b/i, "US"], [/\b(united kingdom|england|scotland|wales|northern ireland|\buk\b)/i, "GB"],
-  [/\b(germany|deutschland)\b/i, "DE"], [/\b(netherlands|holland|nederland)\b/i, "NL"], [/\b(belgium|belgique|belgië)\b/i, "BE"],
+  [/\b(united states|usa|u\.s\.a\.)\b/i, "US"], [/\b(united kingdom|england|scotland|wales|northern ireland|uk|london|glasgow|manchester|bristol)\b/i, "GB"],
+  [/\b(germany|deutschland|berlin)\b/i, "DE"], [/\b(netherlands|holland|nederland)\b/i, "NL"], [/\b(belgium|belgique|belgië)\b/i, "BE"],
   [/\bfrance\b/i, "FR"], [/\b(switzerland|schweiz|suisse)\b/i, "CH"], [/\b(austria|österreich)\b/i, "AT"], [/\b(denmark|danmark)\b/i, "DK"],
   [/\b(sweden|sverige)\b/i, "SE"], [/\b(norway|norge)\b/i, "NO"], [/\b(finland|suomi)\b/i, "FI"], [/\biceland\b/i, "IS"],
   [/\bireland\b/i, "IE"], [/\baustralia\b/i, "AU"], [/\bnew zealand\b/i, "NZ"], [/\bcanada\b/i, "CA"], [/\bluxembourg\b/i, "LU"],
@@ -59,8 +59,13 @@ const COUNTRY_NAMES: [RegExp, string][] = [
   [/\b(belarus|беларусь)\b/i, "BY"], [/\biran\b/i, "IR"], [/\bserbia\b/i, "RS"],
 ];
 
+/** The country named FIRST in the text: a label lists its head office first (Ninja Tune: London, then its US office). */
 export function countryFromAddress(text: string | null | undefined): string | null {
   if (!text) return null;
-  for (const [re, cc] of COUNTRY_NAMES) if (re.test(text)) return cc;
-  return null;
+  let best: { at: number; cc: string } | null = null;
+  for (const [re, cc] of COUNTRY_NAMES) {
+    const m = re.exec(text);
+    if (m && (!best || m.index < best.at)) best = { at: m.index, cc };
+  }
+  return best?.cc ?? null;
 }
