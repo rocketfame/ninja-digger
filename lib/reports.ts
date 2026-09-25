@@ -141,7 +141,10 @@ export async function buildScReport(): Promise<string> {
   const newEmails = today?.new_emails ?? 0;
   const pending = seeds?.pending ?? 0;
   const mb = Number(db?.mb ?? 0);
-  const dbFlag = mb > 460 ? "🔴" : mb > 400 ? "🟡" : "🟢";
+  // Same line as lib/dbGuard (db_alert_mb, Launch plan default 4096) — a fixed
+  // 460 from the free tier kept this red every day, so red stopped meaning anything.
+  const limitMb = parseInt((await getSettingOrNull("db_alert_mb")) ?? "", 10) || 4096;
+  const dbFlag = mb > limitMb * 0.9 ? "🔴" : mb > limitMb * 0.75 ? "🟡" : "🟢";
 
   return (
     `🎧 SoundCloud-парсинг — звіт за день\n\n` +
