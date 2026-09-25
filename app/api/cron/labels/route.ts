@@ -40,8 +40,8 @@ export async function GET(request: Request) {
     await setSetting("labels_chart_day", today);
   }
   await step("ownBase", ingestFromOwnBase);
-  await step("resolve", () => resolveBatch(30));
-  await step("crawl", () => crawlBatch(20));
+  await step("resolve", () => resolveBatch(80));
+  await step("crawl", () => crawlBatch(40));
   if (Date.now() - t0 < 200_000) await step("graph", () => expandGraph(4));
   await step("grade", gradeLabels);
 
