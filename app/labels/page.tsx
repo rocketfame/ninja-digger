@@ -11,12 +11,15 @@ export const dynamic = "force-dynamic";
 type Label = {
   id: number; name: string; grade: string | null; genre_groups: string[]; country_code: string | null; country_tier: number | null;
   sc_permalink: string | null; sc_followers: number | null; website: string | null; instagram: string | null; facebook: string | null;
-  bandcamp: string | null; beatport_url: string | null; demo_policy: string | null; demo_url: string | null; emails: string | null;
+  bandcamp: string | null; beatport_url: string | null; parent_label: string | null; demo_policy: string | null; demo_url: string | null; emails: string | null;
   chart_entries: number; best_position: number | null; discovered_via: string; exclude_reason: string | null;
 };
 
 const num = (n: number | null | undefined) => (n ?? 0).toLocaleString("uk-UA");
-const VIA: Record<string, string> = { charts: "Beatport-чарти", our_base_sc: "Наша SC-база", our_base_yt: "Наш YouTube", our_base_ig: "Наш Instagram", sc_graph: "Граф підписок" };
+const VIA: Record<string, string> = {
+  charts: "Beatport-чарти", our_base_sc: "Наша SC-база", our_base_yt: "Наш YouTube", our_base_ig: "Наш Instagram", sc_graph: "Граф підписок",
+  our_blacklist: "Блеклист: профілі", our_blacklist_domain: "Блеклист: домени", discogs_sublabel: "Discogs: сублейбли",
+};
 const DEMO: Record<string, string> = { email: "📧 демо на email", form: "📝 форма", closed: "⛔ закрито", unknown: "—" };
 const GRADE_COLOR: Record<string, string> = { A: "#22c55e", B: "#eab308", C: "#94a3b8" };
 
@@ -24,7 +27,7 @@ async function getData(f: LabelFilters) {
   const { where, params } = labelWhere(f);
   const labels = await pool.query<Label>(
     `SELECT l.id, l.name, l.grade, l.genre_groups, l.country_code, l.country_tier, l.sc_permalink, l.sc_followers, l.website,
-            l.instagram, l.facebook, l.bandcamp, l.beatport_url, l.demo_policy, l.demo_url, ${LABEL_EMAILS_SQL} emails,
+            l.instagram, l.facebook, l.bandcamp, l.beatport_url, l.parent_label, l.demo_policy, l.demo_url, ${LABEL_EMAILS_SQL} emails,
             l.chart_entries, l.best_position, l.discovered_via, l.exclude_reason
        FROM label_db l ${where}
       ORDER BY l.grade NULLS LAST, l.chart_entries DESC, l.sc_followers DESC NULLS LAST LIMIT 300`,
@@ -108,6 +111,7 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
           <Select name="tier" value={f.tier} all="Усі країни" options={[["1", "Тір 1"], ["2", "Тір 2"], ["3", "Тір 3"], ["unknown", "Країна невідома"]]} />
           <Select name="demo" value={f.demo} all="Демо: будь-як" options={[["email", "Демо на email"], ["form", "Форма"], ["closed", "Закрито"]]} />
           <Select name="via" value={f.via} all="Усі джерела" options={Object.entries(VIA)} />
+          <Select name="kind" value={f.kind} all="Лише лейбли" options={[["agency", "Агенції"], ["other", "Інше (не підтверджено)"], ["all", "Усе"]]} />
           <Select name="status" value={f.status} all="Перевірені" options={[["new", "У черзі"], ["no_match", "Не знайдено профіль"], ["excluded", "Виключені"], ["all", "Усі"]]} />
           <input name="q" defaultValue={f.q ?? ""} placeholder="Пошук" className="w-32 min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-2.5 py-1.5 text-sm text-[var(--text)] sm:flex-none" />
           <button className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm font-semibold text-black">Показати</button>
@@ -130,7 +134,7 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
                       </div>
                       <div className="truncate text-xs text-[var(--text-muted)]">
                         {[l.genre_groups.join(", "), l.chart_entries > 0 ? `${num(l.chart_entries)} у чартах, топ #${l.best_position}` : null,
-                          l.sc_followers ? `${num(l.sc_followers)} SC` : null, l.demo_policy ? DEMO[l.demo_policy] : null, l.exclude_reason]
+                          l.sc_followers ? `${num(l.sc_followers)} SC` : null, l.parent_label ? `сублейбл ${l.parent_label}` : null, l.demo_policy ? DEMO[l.demo_policy] : null, l.exclude_reason]
                           .filter(Boolean).join(" · ")}
                       </div>
                       {l.emails && <div className="mt-0.5 flex items-center gap-1 truncate text-xs text-[var(--text)]"><Mail className="h-3 w-3 flex-shrink-0" /><span className="truncate">{l.emails}</span></div>}

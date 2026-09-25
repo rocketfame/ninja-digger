@@ -12,13 +12,14 @@ import { acquireLease } from "@/lib/cronLock";
 import { getSettingOrNull, setSetting } from "@/lib/settings";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { pool } from "@/lib/db";
-import { ingestFromCharts, ingestFromOwnBase, resolveBatch, crawlBatch, expandGraph, gradeLabels, labelSourceStats } from "@/lib/labels";
+import { ingestFromCharts, ingestFromOwnBase, ingestFromBlacklist, resolveBatch, crawlBatch, expandGraph, discogsBatch, gradeLabels, labelSourceStats } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const VIA_UA: Record<string, string> = {
   charts: "Beatport-чарти", our_base_sc: "наша SC-база", our_base_yt: "наш YouTube", our_base_ig: "наш Instagram", sc_graph: "граф підписок",
+  our_blacklist: "блеклист: профілі", our_blacklist_domain: "блеклист: домени", discogs_sublabel: "Discogs: сублейбли",
 };
 
 export async function GET(request: Request) {
@@ -37,12 +38,15 @@ export async function GET(request: Request) {
   const today = new Date().toISOString().slice(0, 10);
   if ((await getSettingOrNull("labels_chart_day")) !== today) {
     await step("charts", ingestFromCharts);
+    await step("blacklist", ingestFromBlacklist);
     await setSetting("labels_chart_day", today);
   }
   await step("ownBase", ingestFromOwnBase);
   await step("resolve", () => resolveBatch(80));
   await step("crawl", () => crawlBatch(40));
   if (Date.now() - t0 < 200_000) await step("graph", () => expandGraph(4));
+  // Discogs allows 60 calls/min: ~2 per label, so 20 labels ≈ 45 s.
+  if (Date.now() - t0 < 180_000) await step("discogs", () => discogsBatch(20));
   await step("grade", gradeLabels);
 
   // Daily digest after 09:00 UTC: what the base holds and what each source yields.

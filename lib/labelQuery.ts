@@ -2,7 +2,7 @@
  * One filter → SQL translation shared by the Labels tab and its CSV export,
  * so what you see is exactly what you download.
  */
-export type LabelFilters = { genre?: string; grade?: string; tier?: string; demo?: string; via?: string; q?: string; status?: string };
+export type LabelFilters = { genre?: string; grade?: string; tier?: string; demo?: string; via?: string; q?: string; status?: string; kind?: string };
 
 export function labelWhere(f: LabelFilters): { where: string; params: unknown[] } {
   const conds: string[] = [];
@@ -10,6 +10,8 @@ export function labelWhere(f: LabelFilters): { where: string; params: unknown[] 
   const add = (sql: string, v: unknown) => { params.push(v); conds.push(sql.replace("$?", `$${params.length}`)); };
   const status = f.status || "resolved";
   if (status !== "all") add("l.status = $?", status);
+  // Agencies found on shared domains are kept but shown only on request.
+  if (f.kind !== "all") add("l.kind = $?", f.kind || "label");
   if (f.genre) add("$? = ANY(l.genre_groups)", f.genre);
   if (f.grade === "AB") conds.push("l.grade IN ('A','B')");
   else if (f.grade) add("l.grade = $?", f.grade);

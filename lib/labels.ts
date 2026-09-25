@@ -19,12 +19,13 @@
  *                 mailbox not provable; C: no address but a demo form or socials.
  */
 import { pool } from "@/lib/db";
-import { classifyEmail, EMAIL_SCAN_RE } from "@/lib/emailJunk";
+import { classifyEmail, EMAIL_SCAN_RE, isFreemailDomain } from "@/lib/emailJunk";
 import { domainAcceptsMail } from "@/lib/emailHygiene";
 import { getClientId } from "@/lib/soundcloud";
 import { countryVerdict, countryFromDomain } from "@/lib/labelCountries";
 import { genreGroups } from "@/lib/labelGenres";
 import { getSettingOrNull, setSetting } from "@/lib/settings";
+import { findLabel, countryFromAddress, discogsEnabled } from "@/lib/discogs";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
@@ -110,7 +111,7 @@ const nameHit = (col: string) => `REGEXP_REPLACE(${col}, '\\([^)]*\\)|\\[[^]]*\\
 const DESC_TRIGGER = `'(\\m(is|are) an? ([a-z-]+ ){0,3}(record )?label\\M|\\mlabel (based|founded|created|run|owned) |send (us )?(your )?demos|\\mdemos? (to|:)|demo submissions?|label (enquiries|inquiries))'`;
 const SC_CHUNK = 150_000;
 
-type Candidate = { name: string; via: string; sc_id?: string | null; email?: string | null; source_url?: string | null };
+type Candidate = { name: string; via: string; sc_id?: string | null; email?: string | null; source_url?: string | null; website?: string | null };
 
 /** Bulk upsert; an existing label keeps its data and only gains what it lacked. */
 async function insertCandidates(cands: Candidate[]): Promise<number> {
@@ -119,15 +120,16 @@ async function insertCandidates(cands: Candidate[]): Promise<number> {
     const key = normLabel(c.name);
     if (key.length < 3 || MAJOR_RE.test(c.name) || seen.has(key)) return [];
     seen.add(key);
-    return [{ name: c.name.trim().slice(0, 200), key, via: c.via, sc_id: c.sc_id ?? null, email: c.email?.toLowerCase() ?? null, src: c.source_url ?? null }];
+    return [{ name: c.name.trim().slice(0, 200), key, via: c.via, sc_id: c.sc_id ?? null, email: c.email?.toLowerCase() ?? null, src: c.source_url ?? null, website: c.website ?? null }];
   });
   let inserted = 0;
   for (let i = 0; i < rows.length; i += 500) {
     const res = await pool.query(
-      `INSERT INTO label_db (name, norm_name, discovered_via, sc_id, seed_email, seed_email_src)
-       SELECT x.name, x.key, x.via, x.sc_id::bigint, x.email, x.src
-         FROM jsonb_to_recordset($1::jsonb) AS x(name text, key text, via text, sc_id text, email text, src text)
+      `INSERT INTO label_db (name, norm_name, discovered_via, sc_id, seed_email, seed_email_src, website)
+       SELECT x.name, x.key, x.via, x.sc_id::bigint, x.email, x.src, x.website
+         FROM jsonb_to_recordset($1::jsonb) AS x(name text, key text, via text, sc_id text, email text, src text, website text)
        ON CONFLICT (norm_name) DO UPDATE SET
+         website = COALESCE(label_db.website, EXCLUDED.website),
          sc_id = COALESCE(label_db.sc_id, EXCLUDED.sc_id),
          seed_email = COALESCE(label_db.seed_email, EXCLUDED.seed_email),
          seed_email_src = COALESCE(label_db.seed_email_src, EXCLUDED.seed_email_src)
@@ -177,6 +179,39 @@ export async function ingestFromOwnBase(): Promise<{ found: number; inserted: nu
     await setSetting("labels_small_day", today);
   }
   return { found, inserted, wrapped };
+}
+
+// ── 1c. the not-ICP blacklist: labels the artist barrels skipped ───────────
+
+/**
+ * email_blacklist holds ~11.8k "not-ICP" addresses: profiles skipped as "not an
+ * artist" or "star", and addresses on a domain shared by 3+ artists
+ * (representation). The first two are SoundCloud profiles — kept when the name
+ * or bio says label (podcasts, repost channels and blogs also land there and
+ * are dropped here). A shared domain is a label or an agency: it enters with
+ * its site, and the crawl tells which (kind).
+ */
+export async function ingestFromBlacklist(): Promise<{ profiles: number; domains: number; inserted: number }> {
+  const prof = await pool.query<{ soundcloud_id: string; username: string; permalink_url: string; email: string }>(
+    `SELECT DISTINCT ON (s.soundcloud_id) s.soundcloud_id::text, s.username, s.permalink_url, LOWER(b.email) email
+       FROM email_blacklist b JOIN sc_artists s ON LOWER(s.email) = LOWER(b.email)
+      WHERE (b.reason LIKE 'not-ICP: not an artist%' OR b.reason LIKE 'not-ICP: star%')
+        AND (${nameHit("s.username")} OR COALESCE(s.description,'') ~* ${DESC_TRIGGER})`
+  );
+  const dom = await pool.query<{ domain: string; email: string }>(
+    `SELECT DISTINCT ON (d) d domain, email FROM (
+       SELECT LOWER(SPLIT_PART(email,'@',2)) d, LOWER(email) email FROM email_blacklist
+        WHERE reason LIKE 'not-ICP: representation domain%') x ORDER BY d, email`
+  );
+  // A shared freemail/ISP domain (gmail, 163.com, qq.com…) is not a company.
+  const EXTRA_FREEMAIL = /^(163|126|qq|sina|sohu|yeah|foxmail|naver|daum|hanmail|rediffmail|seznam|wp|o2|interia|libero|virgilio|orange|free|laposte|sfr|t-online|gmx|web|freenet|bluewin|telenet|skynet|shaw|rogers|sympatico|bigpond|optusnet|comcast|verizon|att|sbcglobal|cox|charter|earthlink|btinternet|sky|virginmedia|talktalk|ntlworld|ziggo|kpnmail|planet|home|hotmail|outlook|live|msn|yahoo|ymail|aol|icloud|me|mac|protonmail|proton|gmail|googlemail)\./i;
+  const domRows = dom.rows.filter((r) => !isFreemailDomain(r.domain) && !EXTRA_FREEMAIL.test(r.domain));
+  const cands: Candidate[] = [
+    ...prof.rows.map((r) => ({ name: r.username, via: "our_blacklist", sc_id: r.soundcloud_id, email: r.email, source_url: r.permalink_url })),
+    ...domRows.map((r) => ({ name: r.domain.split(".").slice(0, -1).join(" ").replace(/[-_]/g, " "), via: "our_blacklist_domain",
+      email: r.email, source_url: `https://${r.domain}`, website: `https://${r.domain}` })),
+  ];
+  return { profiles: prof.rows.length, domains: domRows.length, inserted: await insertCandidates(cands) };
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -247,7 +282,9 @@ async function saveEmails(labelId: number, found: Map<string, string>): Promise<
 }
 
 function emailsIn(html: string): string[] {
-  const text = html.replace(/&#64;|&commat;|\s?\[at\]\s?|\s?\(at\)\s?/gi, "@").replace(/&#46;|\s?\[dot\]\s?/gi, ".");
+  // JSON-escaped page data glues "\ncontact@x" into "ncontact@x": unescape first.
+  const text = html.replace(/\\[ntr]|\\u00[0-9a-f]{2}/gi, " ")
+    .replace(/&#64;|&commat;|\s?\[at\]\s?|\s?\(at\)\s?/gi, "@").replace(/&#46;|\s?\[dot\]\s?/gi, ".");
   const mailto = [...text.matchAll(/mailto:([^"'?\s<>]+)/gi)].map((m) => decodeURIComponent(m[1]));
   return [...new Set([...mailto, ...(text.match(EMAIL_SCAN_RE) ?? [])].map((e) => e.toLowerCase()))];
 }
@@ -256,6 +293,12 @@ function emailsIn(html: string): string[] {
 
 type ScUser = { id: number; permalink: string; permalink_url: string; username: string; full_name?: string; description: string | null;
   followers_count: number; track_count: number; verified: boolean; country_code: string | null; city: string | null; last_modified: string | null };
+
+/** A link that is the label's own website (not a social, store, portal or catalog). */
+function isSite(url: string): boolean {
+  return /^https?:\/\//i.test(url) && !FORM_HOST_RE.test(url)
+    && !/soundcloud|instagram|facebook|twitter|x\.com\/|youtube|youtu\.be|bandcamp|tiktok|spotify|beatport|linktr|lnk\.to|tstack\.app|discogs|apple\.com|deezer|mixcloud|residentadvisor|ra\.co\/|store\.|shop\./i.test(url);
+}
 
 const LABELISH_RE = /\b(label|records|recordings|imprint|demos?|releases|catalog(ue)?|a&r)\b/i;
 
@@ -275,13 +318,13 @@ function pickLabelProfile(name: string, key: string, users: ScUser[]): ScUser | 
   return best && best.score >= 45 ? best.u : null;
 }
 
-export async function resolveBatch(limit = 25): Promise<{ checked: number; matched: number; excluded: number }> {
+export async function resolveBatch(limit = 25, via?: string): Promise<{ checked: number; matched: number; excluded: number }> {
   const cid = await getClientId();
   if (!cid) return { checked: 0, matched: 0, excluded: 0 };
   // Chart labels first (proven active), then candidates from our own base.
-  const { rows } = await pool.query<{ id: number; name: string; norm_name: string; chart_entries: number; sc_id: string | null; genres: string[]; seed_email: string | null; seed_email_src: string | null }>(
-    `SELECT id, name, norm_name, chart_entries, sc_id::text, genres, seed_email, seed_email_src FROM label_db WHERE status = 'new'
-      ORDER BY chart_entries DESC, id LIMIT $1`, [limit]
+  const { rows } = await pool.query<{ id: number; name: string; norm_name: string; chart_entries: number; sc_id: string | null; genres: string[]; seed_email: string | null; seed_email_src: string | null; website: string | null }>(
+    `SELECT id, name, norm_name, chart_entries, sc_id::text, genres, seed_email, seed_email_src, website FROM label_db WHERE status = 'new' AND ($2::text IS NULL OR discovered_via = $2)
+      ORDER BY chart_entries DESC, id LIMIT $1`, [limit, via ?? null]
   );
   let matched = 0, excluded = 0;
   const queue = [...rows];
@@ -301,6 +344,19 @@ export async function resolveBatch(limit = 25): Promise<{ checked: number; match
         const res = await scApi<{ collection: ScUser[] }>(`/search/users?q=${encodeURIComponent(q)}&limit=10`, cid);
         u = res ? pickLabelProfile(l.name, l.norm_name, res.collection ?? []) : null;
       }
+      if (!u && l.website) {
+        // No SoundCloud profile, but we know the site (a shared domain from the
+        // blacklist): go on with the site alone, country from its domain.
+        const v = countryVerdict({ country_code: countryFromDomain(l.website), website: l.website, chart_entries: l.chart_entries });
+        await pool.query(
+          `UPDATE label_db SET status=$2, exclude_reason=$3, country_code=$4, country_tier=$5, resolved_at=now(), updated_at=now() WHERE id=$1`,
+          [l.id, v.ok ? "resolved" : "excluded", v.ok ? null : v.reason, v.ok ? v.country : null, v.ok ? v.tier : null]
+        );
+        if (!v.ok) { excluded++; continue; }
+        matched++;
+        if (l.seed_email) await saveEmails(l.id, new Map([[l.seed_email, l.seed_email_src ?? l.website]]));
+        continue;
+      }
       if (!u) {
         await pool.query(`UPDATE label_db SET status='no_match', resolved_at=now(), updated_at=now() WHERE id=$1`, [l.id]);
         continue;
@@ -309,8 +365,6 @@ export async function resolveBatch(limit = 25): Promise<{ checked: number; match
       const net = (n: string) => profiles.find((p) => p.network === n)?.url ?? null;
       // Demo portals and catalog sites are not the label's website.
       const demoPortal = profiles.find((p) => FORM_HOST_RE.test(p.url) || /tstack\.app/i.test(p.url))?.url ?? null;
-      const isSite = (url: string) => /^https?:\/\//i.test(url) && !FORM_HOST_RE.test(url)
-        && !/soundcloud|instagram|facebook|twitter|x\.com\/|youtube|youtu\.be|bandcamp|tiktok|spotify|beatport|linktr|lnk\.to|tstack\.app|discogs|apple\.com|deezer|mixcloud|residentadvisor|ra\.co\/|store\.|shop\./i.test(url);
       // The profile's "personal" link first, then any other site link, then a URL in the bio.
       const bioUrls = (u.description ?? "").match(/https?:\/\/[^\s"'<>)]+/gi) ?? [];
       const website = [net("personal"), ...profiles.map((p) => p.url), ...bioUrls].find((url) => !!url && isSite(url)) ?? null;
@@ -367,10 +421,14 @@ function sameHostLinks(html: string, base: string): string[] {
   return [...out].slice(0, 5);
 }
 
-export async function crawlBatch(limit = 20): Promise<{ crawled: number; withEmail: number }> {
-  const { rows } = await pool.query<{ id: number; website: string }>(
-    `SELECT id, website FROM label_db WHERE status='resolved' AND crawled_at IS NULL AND website IS NOT NULL
-      ORDER BY chart_entries DESC LIMIT $1`, [limit]
+const AGENCY_RE = /\b(booking agency|talent agency|artist management|management company|booking & management|booking and management|our roster|represent(s|ing)? (the )?artists|agency roster|tour(ing)? agency)\b/gi;
+const AGENCY_HOST_RE = /(mgmt|management|booking|talent|agency|artists)\./i;
+const LABEL_TEXT_RE = /\b(record label|releases?|catalog(ue)?|out now|pre-?order|demos?|vinyl|ep|lp|beatport)\b/gi;
+
+export async function crawlBatch(limit = 20, via?: string): Promise<{ crawled: number; withEmail: number }> {
+  const { rows } = await pool.query<{ id: number; name: string; website: string; discovered_via: string; description: string | null }>(
+    `SELECT id, name, website, discovered_via, description FROM label_db WHERE status='resolved' AND crawled_at IS NULL AND website IS NOT NULL AND ($2::text IS NULL OR discovered_via = $2)
+      ORDER BY chart_entries DESC LIMIT $1`, [limit, via ?? null]
   );
   let withEmail = 0;
   const queue = [...rows];
@@ -394,6 +452,18 @@ export async function crawlBatch(limit = 20): Promise<{ crawled: number; withEma
         if (form && !demoUrl) { demoUrl = form[0]; demoPolicy = "form"; }
         else if (isDemoPage && /<form[\s>]/i.test(p.html) && !demoUrl) { demoUrl = p.url; demoPolicy = "form"; }
       }
+      // Label or agency? Shared domains from the blacklist are often booking /
+      // management agencies. A label talks about releases and demos.
+      const text = [l.description ?? "", ...pages.map((p) => p.html.replace(/<[^>]+>/g, " "))].join(" ").slice(0, 300_000);
+      const hasDemoInbox = [...found.keys()].some((e) => /^(demos?|submit|submissions?|records|label|a-?and-?r)@/i.test(e));
+      const agencyHits = (text.match(AGENCY_RE) ?? []).length + (AGENCY_HOST_RE.test(l.website) ? 3 : 0);
+      const labelHits = (text.match(LABEL_TEXT_RE) ?? []).length;
+      // A domain taken from the blacklist has no label evidence yet (events,
+      // management and PR firms share artist domains too): it must show some.
+      const kind = agencyHits >= 2 && agencyHits > labelHits ? "agency"
+        : l.discovered_via === "our_blacklist_domain" && labelHits < 3 && !hasDemoInbox && !/record|label|music|audio|sound|imprint/i.test(`${l.website} ${l.name}`) ? "other"
+        : "label";
+      await pool.query(`UPDATE label_db SET kind=$2 WHERE id=$1`, [l.id, kind]);
       const saved = await saveEmails(l.id, found);
       if (saved > 0) withEmail++;
       const hasDemoEmail = (await pool.query(`SELECT 1 FROM label_db_emails WHERE label_id=$1 AND role='demo' AND verdict<>'invalid' LIMIT 1`, [l.id])).rowCount;
@@ -406,7 +476,17 @@ export async function crawlBatch(limit = 20): Promise<{ crawled: number; withEma
     }
   }));
   // Resolved labels without a website are done too — their bio was read in resolve.
-  await pool.query(`UPDATE label_db SET crawled_at=now(), demo_policy=COALESCE(demo_policy,'unknown') WHERE status='resolved' AND crawled_at IS NULL AND website IS NULL`);
+  // A shared domain with no reachable site is a label only if its SC bio or a
+  // demo/label inbox says so; otherwise it stays out of the label list.
+  await pool.query(
+    `UPDATE label_db l SET crawled_at=now(), demo_policy=COALESCE(demo_policy,'unknown'),
+       kind = CASE WHEN discovered_via <> 'our_blacklist_domain' THEN kind
+                   WHEN COALESCE(description,'') ~* '(record label|independent label|\\mimprint\\M|releases|demos?)'
+                     OR name ~* '(record|label|imprint)'
+                     OR EXISTS (SELECT 1 FROM label_db_emails e WHERE e.label_id = l.id AND e.role = 'demo') THEN 'label'
+                   ELSE 'other' END
+     WHERE status='resolved' AND crawled_at IS NULL AND website IS NULL`
+  );
   return { crawled: rows.length, withEmail };
 }
 
@@ -438,6 +518,42 @@ export async function expandGraph(limit = 6): Promise<{ walked: number; inserted
   return { walked: rows.length, inserted: await insertCandidates(cands) };
 }
 
+// ── 4c. Discogs: country, site, contacts, parent and sub-labels ────────────
+
+export async function discogsBatch(limit = 20): Promise<{ checked: number; found: number; sublabels: number; excluded: number } | { skipped: string }> {
+  if (!discogsEnabled()) return { skipped: "no DISCOGS_TOKEN" };
+  const { rows } = await pool.query<{ id: number; name: string; norm_name: string; status: string; country_code: string | null; website: string | null; chart_entries: number; sc_followers: number | null; description: string | null }>(
+    `SELECT id, name, norm_name, status, country_code, website, chart_entries, sc_followers, description FROM label_db
+      WHERE discogs_at IS NULL AND status IN ('resolved','no_match') AND kind = 'label'
+      ORDER BY (grade = 'A') DESC NULLS LAST, (grade = 'B') DESC NULLS LAST, chart_entries DESC, sc_followers DESC NULLS LAST LIMIT $1`, [limit]
+  );
+  let found = 0, excluded = 0;
+  const subs: Candidate[] = [];
+  for (const l of rows) {
+    const d = await findLabel(l.name.replace(/\([^)]*\)/g, "").trim(), (t) => normLabel(t) === l.norm_name);
+    if (!d) { await pool.query(`UPDATE label_db SET discogs_at=now() WHERE id=$1`, [l.id]); continue; }
+    found++;
+    const site = l.website ?? d.urls?.find((u) => isSite(u)) ?? null;
+    const cc = l.country_code ?? countryFromAddress(`${d.contact_info ?? ""}\n${d.profile ?? ""}`) ?? countryFromDomain(site);
+    const v = countryVerdict({ country_code: cc, website: site, description: l.description, sc_followers: l.sc_followers, chart_entries: l.chart_entries });
+    // A label we could not find on SoundCloud comes alive once Discogs gives it a site.
+    const status = !v.ok ? "excluded" : l.status === "no_match" && site ? "resolved" : l.status;
+    await pool.query(
+      `UPDATE label_db SET discogs_id=$2, discogs_at=now(), website=COALESCE(website,$3), country_code=COALESCE($4,country_code),
+         country_tier=COALESCE($5,country_tier), parent_label=$6, sublabels=$7, status=$8, exclude_reason=COALESCE($9,exclude_reason),
+         crawled_at = CASE WHEN website IS NULL AND $3::text IS NOT NULL THEN NULL ELSE crawled_at END, updated_at=now()
+       WHERE id=$1`,
+      [l.id, d.id, site, v.ok ? v.country : null, v.ok ? v.tier : null, d.parent_label?.name ?? null,
+       (d.sublabels ?? []).map((x) => x.name).slice(0, 50), status, v.ok ? null : v.reason]
+    );
+    if (!v.ok) { excluded++; continue; }
+    const mails = new Map(emailsIn(`${d.contact_info ?? ""} ${d.profile ?? ""}`).map((e) => [e, d.uri] as [string, string]));
+    if (mails.size) await saveEmails(l.id, mails);
+    for (const sub of d.sublabels ?? []) subs.push({ name: sub.name, via: "discogs_sublabel" });
+  }
+  return { checked: rows.length, found, sublabels: await insertCandidates(subs), excluded };
+}
+
 // ── 5. grade ───────────────────────────────────────────────────────────────
 
 export async function gradeLabels(): Promise<void> {
@@ -446,7 +562,8 @@ export async function gradeLabels(): Promise<void> {
        SELECT l.id,
          CASE
            WHEN EXISTS (SELECT 1 FROM label_db_emails e WHERE e.label_id=l.id AND e.verdict='valid')
-                AND (l.last_charted > CURRENT_DATE - 45 OR l.sc_last_active > now() - interval '180 days') THEN 'A'
+                AND (l.last_charted > CURRENT_DATE - 45 OR l.sc_last_active > now() - interval '180 days'
+                     OR (l.sc_id IS NULL AND l.website IS NOT NULL AND l.crawled_at IS NOT NULL)) THEN 'A'
            WHEN EXISTS (SELECT 1 FROM label_db_emails e WHERE e.label_id=l.id AND e.verdict IN ('valid','pending','catch_all','unknown')) THEN 'B'
            WHEN l.demo_url IS NOT NULL OR l.instagram IS NOT NULL OR l.facebook IS NOT NULL THEN 'C'
          END AS grade
