@@ -91,7 +91,9 @@ export async function GET(request: Request) {
            OR (completed_at < now() - interval '60 days' AND last_harvested_at < now() - interval '60 days'))
       AND NOT (harvested_count >= 150 AND emails_found * 100.0 / GREATEST(harvested_count, 1) < 2)`);
   const due = num((scDue as { c?: unknown }).c);
-  if (num((scHarvest as { c?: unknown }).c) < 100) {
+  const seedPaused = num((await one(`SELECT COUNT(*) c FROM app_settings WHERE key='sc_seed_harvest_paused' AND value='1'`) as { c?: unknown }).c) > 0;
+  if (seedPaused) { /* seed harvest switched off on purpose: nothing to alert */ }
+  else if (num((scHarvest as { c?: unknown }).c) < 100) {
     alerts.push(`🟠 SoundCloud: харвест майже стоїть (${num((scHarvest as { c?: unknown }).c)} фоловерів за 3год)${due < 50 ? ` — якісні сіди вичерпані (придатних до збору: ${due}). Потрібен новий збір рекламодавців з repostexchange.com (браузер, логін користувача).` : ` — придатних сідів ${due}, а збір не йде: крон падає/таймаутить`}`);
   }
   // Proactive Re-Ex refuel warning — fire BEFORE the harvest collapses, while the

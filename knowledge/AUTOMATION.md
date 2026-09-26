@@ -19,7 +19,7 @@ python3 -c "import json;[print(f\"{c['schedule']:<16} {c['path']}\") for c in js
 | `pipeline` — відправка Beatport | щогодини :00 |
 | `inbox` — читання пошти, відповіді лідів, чернетки | кожні 5 хв |
 | `sc-outreach` / `spotify-outreach` / `radar-outreach` | :10 / :40 / :48 |
-| `soundcloud` — харвест фоловерів із сідів | :22, :52 |
+| `soundcloud` — харвест фоловерів із сідів (**на паузі з 26.09**: `sc_seed_harvest_paused=1`, зняти = видалити ключ; verify/enrich у цьому кроні працюють далі) | :22, :52 |
 | `sc-enrich` / `radar-enrich` / `spotify-crawl` — пошук email | :05,:35 / :12 / :15 |
 | `youtube-radar` / `reddit-radar` — нові ліди | :50 / 08:20, 20:20 |
 | `brevo-poll` — доставка/опени/баунси | :25 |

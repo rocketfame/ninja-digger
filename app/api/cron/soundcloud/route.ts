@@ -9,6 +9,7 @@ import { harvestSeedFollowers, verifyActiveArtists, refreshPromoterProfiles } fr
 import { enrichScBatch } from "@/lib/soundcloudEnrich";
 import { defendDbSpace } from "@/lib/dbGuard";
 import { sendTelegramMessage } from "@/lib/telegram";
+import { getSetting } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -29,7 +30,10 @@ export async function GET(request: Request) {
   // from 10.09 to 25.09 while the crawler kept every counter green.
   const SAFE_MB = Math.round(guard.limit * 0.9);
   const dbMb = guard.after;
-  const harvestOk = dbMb < SAFE_MB;
+  // Owner's switch (26.09): the base is big enough, seed harvest is off.
+  // app_settings.sc_seed_harvest_paused = '1'; delete the key to resume.
+  const seedPaused = (await getSetting("sc_seed_harvest_paused", "0")) === "1";
+  const harvestOk = dbMb < SAFE_MB && !seedPaused;
 
   // Rotate through the least-recently-harvested seeds. 773+ promoter channels
   // now seed the pipeline, so we take a few per run (2 pages each) to spread
