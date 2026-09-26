@@ -28,6 +28,11 @@ export async function GET(request: Request) {
   if (secret && request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // Owner's switch (26.09): the base is big enough, discovery is off.
+  // app_settings.sc_crawl_paused = '1'; delete the key to resume.
+  if ((await getSetting("sc_crawl_paused", "0")) === "1") {
+    return NextResponse.json({ ok: true, skipped: "paused" });
+  }
   if (!(await acquireLease("sc-crawl", 6))) {
     return NextResponse.json({ ok: true, skipped: "locked" });
   }

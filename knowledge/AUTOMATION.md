@@ -25,6 +25,7 @@ python3 -c "import json;[print(f\"{c['schedule']:<16} {c['path']}\") for c in js
 | `brevo-poll` — доставка/опени/баунси | :25 |
 | `watchdog` — самоперевірка + алерти в Telegram | кожні 3 год :30 |
 | `hygiene` — тижнева гігієна бази + VACUUM | нд 06:40 |
+| `sc-crawl` — обхід графа SoundCloud, нові профілі (**на паузі з 26.09**: `sc_crawl_paused=1`, зняти = видалити ключ) | кожні 9 хв |
 | `report-hourly` + звіти в Telegram | :58, 08:00, 18:00 |
 | `labels` — база лейблів (knowledge/LABELS.md) | :04, :24, :44 |
 
