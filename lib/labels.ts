@@ -293,7 +293,7 @@ function emailsIn(html: string): string[] {
   // JSON-escaped page data glues "\ncontact@x" into "ncontact@x": unescape first.
   const text = html.replace(/\\[ntr]|\\u00[0-9a-f]{2}/gi, " ")
     .replace(/&#64;|&commat;|\s?\[at\]\s?|\s?\(at\)\s?/gi, "@").replace(/&#46;|\s?\[dot\]\s?/gi, ".");
-  const mailto = [...text.matchAll(/mailto:([^"'?\s<>]+)/gi)].map((m) => decodeURIComponent(m[1]));
+  const mailto = [...text.matchAll(/mailto:([^"'?\s<>]+)/gi)].map((m) => { try { return decodeURIComponent(m[1]); } catch { return m[1]; } });
   return [...new Set([...mailto, ...(text.match(EMAIL_SCAN_RE) ?? [])].map((e) => e.toLowerCase()))];
 }
 
@@ -331,13 +331,18 @@ export async function resolveBatch(limit = 25, via?: string): Promise<{ checked:
   if (!cid) return { checked: 0, matched: 0, excluded: 0 };
   // Chart labels first (proven active), then candidates from our own base.
   const { rows } = await pool.query<{ id: number; name: string; norm_name: string; chart_entries: number; sc_id: string | null; genres: string[]; seed_email: string | null; seed_email_src: string | null; website: string | null }>(
-    `SELECT id, name, norm_name, chart_entries, sc_id::text, genres, seed_email, seed_email_src, website FROM label_db WHERE status = 'new' AND ($2::text IS NULL OR discovered_via = $2)
-      ORDER BY chart_entries DESC, id LIMIT $1`, [limit, via ?? null]
+    // Round-robin across sources after the charting labels: a plain id order
+    // let 17k SC-base candidates starve Discogs sublabels and the blacklist.
+    `SELECT id, name, norm_name, chart_entries, sc_id::text, genres, seed_email, seed_email_src, website FROM (
+       SELECT *, row_number() OVER (PARTITION BY discovered_via ORDER BY chart_entries DESC, id) rn
+         FROM label_db WHERE status = 'new' AND ($2::text IS NULL OR discovered_via = $2)) q
+      ORDER BY (chart_entries > 0) DESC, rn, id LIMIT $1`, [limit, via ?? null]
   );
   let matched = 0, excluded = 0;
   const queue = [...rows];
   await Promise.all(Array.from({ length: 3 }, async () => {
     for (let l = queue.shift(); l; l = queue.shift()) {
+      try {
       if (MAJOR_RE.test(l.name)) {
         await pool.query(`UPDATE label_db SET status='excluded', exclude_reason='major / distributor', resolved_at=now(), updated_at=now() WHERE id=$1`, [l.id]);
         excluded++;
@@ -403,6 +408,11 @@ export async function resolveBatch(limit = 25, via?: string): Promise<{ checked:
       for (const e of profileEmails) if (!bio.has(e.toLowerCase())) bio.set(e.toLowerCase(), u.permalink_url);
       if (demoPortal) await pool.query(`UPDATE label_db SET demo_policy='form', demo_url=$2 WHERE id=$1 AND demo_url IS NULL`, [l.id, demoPortal]);
       if (bio.size) await saveEmails(l.id, bio);
+      } catch (e) {
+        // One bad profile must not kill the batch; park it so the queue moves on.
+        await pool.query(`UPDATE label_db SET status='no_match', exclude_reason=$2, resolved_at=now(), updated_at=now() WHERE id=$1`,
+          [l.id, `error: ${String(e).slice(0, 120)}`]).catch(() => {});
+      }
     }
   }));
   return { checked: rows.length, matched, excluded };
@@ -433,15 +443,17 @@ const AGENCY_RE = /\b(booking agency|talent agency|artist management|management 
 const AGENCY_HOST_RE = /(mgmt|management|booking|talent|agency|artists)\./i;
 const LABEL_TEXT_RE = /\b(record label|releases?|catalog(ue)?|out now|pre-?order|demos?|vinyl|ep|lp|beatport)\b/gi;
 
-export async function crawlBatch(limit = 20, via?: string): Promise<{ crawled: number; withEmail: number }> {
+export async function crawlBatch(limit = 20, via?: string, concurrency = 5): Promise<{ crawled: number; withEmail: number }> {
   const { rows } = await pool.query<{ id: number; name: string; website: string; discovered_via: string; description: string | null }>(
     `SELECT id, name, website, discovered_via, description FROM label_db WHERE status='resolved' AND crawled_at IS NULL AND website IS NOT NULL AND ($2::text IS NULL OR discovered_via = $2)
       ORDER BY chart_entries DESC LIMIT $1`, [limit, via ?? null]
   );
   let withEmail = 0;
   const queue = [...rows];
-  await Promise.all(Array.from({ length: 5 }, async () => {
+  // Each label is a different web server, so parallelism here is safe.
+  await Promise.all(Array.from({ length: concurrency }, async () => {
     for (let l = queue.shift(); l; l = queue.shift()) {
+      try {
       const found = new Map<string, string>();
       let demoPolicy: string | null = null, demoUrl: string | null = null;
       // Crawl the domain root: profile links often point deep (a release page, /radio).
@@ -481,6 +493,10 @@ export async function crawlBatch(limit = 20, via?: string): Promise<{ crawled: n
            website = CASE WHEN $4::boolean THEN website ELSE NULL END, updated_at=now() WHERE id=$1`,
         [l.id, demoPolicy, demoUrl, !!home]
       );
+      } catch {
+        // A broken site must not kill the batch: mark it crawled and move on.
+        await pool.query(`UPDATE label_db SET crawled_at=now(), demo_policy=COALESCE(demo_policy,'unknown'), updated_at=now() WHERE id=$1`, [l.id]).catch(() => {});
+      }
     }
   }));
   // Resolved labels without a website are done too — their bio was read in resolve.

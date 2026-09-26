@@ -126,7 +126,7 @@
 
 ## Інші відкриті нитки
 
-- **Shopify: SoundCloud-товари мають статус ARCHIVED** (Plays, Likes, Followers, Genre Plays, USA Plays) — активні лише Facebook. Якщо це не старі дублі, другому листу нікуди вести. Перевірити.
+- ~~Shopify ARCHIVED SC-товари~~ — не проблема: SC продається з прихованої категорії S-Cloud.
 - **Магазин даних** — дослідження в `knowledge/research/DATA-SHOP.md`, чекає трьох рішень користувача (зелена зона чи дата-брокер; бюджет юриста; назва/домен).
 - **PPC-аудиторії** віддані 22.09: `scratchpad/ppc_final/` + `ppc_meta_audiences_2026-09-22.zip` (A_buyers 15 275, B_engaged 17 254, C_artists 131 487, YT ×2 ≈9.8k, X_exclude 64 363) + `ШПАРГАЛКА_для_PPC.md`. Перегенерація: `scratchpad/segexport.ts`, `shopexport.ts`, `ytexport.ts`.
 - **promosoundgroup.net** у тихі дні (17.09, 20.09, 25–28.08) показує 0 % автентифікації — хтось шле з цього домену повз SPF/DKIM. Шкоди нема (скарг 0, compliance ✅), джерело не знайдене.

@@ -79,13 +79,17 @@ export async function GET(request: Request) {
   //     does ~1-2k followers/run; near-zero over 3h means seeds are exhausted
   //     (need refuel), the cron is timing out, or SoundCloud broke. This is the
   //     exact class of failure that kept slipping through unnoticed.
-  const scHarvest = await one(`SELECT COUNT(*) c FROM sc_artists WHERE harvested_at > now() - interval '3 hours'`);
-  // "due" = seeds the harvester is actually allowed to use: past the quality
-  // gate (>=2% bio-email yield) and not touched in the last 5 days.
+  // Seed harvest only: the graph crawl (source_seed 'graph:…') writes thousands of
+  // low-yield profiles an hour and hid a seed harvest that was dead for 16 days.
+  const scHarvest = await one(`SELECT COUNT(*) c FROM sc_artists WHERE harvested_at > now() - interval '3 hours'
+      AND source_seed IS NOT NULL AND source_seed NOT LIKE 'graph:%'`);
+  // "due" = seeds the harvester is actually allowed to use — the soundcloud
+  // cron's filter: past the quality gate; open seeds always, finished ones
+  // after a 60-day rest.
   const scDue = await one(`SELECT COUNT(*) c FROM sc_seed_accounts WHERE active
-      AND (completed_at IS NULL OR completed_at < now() - interval '60 days')
-      AND NOT (harvested_count >= 150 AND emails_found * 100.0 / GREATEST(harvested_count, 1) < 2)
-      AND (last_harvested_at IS NULL OR last_harvested_at < now() - interval '60 days')`);
+      AND (completed_at IS NULL
+           OR (completed_at < now() - interval '60 days' AND last_harvested_at < now() - interval '60 days'))
+      AND NOT (harvested_count >= 150 AND emails_found * 100.0 / GREATEST(harvested_count, 1) < 2)`);
   const due = num((scDue as { c?: unknown }).c);
   if (num((scHarvest as { c?: unknown }).c) < 100) {
     alerts.push(`🟠 SoundCloud: харвест майже стоїть (${num((scHarvest as { c?: unknown }).c)} фоловерів за 3год)${due < 50 ? ` — якісні сіди вичерпані (придатних до збору: ${due}). Потрібен новий збір рекламодавців з repostexchange.com (браузер, логін користувача).` : ` — придатних сідів ${due}, а збір не йде: крон падає/таймаутить`}`);

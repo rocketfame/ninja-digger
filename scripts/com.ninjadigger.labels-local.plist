@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Local label worker (scripts/labels-local.ts): queue drain + Discogs + SMTP.
+  Every 30 min; a run missed while the Mac slept starts on wake. Each run is
+  time-boxed to 25 min and safe to cut off at any moment (closing the lid):
+  progress is per-row in the DB, the next run continues. Replaces the separate
+  nightly verify-labels agent (SMTP is part of every run here).
+
+  Install:
+    cp scripts/com.ninjadigger.labels-local.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.ninjadigger.labels-local.plist
+  Remove:
+    launchctl unload ~/Library/LaunchAgents/com.ninjadigger.labels-local.plist
+    rm ~/Library/LaunchAgents/com.ninjadigger.labels-local.plist
+  Log: /tmp/ninjadigger-labels-local.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ninjadigger.labels-local</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd "$HOME/Documents/GitHub/ninja-digger" &amp;&amp; /usr/bin/caffeinate -is /usr/local/bin/npx tsx --env-file=.env.local scripts/labels-local.ts &gt;&gt; /tmp/ninjadigger-labels-local.log 2&gt;&amp;1</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>StartInterval</key>
+  <integer>1800</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>Nice</key>
+  <integer>5</integer>
+</dict>
+</plist>

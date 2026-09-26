@@ -55,12 +55,15 @@ export async function GET(request: Request) {
         // already stripped, 1,400 profiles a day for nine emails, while every
         // counter said it was working. Two months is long enough for a real
         // follower base to have changed.
+        // The 60-day rest is for FINISHED seeds only. It once applied to open
+        // seeds too: a seed touched once waited two months with its cursor
+        // mid-way, and 379 open seeds (12 % email yield) sat idle from 10.09
+        // while only the low-yield graph crawl kept running.
         `SELECT permalink FROM sc_seed_accounts
          WHERE active = true AND (
            completed_at IS NULL
-           OR completed_at < now() - interval '60 days')
+           OR (completed_at < now() - interval '60 days' AND last_harvested_at < now() - interval '60 days'))
            AND NOT (harvested_count >= 150 AND emails_found * 100.0 / GREATEST(harvested_count, 1) < 2)
-           AND (last_harvested_at IS NULL OR last_harvested_at < now() - interval '60 days')
          ORDER BY (completed_at IS NULL) DESC,
                   (emails_found * 100.0 / GREATEST(harvested_count, 1)) DESC,
                   priority DESC, last_harvested_at ASC NULLS FIRST LIMIT 8`)
